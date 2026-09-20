@@ -1,0 +1,86 @@
+Return-Path: <bounce-8841@mail-relay-07.sendgrid-bulk.top>
+Received: from mx01.example-corp.co.uk (10.20.4.11) by
+ EXCH02.example-corp.local (10.20.4.30) with Microsoft SMTP Server; Tue, 16
+ Sep 2026 03:15:04 +0000
+Received: from mail-relay-07.sendgrid-bulk.top
+ (mail-relay-07.sendgrid-bulk.top [185.243.115.22]) by mx01.example-corp.co.uk
+ with ESMTPS; Tue, 16 Sep 2026 03:15:01 +0000
+Authentication-Results: mx01.example-corp.co.uk; spf=fail
+ smtp.mailfrom=mail-relay-07.sendgrid-bulk.top; dkim=none; dmarc=fail
+ action=quarantine header.from=micros0ft-verify-support.top
+Received-SPF: fail (mx01.example-corp.co.uk: domain of
+ mail-relay-07.sendgrid-bulk.top does not designate 185.243.115.22 as
+ permitted sender)
+X-Originating-IP: [185.243.115.22]
+Subject: Action required: unusual sign-in activity on your account
+From: "Microsoft Account Team" <security-alert@micros0ft-verify-support.top>
+To: vinit.rami@example-corp.co.uk
+Reply-To: recovery.desk@mail-secure-recovery.xyz
+Date: Wed, 16 Sep 2026 03:14:52 +0000
+Message-ID:
+ <f2a91c77-3b8e-4a21-9d55-0e1b77c3a9d4@mail-relay-07.sendgrid-bulk.top>
+X-Mailer: PHPMailer 6.8.0
+List-Unsubscribe: <https://mail-secure-recovery.xyz/unsub?u=8841>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============5020647481720622814=="
+
+--===============5020647481720622814==
+Content-Type: multipart/alternative;
+ boundary="===============1905411468452720350=="
+
+--===============1905411468452720350==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Microsoft account security alert
+
+Unusual sign-in activity was detected on your account. Your access will be
+suspended within 24 hours unless you verify your identity.
+
+Verify now: https://micros0ft-verify-support.top/o365/login?id=8841
+Mirror link: https://bit.ly/3xQvErT
+Status page: http://185.243.115.22/status
+
+Open the attached transcript for details.
+
+Microsoft Account Team
+
+--===============1905411468452720350==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body style=3D"font-family:Segoe UI,Arial,sans-serif;color:#222">
+<img src=3D"https://micros0ft-verify-support.top/pixel/open.gif?id=3D8841" wi=
+dth=3D"1" height=3D"1">
+<h2>Unusual sign-in activity</h2>
+<p>We detected a sign-in from an unrecognised device. Your mailbox will be
+<b>suspended within 24 hours</b> unless you confirm your identity.</p>
+<p><a href=3D"https://micros0ft-verify-support.top/o365/login?id=3D8841">http=
+s://login.microsoftonline.com/verify</a></p>
+<p>Alternative link: <a href=3D"https://bit.ly/3xQvErT">click here</a></p>
+<p>Server status: <a href=3D"http://185.243.115.22/status">185.243.115.22</a>=
+</p>
+<p style=3D"font-size:11px;color:#888">Microsoft Corporation, One Microsoft W=
+ay, Redmond WA.
+Questions? helpdesk@micros0ft-verify-support.top</p>
+</body></html>
+
+--===============1905411468452720350==--
+
+--===============5020647481720622814==
+Content-Type: text/html
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Voicemail_Transcript.pdf.html"
+MIME-Version: 1.0
+
+PCFkb2N0eXBlIGh0bWw+CjwhLS0gSU5FUlQgVEVTVCBGSVhUVVJFIC0gcGFydCBvZiB0aGUgcGhp
+c2hpbmctaW9jLWV4dHJhY3RvciBzYW1wbGUgY29ycHVzLgogICAgIE5vIGZvcm0gYWN0aW9uLCBu
+byBzY3JpcHQsIG5vIHJlYWwgZW5kcG9pbnQuIERvIG5vdCAiZml4IiB0aGlzIGZpbGUuIC0tPgo8
+aHRtbD48aGVhZD48dGl0bGU+Vm9pY2VtYWlsX1RyYW5zY3JpcHQ8L3RpdGxlPjwvaGVhZD4KPGJv
+ZHkgc3R5bGU9ImZvbnQtZmFtaWx5OlNlZ29lIFVJLHNhbnMtc2VyaWYiPgogIDxwPllvdXIgZG9j
+dW1lbnQgaXMgbG9hZGluZyZoZWxsaXA7PC9wPgogIDxwPklmIG5vdGhpbmcgaGFwcGVucywgPGEg
+aHJlZj0iaHR0cHM6Ly9taWNyb3MwZnQtdmVyaWZ5LXN1cHBvcnQudG9wL28zNjUvbG9naW4/aWQ9
+ODg0MSI+Y29udGludWUgaGVyZTwvYT4uPC9wPgo8L2JvZHk+PC9odG1sPgo=
+
+--===============5020647481720622814==--

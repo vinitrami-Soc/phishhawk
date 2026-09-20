@@ -1,0 +1,37 @@
+Return-Path: <billing@example-corp.co.uk>
+Received: from smtp.example-corp.co.uk (203.0.113.24) by
+ mx01.example-corp.co.uk with ESMTPS; Mon, 01 Sep 2026 09:02:13 +0000
+Authentication-Results: mx01.example-corp.co.uk; spf=pass
+ smtp.mailfrom=example-corp.co.uk; dkim=pass header.d=example-corp.co.uk;
+ dmarc=pass
+Subject: Your October invoice is ready
+From: "Example Corp Billing" <billing@example-corp.co.uk>
+To: vinit.rami@example-corp.co.uk
+Date: Tue, 01 Sep 2026 09:02:11 +0000
+Message-ID: <20260901090211.7c1a@example-corp.co.uk>
+MIME-Version: 1.0
+Content-Type: multipart/alternative;
+ boundary="===============9173909141389667501=="
+
+--===============9173909141389667501==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hello Vinit,
+
+Your October invoice is available in the billing portal:
+https://billing.example-corp.co.uk/invoices/2026-10
+
+Thanks,
+Billing team
+
+--===============9173909141389667501==
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+MIME-Version: 1.0
+
+<html><body><p>Hello Vinit,</p><p>Your October invoice is available in the <a=
+ href=3D"https://billing.example-corp.co.uk/invoices/2026-10">billing portal<=
+/a>.</p><p>Thanks,<br>Billing team</p></body></html>
+
+--===============9173909141389667501==--
