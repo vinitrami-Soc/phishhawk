@@ -1160,8 +1160,9 @@ def render_report(parsed: ParsedEmail, colour: Palette, show_all_signals: bool =
         out.append(colour(_section("HEURISTIC SIGNALS (%d)" % len(parsed.signals)), "bold"))
         shown = parsed.signals if show_all_signals else parsed.signals[:15]
         for signal in shown:
-            out.append("  [%-6s] %s"
-                       % (colour(signal.severity, _severity_colour(signal.severity)), signal.label))
+            out.append("  [%s] %s"
+                       % (colour("%-6s" % signal.severity,
+                                 _severity_colour(signal.severity)), signal.label))
         if len(shown) < len(parsed.signals):
             out.append("  ... %d more (use --verbose)" % (len(parsed.signals) - len(shown)))
 
