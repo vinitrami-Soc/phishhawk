@@ -1,0 +1,41 @@
+name: Missed phish or false positive
+description: PhishHawk got a verdict wrong on a real message
+labels: [detection]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping tune the detections. **Do not attach the email or paste its raw
+        source.** Phishing samples contain live URLs and, often, your colleagues' addresses.
+        The signals list and the verdict below are usually enough. If a maintainer needs the
+        message, they will ask for a sanitised copy.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong
+      options:
+        - A phishing email was not flagged (missed)
+        - A legitimate email was flagged (false positive)
+        - The verdict is right but a signal is wrong or misleading
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: PhishHawk output
+      description: "Paste the report from `phishhawk scan mail.eml --offline --no-color --verbose`. Remove recipient names and addresses first."
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened, and why
+      description: For a missed phish, what gave it away when you looked at it yourself?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "phishhawk --version"

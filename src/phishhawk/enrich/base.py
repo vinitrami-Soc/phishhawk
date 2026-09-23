@@ -10,7 +10,7 @@ from typing import Any
 from .. import __version__
 from ..cache import Cache
 
-USER_AGENT = "phishhawk/%s (+https://github.com/vinitrami-Soc/vinitrami-Soc.github.io)" % __version__
+USER_AGENT = "phishhawk/%s (+https://github.com/vinitrami-Soc/phishhawk)" % __version__
 CACHEABLE = ("ok", "not_found")
 
 

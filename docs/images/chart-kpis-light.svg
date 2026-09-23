@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="228" viewBox="0 0 760 228" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" role="img" aria-label="PhishHawk 1.0.0 at a glance">
+<title>PhishHawk 1.0.0 at a glance</title>
+<rect x="0.5" y="0.5" width="759" height="227" rx="12" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+<text x="28.0" y="38.0" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="start">PhishHawk 1.0.0 at a glance</text>
+<text x="28.0" y="60.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Offline evaluation: parser and heuristics only, no reputation lookups</text>
+<rect x="28.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
+<text x="44.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Real phishing flagged</text>
+<text x="44.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">71%</text>
+<text x="44.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">held-out, no API keys</text>
+<text x="44.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▲ from 70%</text>
+<rect x="207.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
+<text x="223.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">False positives</text>
+<text x="223.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">2.1%</text>
+<text x="223.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">on legitimate test mail</text>
+<text x="223.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▼ from 12.5%</text>
+<rect x="386.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
+<text x="402.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Worst-case parse</text>
+<text x="402.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">0.44 s</text>
+<text x="402.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">slowest of 615 messages</text>
+<text x="402.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▼ from 60 s</text>
+<rect x="565.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
+<text x="581.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Automated tests</text>
+<text x="581.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">156</text>
+<text x="581.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">Python 3.10 to 3.13</text>
+<text x="581.0" y="187.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">incl. evaluation gate</text>
+</svg>

@@ -1,4 +1,6 @@
 .git
+.github
+.venv
 **/__pycache__
 *.egg-info
 .pytest_cache
@@ -6,6 +8,7 @@
 tests
 samples
 docs
+tools
+eval
 build
 dist
-eval

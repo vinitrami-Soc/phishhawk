@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Render real PhishHawk runs into docs/banner.svg and docs/demo.svg.
+"""Render real PhishHawk runs into docs/images/banner.svg and docs/images/demo.svg.
 
 Runs the CLI under a pseudo-terminal so the colours are genuine, parses the
 ANSI escapes and writes a self-contained terminal-styled SVG. No screenshot
 tool, no recording software, and the image regenerates in one command:
 
-    python docs/make_demo.py                        # banner.svg + demo.svg, offline
-    VT_API_KEY=... python docs/make_demo.py --live   # demo.svg with VirusTotal lines
+    python tools/make_demo.py                        # banner.svg + demo.svg, offline
+    VT_API_KEY=... python tools/make_demo.py --live   # demo.svg with VirusTotal lines
 
 Nothing is faked: whatever the tool prints is what lands in the SVG.
 """
@@ -21,8 +21,8 @@ import select
 import subprocess
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+IMAGES = os.path.join(ROOT, "docs", "images")
 
 # Terminal theme (kept close to the portfolio's dark palette).
 BG = "#0f1319"
@@ -205,7 +205,7 @@ def main() -> int:
     for name, (arguments, title) in RECORDINGS.items():
         if args.live and name == "demo.svg":
             arguments = [a for a in arguments if a != "--offline"]
-        status |= record(arguments, title, os.path.join(HERE, name))
+        status |= record(arguments, title, os.path.join(IMAGES, name))
     return status
 
 

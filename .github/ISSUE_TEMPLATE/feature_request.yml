@@ -1,0 +1,21 @@
+name: Feature request
+description: A detection, output format or integration you would like
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The triage problem
+      description: What do you do by hand today that PhishHawk could do for you?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you would like PhishHawk to do
+    validations:
+      required: true
+  - type: textarea
+    id: attack
+    attributes:
+      label: Related ATT&CK technique or threat report (optional)
