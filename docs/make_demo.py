@@ -5,8 +5,8 @@ Runs the CLI under a pseudo-terminal so the colours are genuine, parses the
 ANSI escapes and writes a self-contained terminal-styled SVG. No screenshot
 tool, no recording software, and the image regenerates in one command:
 
-    python docs/make_demo.py                       # offline run (default)
-    VT_API_KEY=... python docs/make_demo.py --live  # keyed run, VT lines included
+    python docs/make_demo.py                        # offline run (default)
+    VT_API_KEY=... python docs/make_demo.py --live   # keyed run, VT lines included
 
 Nothing is faked: whatever the tool prints is what lands in the SVG.
 """
@@ -47,9 +47,11 @@ SGR_RE = re.compile(r"\033\[([0-9;]*)m")
 def run_under_pty(argv: list[str]) -> str:
     """Run a command with a real tty on stdout so ANSI colours are emitted."""
     master, slave = pty.openpty()
+    env = {**os.environ, "TERM": "xterm-256color", "COLUMNS": "120",
+           "PYTHONPATH": os.path.join(ROOT, "src")}
+    env.pop("NO_COLOR", None)
     proc = subprocess.Popen(argv, stdout=slave, stderr=subprocess.DEVNULL,
-                            stdin=subprocess.DEVNULL, cwd=ROOT,
-                            env={**os.environ, "TERM": "xterm-256color", "COLUMNS": "120"})
+                            stdin=subprocess.DEVNULL, cwd=ROOT, env=env)
     os.close(slave)
     chunks: list[bytes] = []
     while True:
@@ -152,18 +154,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true",
                         help="allow network enrichment (needs $VT_API_KEY)")
-    parser.add_argument("--eml", default="samples/sample_phish.eml")
+    parser.add_argument("--eml", default="samples/sample_bec_smuggling.eml")
     parser.add_argument("--out", default=os.path.join(HERE, "demo.svg"))
     args = parser.parse_args()
 
-    argv = [sys.executable, "phishing_ioc_extractor.py", args.eml]
+    # `python -m phishtriage` is exactly what the `phish-triage` command runs.
+    argv = [sys.executable, "-m", "phishtriage", args.eml]
     if not args.live:
         argv.append("--offline")
     elif not os.environ.get("VT_API_KEY") and not os.environ.get("VIRUSTOTAL_API_KEY"):
         print("warning: --live without VT_API_KEY, VirusTotal lines will be empty",
               file=sys.stderr)
 
-    title = "$ python phishing_ioc_extractor.py %s%s" % (
+    title = "$ phish-triage %s%s" % (
         args.eml, "" if args.live else " --offline")
     lines = parse_ansi(run_under_pty(argv))
     if not lines:

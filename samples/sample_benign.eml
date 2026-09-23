@@ -10,10 +10,9 @@ To: vinit.rami@example-corp.co.uk
 Date: Tue, 01 Sep 2026 09:02:11 +0000
 Message-ID: <20260901090211.7c1a@example-corp.co.uk>
 MIME-Version: 1.0
-Content-Type: multipart/alternative;
- boundary="===============9173909141389667501=="
+Content-Type: multipart/alternative; boundary="==sample_benign-0=="
 
---===============9173909141389667501==
+--==sample_benign-0==
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
@@ -25,7 +24,7 @@ https://billing.example-corp.co.uk/invoices/2026-10
 Thanks,
 Billing team
 
---===============9173909141389667501==
+--==sample_benign-0==
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 MIME-Version: 1.0
@@ -34,4 +33,4 @@ MIME-Version: 1.0
  href=3D"https://billing.example-corp.co.uk/invoices/2026-10">billing portal<=
 /a>.</p><p>Thanks,<br>Billing team</p></body></html>
 
---===============9173909141389667501==--
+--==sample_benign-0==--

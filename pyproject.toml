@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phishtriage"
+dynamic = ["version"]
+description = "Automated phishing IOC extraction, enrichment and triage for SOC analysts"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Vinit Rami" }]
+keywords = ["phishing", "soc", "dfir", "threat-intelligence", "ioc", "stix", "mitre-attack", "virustotal"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Email",
+    "Topic :: Security",
+]
+dependencies = ["requests>=2.28"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.6", "stix2>=3.0"]
+
+[project.scripts]
+phish-triage = "phishtriage.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/vinitrami-Soc/vinitrami-Soc.github.io/tree/main/phishing-ioc-extractor"
+
+[tool.setuptools.dynamic]
+version = { attr = "phishtriage.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 115
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+# %-formatting is used deliberately for defanged output templates.
+ignore = ["UP031", "UP032", "SIM108"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["phishtriage"]
+known-local-folder = ["conftest"]
