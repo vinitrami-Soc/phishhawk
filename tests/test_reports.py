@@ -5,9 +5,9 @@ import re
 
 import pytest
 
-from phishtriage.pipeline import triage_bytes, triage_file
-from phishtriage.report import console, csvout, html, markdown, stix
-from phishtriage.report.common import recommendations, to_dict
+from phishhawk.pipeline import triage_bytes, triage_file
+from phishhawk.report import console, csvout, html, markdown, stix
+from phishhawk.report.common import recommendations, to_dict
 
 from conftest import build_eml, sample
 

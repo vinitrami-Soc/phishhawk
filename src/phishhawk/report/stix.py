@@ -42,8 +42,8 @@ def _timestamp() -> str:
 def build_bundle(analyses: list[Analysis]) -> dict[str, Any]:
     now = _timestamp()
     identity = {
-        "type": "identity", "spec_version": "2.1", "id": _stix_id("identity", "phishtriage"),
-        "created": now, "modified": now, "name": "phishtriage %s" % __version__,
+        "type": "identity", "spec_version": "2.1", "id": _stix_id("identity", "phishhawk"),
+        "created": now, "modified": now, "name": "phishhawk %s" % __version__,
         "identity_class": "system",
     }
     objects: dict[str, dict[str, Any]] = {identity["id"]: identity}

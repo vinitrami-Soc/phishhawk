@@ -1,7 +1,7 @@
 import io
 import zipfile
 
-from phishtriage.parse import parse_bytes, parse_file
+from phishhawk.parse import parse_bytes, parse_file
 
 from conftest import build_eml, sample
 

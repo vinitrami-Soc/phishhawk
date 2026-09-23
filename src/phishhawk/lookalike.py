@@ -31,7 +31,7 @@ _CONFUSABLES = str.maketrans({
 # only, never unconditionally: "cl" -> "d" would mangle every "cloud".
 _MULTI_CHAR = (("rn", "m"), ("vv", "w"), ("cl", "d"))
 
-HIGH_METHODS = {"homoglyph", "typosquat", "tld-swap"}
+HIGH_METHODS = {"homoglyph", "typosquat"}
 
 
 def decode_idna(label: str) -> str:

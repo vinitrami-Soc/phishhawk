@@ -43,7 +43,7 @@ def _verdict_tone(verdict: str) -> str:
 def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     out: list[str] = []
     rule = "=" * WIDTH
-    out += [colour(rule, "cyan"), colour("  PHISHING TRIAGE REPORT", "cyan"), colour(rule, "cyan")]
+    out += [colour(rule, "cyan"), colour("  PHISHHAWK  ·  TRIAGE REPORT", "cyan"), colour(rule, "cyan")]
     out.append("File       : %s" % a.path)
     out.append("Subject    : %s" % (a.subject or "(none)"))
     out.append("Date       : %s" % (a.date or "(none)"))

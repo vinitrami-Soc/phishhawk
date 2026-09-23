@@ -1,4 +1,4 @@
-from phishtriage.pipeline import triage_bytes, triage_file
+from phishhawk.pipeline import triage_bytes, triage_file
 
 from conftest import build_eml, sample
 

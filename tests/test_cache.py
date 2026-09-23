@@ -1,4 +1,4 @@
-from phishtriage.cache import Cache
+from phishhawk.cache import Cache
 
 
 def test_round_trip_and_ttl(tmp_path):

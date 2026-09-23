@@ -43,6 +43,7 @@ from .extract import (
     refang,
     registrable_domain,
     sniff_type,
+    unwrap_link,
     urls_from_pdf,
     urls_from_text,
     usable_url,
@@ -51,6 +52,12 @@ from .knowledge import FREEMAIL
 from .models import Analysis, FileIoc, UrlIoc
 
 MAX_UNWRAP_DEPTH = 3
+BODY_TEXT_LIMIT = 30_000  # characters of visible text kept for lure matching
+_FORWARD_SUBJECT = re.compile(r"^\s*(?:fwd?|fw|enc|rv|wg|tr|i)\s*:", re.I)
+# "From: X <a@b> Sent: ..." in the forwarding languages SOC mailboxes see most.
+_INLINE_FROM = re.compile(
+    r"(?:^|\s)(?:From|De|Von|Da|Van|Från)\s*:\s*(?P<sender>[^:]{3,200}?)\s+"
+    r"(?:Sent|Date|Enviado|Enviada|Gesendet|Envoy[ée]|Fecha|Data|Datum|Inviato|Skickat)\s*:", re.I)
 MAX_ARCHIVE_MEMBERS = 200
 MAX_MEMBER_BYTES = 25 * 1024 * 1024
 MAX_ARCHIVE_TOTAL = 100 * 1024 * 1024
@@ -294,6 +301,23 @@ def _add_url(bucket: dict[str, UrlIoc], raw: str, source: str, anchor: str = "")
     url = clean_url(refang(raw))
     if not usable_url(url):
         return
+    for _ in range(3):  # Safe Links around a Google redirect around the payload, and so on
+        wrapped = unwrap_link(url)
+        if wrapped is None:
+            break
+        inner, who, kind = wrapped
+        if kind == "gateway":
+            # A mail-security rewrite: analyse what the sender actually sent.
+            source = "%s via %s" % (source, who)
+        else:
+            outer = _record(bucket, url, source, anchor)
+            outer.redirect_to, outer.wrapped_by = inner, who
+            source, anchor = "redirect target (%s)" % who, ""
+        url = inner
+    _record(bucket, url, source, anchor)
+
+
+def _record(bucket: dict[str, UrlIoc], url: str, source: str, anchor: str = "") -> UrlIoc:
     key = url.rstrip("/").lower()
     ioc = bucket.get(key)
     if ioc is None:
@@ -305,6 +329,7 @@ def _add_url(bucket: dict[str, UrlIoc], raw: str, source: str, anchor: str = "")
     anchor = " ".join((anchor or "").split())
     if anchor and anchor not in ioc.anchor_texts:
         ioc.anchor_texts.append(anchor)
+    return ioc
 
 
 def _collect(msg: Message) -> tuple[list[str], list[str], list[Message]]:
@@ -340,8 +365,7 @@ def _harvest_html(html: str, bucket: dict[str, UrlIoc], prefix: str) -> Any:
         _add_url(bucket, redirect, prefix + "redirect")
     for form in found.forms:
         _add_url(bucket, form["action"], prefix + "form-action")
-    visible = re.sub(r"<script.*?</script>|<style.*?</style>|<[^>]+>", " ", html, flags=re.S | re.I)
-    for url in urls_from_text(visible):
+    for url in urls_from_text(found.text):
         _add_url(bucket, url, prefix + "text")
     return found
 
@@ -364,8 +388,16 @@ def _read_content(msg: Message, analysis: Analysis) -> None:
 
     analysis.urls = list(bucket.values())
 
-    visible_html = [re.sub(r"<[^>]+>", " ", body) for body in html_parts]
+    visible_html = [parse_html(body).text for body in html_parts]
     analysis.zero_width_chars = sum(len(ZERO_WIDTH_RE.findall(t)) for t in text_parts + visible_html)
+    analysis.body_text = " ".join(" ".join(text_parts + visible_html).split())[:BODY_TEXT_LIMIT]
+    if _FORWARD_SUBJECT.match(analysis.subject or ""):
+        match = _INLINE_FROM.search(analysis.body_text[:6000])
+        if match:
+            display, address = email.utils.parseaddr(match.group("sender"))
+            if "@" in address:
+                analysis.forwarded_from = {"display": display, "address": address.lower(),
+                                           "domain": domain_of_address(address)}
 
     seen: list[str] = []
     for address in EMAIL_RE.findall(refang("\n".join(text_parts + html_parts))):

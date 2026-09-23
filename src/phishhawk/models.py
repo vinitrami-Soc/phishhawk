@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .extract import defang_url, registrable_domain
+from .hosting import hosting_kind
 from .knowledge import FREEMAIL, SHORTENERS, known_legit_domains
 
 SEVERITY_WEIGHT = {"high": 3, "medium": 2, "low": 1}
@@ -44,6 +45,8 @@ class UrlIoc:
     anchor_texts: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     flagged: bool = False  # true only for notes that would change triage
+    redirect_to: str = ""  # target, when this is an open redirect on a trusted domain
+    wrapped_by: str = ""   # the redirector or mail gateway that wrapped the link
     vt: dict[str, Any] | None = None
     urlscan: dict[str, Any] | None = None
 
@@ -96,6 +99,7 @@ class Analysis:
     received_hops: int = 0
     auth: dict[str, str] = field(default_factory=dict)
     reported_by: dict[str, Any] | None = None
+    forwarded_from: dict[str, str] | None = None  # original sender of an inline forward
     protected_domains: list[str] = field(default_factory=list)
     urls: list[UrlIoc] = field(default_factory=list)
     attachments: list[FileIoc] = field(default_factory=list)
@@ -103,6 +107,7 @@ class Analysis:
     body_emails: list[str] = field(default_factory=list)
     lookalikes: list[Lookalike] = field(default_factory=list)
     zero_width_chars: int = 0
+    body_text: str = field(default="", repr=False)  # visible text, capped; not exported
     ip_intel: dict[str, Any] | None = None
     domain_intel: dict[str, dict[str, Any]] = field(default_factory=dict)
     enrichment_sources: list[str] = field(default_factory=list)
@@ -117,7 +122,12 @@ class Analysis:
 
     @property
     def score(self) -> int:
-        return sum(signal.weight for signal in self.signals)
+        """Weighted sum of the signals. Low-severity signals add at most 3
+        points between them: things like a missing Authentication-Results
+        header or a bounce address at an ESP are common in legitimate mail
+        and must not add up to a verdict on their own."""
+        low = sum(1 for signal in self.signals if signal.severity == "low")
+        return sum(s.weight for s in self.signals if s.severity != "low") + min(low, 3)
 
     @property
     def techniques(self) -> list[str]:
@@ -134,9 +144,9 @@ class Analysis:
            any(vt_is_malicious(a.vt) for a in self.attachments):
             return "MALICIOUS"
         high = sum(1 for signal in self.signals if signal.severity == "high")
-        if high >= 2 or self.score >= 6:
+        if high >= 2 or (high and self.score >= 8):
             return "LIKELY PHISHING"
-        if high or self.score >= 3:
+        if high or self.score >= 4:
             return "SUSPICIOUS"
         return "NO STRONG INDICATORS"
 
@@ -167,7 +177,9 @@ class Analysis:
                 out.append({"type": kind, "value": value, "context": context})
 
         for ioc in self.urls:
-            if not self.is_trusted_domain(ioc.host):
+            # A Google Drive or Forms link is blockable as a URL even though
+            # google.com obviously is not.
+            if not self.is_trusted_domain(ioc.host) or hosting_kind(ioc.url):
                 add("url", ioc.url, ", ".join(ioc.sources))
 
         domain_roles = [(self.from_domain, "sender domain"),
@@ -176,7 +188,8 @@ class Analysis:
         domain_roles += [(ioc.host, "url host") for ioc in self.urls]
         for domain, role in domain_roles:
             base = registrable_domain(domain)
-            if not base or base in SHORTENERS or base in FREEMAIL or self.is_trusted_domain(base):
+            if (not base or base in SHORTENERS or base in FREEMAIL or self.is_trusted_domain(base)
+                    or hosting_kind("https://%s/" % domain) in ("free hosting", "file sharing")):
                 continue
             add("ipv4" if domain.replace(".", "").isdigit() else "domain", domain, role)
 

@@ -4,8 +4,8 @@ import sys
 
 import pytest
 
-from phishtriage.cache import Cache
-from phishtriage.cli import main
+from phishhawk.cache import Cache
+from phishhawk.cli import main, normalise_argv
 
 from conftest import SAMPLES, sample
 
@@ -59,14 +59,63 @@ def test_protect_flag_turns_a_lookalike_into_bec(capsys):
     assert "micros0ft.com" in payload["protected_domains"]
 
 
-def test_clear_cache(tmp_path, capsys):
+def test_cache_command(tmp_path, capsys):
     path = str(tmp_path / "c.sqlite3")
-    Cache(path).set("x", {"v": 1})
-    assert main(["--clear-cache", "--cache-path", path]) == 0
-    assert "cleared 1" in capsys.readouterr().err
+    cache = Cache(path)
+    cache.set("virustotal:url:x", {"v": 1})
+    cache.set("rdap:domain:y", {"v": 2})
+    cache.close()
+    assert main(["cache", "stats", "--cache-path", path]) == 0
+    assert "virustotal" in capsys.readouterr().out
+    assert main(["cache", "clear", "--provider", "rdap", "--cache-path", path]) == 0
+    assert "cleared 1 cached lookup(s) for rdap" in capsys.readouterr().out
+    assert main(["cache", "path", "--cache-path", path]) == 0
+    assert capsys.readouterr().out.strip() == path
 
 
-@pytest.mark.parametrize("argv", [[], ["x.eml", "--json", "-", "--csv", "-"], ["x.eml", "--html", "-"]])
+def test_doctor_reports_missing_keys_as_warnings(monkeypatch, tmp_path, capsys):
+    for name in ("VT_API_KEY", "VIRUSTOTAL_API_KEY", "ABUSEIPDB_API_KEY", "URLSCAN_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    assert main(["doctor", "--no-color"]) == 0
+    out = capsys.readouterr().out
+    assert "WARN  VirusTotal key" in out and "OK    Python" in out
+    monkeypatch.setenv("VT_API_KEY", "abcdefghijklmnop")
+    main(["doctor", "--no-color"])
+    assert "abcd…op (VT_API_KEY)" in capsys.readouterr().out  # never printed in full
+
+
+def test_techniques_command_lists_every_technique(capsys):
+    from phishhawk.attack import TECHNIQUES
+    assert main(["techniques", "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert {row["id"] for row in listed} == set(TECHNIQUES)
+    assert all(row["evidence"] for row in listed)
+
+
+def test_help_command_and_overview(capsys):
+    assert main([]) == 0
+    assert "commands:" in capsys.readouterr().out
+    assert main(["help", "scan"]) == 0
+    help_text = capsys.readouterr().out
+    assert "exit codes:" in help_text and "VT_API_KEY" in help_text and "examples:" in help_text
+
+
+@pytest.mark.parametrize("argv, expected", [
+    (["mail.eml"], ["scan", "mail.eml"]),
+    (["--offline", "mail.eml"], ["scan", "--offline", "mail.eml"]),
+    (["-"], ["scan", "-"]),
+    (["doctor"], ["doctor"]),
+    (["--no-banner", "doctor"], ["--no-banner", "doctor"]),
+    (["-h"], ["-h"]),
+    ([], []),
+])
+def test_scan_is_the_default_command(argv, expected):
+    assert normalise_argv(argv) == expected
+
+
+@pytest.mark.parametrize("argv", [["scan"], ["x.eml", "--json", "-", "--csv", "-"], ["x.eml", "--html", "-"],
+                                  ["scan", "--no-such-flag"]])
 def test_argument_errors(argv):
     with pytest.raises(SystemExit) as error:
         main(argv + ["--offline"])

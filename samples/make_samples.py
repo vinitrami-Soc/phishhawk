@@ -15,7 +15,7 @@ from email.message import EmailMessage
 from email.parser import BytesParser
 
 OUT = os.path.dirname(os.path.abspath(__file__))
-BANNER = "INERT TEST FIXTURE - phishtriage sample corpus. No working endpoint, no payload."
+BANNER = "INERT TEST FIXTURE - phishhawk sample corpus. No working endpoint, no payload."
 
 
 def fix_boundaries(msg: EmailMessage, name: str) -> None:
@@ -39,7 +39,7 @@ def write(msg: EmailMessage, filename: str) -> bytes:
 
 # ---------------------------------------------------------------- 1. phish --
 ATTACHMENT = """<!doctype html>
-<!-- INERT TEST FIXTURE - part of the phishing-ioc-extractor sample corpus.
+<!-- INERT TEST FIXTURE - part of the phishhawk sample corpus.
      No form action, no script, no real endpoint. Do not "fix" this file. -->
 <html><head><title>Voicemail_Transcript</title></head>
 <body style="font-family:Segoe UI,sans-serif">

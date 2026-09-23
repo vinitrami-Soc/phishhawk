@@ -3,6 +3,7 @@ hitting fifty inboxes) does not burn the 500-a-day VirusTotal quota."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -13,7 +14,7 @@ from typing import Any
 
 def default_cache_path() -> str:
     base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-    return os.path.join(base, "phishtriage", "lookups.sqlite3")
+    return os.path.join(base, "phishhawk", "lookups.sqlite3")
 
 
 class Cache:
@@ -22,6 +23,7 @@ class Cache:
 
     def __init__(self, path: str | None, ttl_hours: float = 24.0,
                  clock: Callable[[], float] = time.time) -> None:
+        self.path = path or ""
         self.ttl = max(0.0, ttl_hours) * 3600
         self.clock = clock
         self.hits = 0
@@ -67,12 +69,34 @@ class Cache:
         except sqlite3.Error:
             pass
 
-    def purge(self) -> int:
+    def purge(self, provider: str | None = None) -> int:
+        """Delete every entry, or only one provider's ("virustotal", "rdap", ...)."""
         if self._conn is None:
             return 0
-        removed = self._conn.execute("DELETE FROM lookups").rowcount
+        if provider:
+            cursor = self._conn.execute("DELETE FROM lookups WHERE key LIKE ?", (provider + ":%",))
+        else:
+            cursor = self._conn.execute("DELETE FROM lookups")
         self._conn.commit()
-        return removed
+        return cursor.rowcount
+
+    def stats(self) -> dict[str, object]:
+        """Entry counts per provider, how many are still fresh, and file size."""
+        info: dict[str, object] = {"path": self.path, "enabled": self.enabled, "entries": 0,
+                                   "fresh": 0, "providers": {}, "bytes": 0}
+        if self._conn is None:
+            return info
+        now = self.clock()
+        providers: dict[str, int] = {}
+        fresh = 0
+        for key, stored in self._conn.execute("SELECT key, stored FROM lookups"):
+            name = key.split(":", 1)[0]
+            providers[name] = providers.get(name, 0) + 1
+            fresh += now - stored <= self.ttl
+        info.update(entries=sum(providers.values()), fresh=fresh, providers=providers)
+        with contextlib.suppress(OSError):
+            info["bytes"] = os.path.getsize(self.path)
+        return info
 
     def close(self) -> None:
         if self._conn is not None:

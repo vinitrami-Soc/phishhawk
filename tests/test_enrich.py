@@ -2,11 +2,11 @@ import datetime as dt
 
 import pytest
 
-from phishtriage.cache import Cache
-from phishtriage.enrich import AbuseIPDB, Enricher, RateLimiter, Rdap, UrlScan, VirusTotal
-from phishtriage.models import vt_is_malicious, vt_is_suspicious
-from phishtriage.pipeline import triage_file
-from phishtriage.report.common import summary_sentences
+from phishhawk.cache import Cache
+from phishhawk.enrich import AbuseIPDB, Enricher, RateLimiter, Rdap, UrlScan, VirusTotal
+from phishhawk.models import vt_is_malicious, vt_is_suspicious
+from phishhawk.pipeline import triage_file
+from phishhawk.report.common import summary_sentences
 
 from conftest import FakeResponse, FakeSession, sample, vt_stats
 
