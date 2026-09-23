@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="254" viewBox="0 0 760 254" font-family="system-ui,-apple-system,'Segoe UI',Roboto,sans-serif" role="img" aria-label="Where every message landed">
+<title>Where every message landed</title>
+<rect x="0.5" y="0.5" width="759" height="253" rx="12" fill="#fcfcfb" stroke="rgba(11,11,11,0.10)"/>
+<text x="28.0" y="38.0" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="start">Where every message landed</text>
+<text x="28.0" y="60.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Verdicts from offline scans; &#x27;not flagged&#x27; is the right answer only for legitimate mail</text>
+<circle cx="33.0" cy="86.0" r="5" fill="#1c5cab"/>
+<text x="44.0" y="90.0" fill="#52514e" font-size="12" font-weight="400" text-anchor="start">Likely phishing</text>
+<circle cx="178.5" cy="86.0" r="5" fill="#86b6ef"/>
+<text x="189.5" y="90.0" fill="#52514e" font-size="12" font-weight="400" text-anchor="start">Suspicious</text>
+<circle cx="289.5" cy="86.0" r="5" fill="#898781"/>
+<text x="300.5" y="90.0" fill="#52514e" font-size="12" font-weight="400" text-anchor="start">Not flagged</text>
+<text x="28.0" y="126.5" fill="#52514e" font-size="13" font-weight="400" text-anchor="start">Held-out phishing (200)</text>
+<path d="M200.0 110.0 h160.3 v24 h-160.3 z" fill="#1c5cab"/>
+<text x="210.0" y="126.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">61 likely phishing</text>
+<path d="M362.3 110.0 h213.5 v24 h-213.5 z" fill="#86b6ef"/>
+<text x="372.3" y="126.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">81 suspicious</text>
+<path d="M577.7 110.0 h150.3 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-150.3 z" fill="#898781"/>
+<text x="587.7" y="126.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">58 not flagged</text>
+<text x="28.0" y="172.5" fill="#52514e" font-size="13" font-weight="400" text-anchor="start">Tuning phishing (200)</text>
+<path d="M200.0 156.0 h139.0 v24 h-139.0 z" fill="#1c5cab"/>
+<text x="210.0" y="172.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">53</text>
+<path d="M341.0 156.0 h287.9 v24 h-287.9 z" fill="#86b6ef"/>
+<text x="351.0" y="172.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">109 suspicious</text>
+<path d="M630.9 156.0 h97.1 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-97.1 z" fill="#898781"/>
+<text x="640.9" y="172.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">38</text>
+<text x="28.0" y="218.5" fill="#52514e" font-size="13" font-weight="400" text-anchor="start">Legitimate mail (48)</text>
+<path d="M200.0 202.0 h9.1 v24 h-9.1 z" fill="#86b6ef"/>
+<path d="M211.1 202.0 h516.9 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-516.9 z" fill="#898781"/>
+<text x="221.1" y="218.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">47 not flagged</text>
+</svg>

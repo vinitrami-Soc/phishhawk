@@ -84,8 +84,13 @@ def summarise(rows: list[dict]) -> dict:
         entry = scenarios.setdefault(r["scenario"], {"label": r["label"], "n": 0, "flagged": 0})
         entry["n"] += 1
         entry["flagged"] += r["verdict"] in FLAGGED
+    verdicts: dict[str, dict[str, int]] = {}
+    for r in rows:
+        bucket = verdicts.setdefault(r["label"], {})
+        bucket[r["verdict"]] = bucket.get(r["verdict"], 0) + 1
     return {
         "emails": len(rows),
+        "verdicts": verdicts,
         "phish": sum(r["label"] == "phish" for r in rows),
         "benign": sum(r["label"] == "benign" for r in rows),
         "errors": [r for r in rows if r["error"]],
