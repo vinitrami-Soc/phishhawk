@@ -21,14 +21,19 @@ from .extract import (
     registrable_domain,
     urls_from_text,
 )
+from .hosting import hosting_kind
 from .knowledge import (
+    ACCOUNT_CONTEXT,
     ARCHIVE_EXTENSIONS,
     BRANDS,
     CREDENTIAL_WORDS,
+    FREEMAIL,
+    LURES,
+    ORG_WORDS,
     RISKY_EXTENSIONS,
     SHORTENERS,
     SUSPICIOUS_TLDS,
-    URGENCY_WORDS,
+    TOKEN_ONLY_BRANDS,
 )
 from .lookalike import HIGH_METHODS, find_lookalikes
 from .models import Analysis, vt_is_malicious, vt_is_suspicious
@@ -45,6 +50,7 @@ def analyse(analysis: Analysis) -> Analysis:
     _urls(analysis)
     _attachments(analysis)
     _body(analysis)
+    _language(analysis)
     return analysis
 
 
@@ -65,9 +71,33 @@ def _authentication(a: Analysis) -> None:
 
 def _brand_claimed(display: str, from_domain: str) -> str:
     lowered = (display or "").lower()
+    squashed = re.sub(r"[^a-z0-9]", "", lowered)  # "Trust-Wallet", "Pay Pal" -> trustwallet, paypal
     base = registrable_domain(from_domain)
     for brand, legit in BRANDS.items():
-        if re.search(r"\b%s\b" % re.escape(brand), lowered) and base and base not in legit:
+        named = re.search(r"\b%s\b" % re.escape(brand), lowered) or \
+            (brand not in TOKEN_ONLY_BRANDS and len(brand) >= 5 and brand in squashed)
+        if named and base and base not in legit:
+            return brand
+    return ""
+
+
+def _brand_tokens(text: str) -> set[str]:
+    lowered = (text or "").lower()
+    return set(re.split(r"[^a-z0-9]+", lowered)) | {lowered.replace(" ", "")}
+
+
+def _subject_brand(a: Analysis) -> str:
+    """A brand the subject names in an account/transaction context, when
+    nothing about the message actually belongs to that brand."""
+    subject = (a.subject or "").lower()
+    tokens = set(re.split(r"[^a-z0-9-]+", subject))
+    if not tokens & ACCOUNT_CONTEXT and "sign-in" not in subject:
+        return ""
+    squashed = re.sub(r"[^a-z0-9]", "", subject)
+    domains = {registrable_domain(a.from_domain)} | {ioc.domain for ioc in a.urls}
+    for brand, legit in BRANDS.items():
+        named = brand in tokens if brand in TOKEN_ONLY_BRANDS or len(brand) < 5 else brand in squashed
+        if named and not domains & legit:
             return brand
     return ""
 
@@ -90,10 +120,29 @@ def _sender(a: Analysis) -> None:
         a.add_signal("medium", "display name shows a different address (%s)"
                      % defang_host(shown.group(0).lower()), ("T1656",))
 
-    subject = (a.subject or "").lower()
-    hits = sorted(word for word in URGENCY_WORDS if word in subject)
-    if hits:
-        a.add_signal("low", "urgency wording in subject: %s" % ", ".join(hits[:3]), ("T1566",))
+    base = registrable_domain(a.from_domain)
+    display_tokens = set(re.split(r"[^a-z0-9]+", (a.from_display or "").lower()))
+    if base in FREEMAIL and (display_tokens & ORG_WORDS or display_tokens & set(BRANDS)):
+        a.add_signal("medium", "display name '%s' reads as an organisation but the address is free-mail (%s)"
+                     % (a.from_display[:40], base), ("T1656",))
+
+    subject_brand = _subject_brand(a)
+    if subject_brand and subject_brand != brand:
+        credential_ask = _lure_hits(a).get("credential") or _lure_hits(a).get("foreign-language")
+        severity = "high" if credential_ask and a.urls else "medium"
+        a.add_signal(severity, "subject poses as a %s notice, but neither the sender nor any link is %s"
+                     % (subject_brand, subject_brand), ("T1656",))
+
+    original = a.forwarded_from
+    if original:
+        claimed = _brand_claimed(original["display"], original["domain"])
+        if claimed:
+            a.add_signal("high", "forwarded original: display name claims '%s' but the address is %s"
+                         % (claimed, defang_host(original["address"])), ("T1656",))
+        tokens = set(re.split(r"[^a-z0-9]+", original["display"].lower()))
+        if registrable_domain(original["domain"]) in FREEMAIL and tokens & (ORG_WORDS | set(BRANDS)):
+            a.add_signal("medium", "forwarded original: '%s' writes from free-mail (%s)"
+                         % (original["display"][:40], registrable_domain(original["domain"])), ("T1656",))
 
 
 def _lookalikes(a: Analysis) -> None:
@@ -110,7 +159,12 @@ def _lookalikes(a: Analysis) -> None:
             seen.add(key)
             a.lookalikes.append(hit)
             own = hit.target in protected
-            severity = "high" if hit.method in HIGH_METHODS or own or hit.method == "subdomain" else "medium"
+            if hit.method == "tld-swap":  # organisations often own several TLDs of their name
+                severity = "medium"
+            elif hit.method in HIGH_METHODS or own or hit.method == "subdomain":
+                severity = "high"
+            else:
+                severity = "medium"
             techniques = ("T1583.001", "T1656") + (("T1036",) if hit.method == "homoglyph" else ())
             whose = "YOUR domain " if own else ""
             a.add_signal(severity, "%s domain %s is a %s lookalike of %s%s"
@@ -179,6 +233,20 @@ def _urls(a: Analysis) -> None:
                 break
         if not trusted and any(" atob-decoded" in s for s in ioc.sources):
             ioc.flagged = True
+        if ioc.redirect_to:
+            target = host_of(ioc.redirect_to)
+            ioc.notes.append("%s redirects to %s" % (ioc.wrapped_by, defang_host(target)))
+            if not a.is_trusted_domain(target):
+                ioc.flagged = True
+                a.add_signal("medium", "%s hides the real destination: %s"
+                             % (ioc.wrapped_by, defang_host(target)), ("T1608.005",))
+        kind = hosting_kind(ioc.url)
+        if kind:
+            ioc.notes.append("%s host" % kind)
+            if kind == "tunnel or IPFS":
+                ioc.flagged = True
+            a.add_signal("medium" if kind == "tunnel or IPFS" else "low",
+                         "link to %s: %s" % (kind, defang_host(host)), ("T1583.006",))
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +345,97 @@ def _body(a: Analysis) -> None:
                      % a.zero_width_chars, ("T1027",))
     if not a.urls and not [f for f in a.attachments if not f.inline]:
         a.add_signal("low", "no URLs or attachments: possible BEC or reply-chain lure", ("T1656",))
+
+
+# ---------------------------------------------------------------------------
+# Language: lure phrases, callback phishing, hash-busting
+# ---------------------------------------------------------------------------
+
+_PHONE_RE = re.compile(r"(?<![\w.])\+?\(?\d{1,4}\)?(?:[\s.-]?\(?\d{2,4}\)?){2,4}(?![\w.])")
+_TOKEN_RE = re.compile(r"\b[A-Za-z0-9]{12,40}\b")
+SEVERE_LURES = {"advance-fee", "extortion"}
+
+
+def _case_flips(token: str) -> int:
+    return sum(1 for x, y in zip(token, token[1:], strict=False) if x.islower() and y.isupper())
+
+
+_SPACED_LETTERS_RE = re.compile(r"(?:\b[^\W\d_] ){10,}")
+_EMAIL_GREETING_RE = re.compile(
+    r"\b(?:dear|hello|hi|hey|ol[aá]|hola|hallo|bonjour|prezado|caro|estimado)\b[\s,]{0,3}"
+    r"[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){0,4}", re.I)
+
+
+def _lure_hits(a: Analysis) -> dict[str, list[str]]:
+    cached = getattr(a, "_lure_cache", None)
+    if cached is not None:
+        return cached
+    text = ("%s\n%s" % (a.subject, a.body_text)).lower()
+    squeezed = re.sub(r"\s+", "", text)
+    hits: dict[str, list[str]] = {}
+    for category, phrases in LURES.items():
+        found = [p for p in phrases if p in text or (" " in p and p.replace(" ", "") in squeezed)]
+        if found:
+            hits[category] = found
+    a._lure_cache = hits  # noqa: SLF001 - analysis-scoped memo, not a dataclass field
+    return hits
+
+
+def _language(a: Analysis) -> None:
+    hits = _lure_hits(a)
+
+    for category, found in hits.items():
+        if category in ("callback", "qr-code"):
+            continue
+        if category in SEVERE_LURES:
+            severity = "high" if len(found) >= 2 else "medium"
+        elif category == "prize":
+            severity = "medium" if len(found) >= 2 else "low"
+        else:
+            severity = "medium" if len(found) >= 2 else "low"
+        a.add_signal(severity, "%s lure wording: %s" % (category, ", ".join(found[:3])), ("T1566",))
+
+    # Callback phishing (TOAD): a fake renewal or order plus a phone number to
+    # ring, usually with no link at all for a filter to inspect.
+    phones = [p for p in _PHONE_RE.findall(a.body_text) if sum(ch.isdigit() for ch in p) >= 10]
+    if hits.get("callback") and phones:
+        severity = "high" if not a.urls or registrable_domain(a.from_domain) in FREEMAIL else "medium"
+        a.add_signal(severity, "callback-phishing pattern: %s, and a number to call (%s)"
+                     % (hits["callback"][0], phones[0].strip()), ("T1566", "T1656"))
+
+    # Quishing: the link is inside an image, so there is no URL to inspect.
+    # The tell is the instruction to scan plus an image and nothing clickable.
+    images = [f for f in a.attachments
+              if f.content_type.startswith("image/") or f.true_type in ("png", "jpeg", "gif")]
+    if hits.get("qr-code") and images:
+        severity = "high" if not a.urls and (hits.get("credential") or "mfa" in a.body_text.lower()
+                                               or "authenticat" in a.body_text.lower()) else "medium"
+        a.add_signal(severity, "QR-code lure: '%s' with an image and %s" % (
+            hits["qr-code"][0], "no clickable link" if not a.urls else "few links"), ("T1566.002",))
+
+    # BEC from free-mail: a payment or gift-card request from an outside
+    # personal address, with nothing clickable for a gateway to judge.
+    money = hits.get("payment") or [p for p in hits.get("prize", []) if "gift card" in p]
+    if money and registrable_domain(a.from_domain) in FREEMAIL and not a.urls:
+        a.add_signal("medium", "free-mail sender asks for money (%s): business email compromise pattern"
+                     % money[0], ("T1656",))
+
+    spaced = _SPACED_LETTERS_RE.search(a.body_text)
+    if spaced:
+        a.add_signal("medium", "text split into single letters to dodge keyword filters: '%s...'"
+                     % spaced.group(0)[:30], ("T1027",))
+    if _EMAIL_GREETING_RE.search(a.body_text[:600]):
+        a.add_signal("low", "greets the recipient by email address instead of by name", ("T1566",))
+
+    # Hash-busting: random mixed-case tokens make every copy of a campaign unique.
+    for token in _TOKEN_RE.findall(a.subject or ""):
+        if _case_flips(token) >= 4 and sum(ch.islower() for ch in token) >= 3:
+            a.add_signal("low", "random token in subject (filter evasion): %s" % token, ("T1027",))
+            break
+    recipients = {address.lower() for address in EMAIL_RE.findall(a.to or "")}
+    recipients |= {m.lower() for m in re.findall(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*", a.to or "")}
+    if any(address and address in (a.subject or "").lower() for address in recipients):
+        a.add_signal("low", "recipient's address pasted into the subject (mail-merge lure)", ("T1566",))
 
 
 # ---------------------------------------------------------------------------

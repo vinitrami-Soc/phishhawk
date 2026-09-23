@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Render a real run of the extractor into docs/demo.svg.
+"""Render real PhishHawk runs into docs/banner.svg and docs/demo.svg.
 
 Runs the CLI under a pseudo-terminal so the colours are genuine, parses the
 ANSI escapes and writes a self-contained terminal-styled SVG. No screenshot
 tool, no recording software, and the image regenerates in one command:
 
-    python docs/make_demo.py                        # offline run (default)
-    VT_API_KEY=... python docs/make_demo.py --live   # keyed run, VT lines included
+    python docs/make_demo.py                        # banner.svg + demo.svg, offline
+    VT_API_KEY=... python docs/make_demo.py --live   # demo.svg with VirusTotal lines
 
 Nothing is faked: whatever the tool prints is what lands in the SVG.
 """
@@ -44,13 +44,13 @@ PAD_X, PAD_TOP, PAD_BOTTOM, CHROME_H = 18.0, 14.0, 16.0, 32.0
 SGR_RE = re.compile(r"\033\[([0-9;]*)m")
 
 
-def run_under_pty(argv: list[str]) -> str:
-    """Run a command with a real tty on stdout so ANSI colours are emitted."""
+def run_under_pty(argv: list[str], with_stderr: bool = True) -> str:
+    """Run a command with a real tty so colours and the banner are genuine."""
     master, slave = pty.openpty()
-    env = {**os.environ, "TERM": "xterm-256color", "COLUMNS": "120",
+    env = {**os.environ, "TERM": "xterm-256color", "COLUMNS": "96",
            "PYTHONPATH": os.path.join(ROOT, "src")}
     env.pop("NO_COLOR", None)
-    proc = subprocess.Popen(argv, stdout=slave, stderr=subprocess.DEVNULL,
+    proc = subprocess.Popen(argv, stdout=slave, stderr=slave if with_stderr else subprocess.DEVNULL,
                             stdin=subprocess.DEVNULL, cwd=ROOT, env=env)
     os.close(slave)
     chunks: list[bytes] = []
@@ -73,8 +73,23 @@ def run_under_pty(argv: list[str]) -> str:
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
+def xterm_hex(index: int) -> str:
+    """Hex colour for an xterm-256 palette index."""
+    if index < 16:
+        base = ["#1c1f26", "#ff6b6b", "#3ddc97", "#ffc24b", "#5aa9ff", "#c792ea", "#5ce1e6", "#d5dbe5",
+                "#5c6370", "#ff8787", "#69f0ae", "#ffd479", "#82b1ff", "#dda0f7", "#84ffff", "#ffffff"]
+        return base[index]
+    if index < 232:
+        levels = [0, 95, 135, 175, 215, 255]
+        index -= 16
+        return "#%02x%02x%02x" % (levels[index // 36], levels[index // 6 % 6], levels[index % 6])
+    grey = 8 + 10 * (index - 232)
+    return "#%02x%02x%02x" % (grey, grey, grey)
+
+
 def parse_ansi(text: str) -> list[list[tuple[str, str, bool, bool]]]:
-    """-> lines of (text, colour, bold, dim) spans."""
+    """-> lines of (text, colour, bold, dim) spans. Understands the 8 basic
+    colours plus xterm-256 foregrounds (38;5;N)."""
     lines: list[list[tuple[str, str, bool, bool]]] = []
     colour, bold, dim = FG, False, False
     for raw_line in text.replace("\r\n", "\n").replace("\r", "").split("\n"):
@@ -83,7 +98,14 @@ def parse_ansi(text: str) -> list[list[tuple[str, str, bool, bool]]]:
         for match in SGR_RE.finditer(raw_line):
             if match.start() > position:
                 spans.append((raw_line[position:match.start()], colour, bold, dim))
-            for code in (match.group(1) or "0").split(";"):
+            codes = (match.group(1) or "0").split(";")
+            i = 0
+            while i < len(codes):
+                code = codes[i]
+                if code == "38" and i + 2 < len(codes) and codes[i + 1] == "5":
+                    colour = xterm_hex(int(codes[i + 2]))
+                    i += 3
+                    continue
                 if code in ("", "0"):
                     colour, bold, dim = FG, False, False
                 elif code == "1":
@@ -92,6 +114,7 @@ def parse_ansi(text: str) -> list[list[tuple[str, str, bool, bool]]]:
                     dim = True
                 elif code in COLOURS:
                     colour = COLOURS[code]
+                i += 1
             position = match.end()
         if position < len(raw_line):
             spans.append((raw_line[position:], colour, bold, dim))
@@ -150,35 +173,40 @@ def to_svg(lines, title: str) -> str:
     return "".join(out)
 
 
+RECORDINGS = {
+    # output file: (arguments after `phishhawk`, window title)
+    "banner.svg": ([], "phishhawk"),
+    "demo.svg": (["scan", "samples/sample_bec_smuggling.eml", "--offline", "--no-banner"],
+                 "sample_bec_smuggling.eml"),
+}
+
+
+def record(args: list[str], title: str, out: str) -> int:
+    argv = [sys.executable, "-m", "phishhawk", *args]
+    lines = parse_ansi(run_under_pty(argv))
+    if not lines:
+        print("error: no output captured for %s" % out, file=sys.stderr)
+        return 1
+    prompt = "$ phishhawk %s" % " ".join(args) if args else "$ phishhawk"
+    lines.insert(0, [(prompt.rstrip(), "#3ddc97", True, False)])
+    lines.insert(1, [("", FG, False, False)])
+    with open(out, "w", encoding="utf-8") as handle:
+        handle.write(to_svg(lines, title))
+    print("wrote %s (%d lines)" % (os.path.relpath(out, ROOT), len(lines)))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true",
-                        help="allow network enrichment (needs $VT_API_KEY)")
-    parser.add_argument("--eml", default="samples/sample_bec_smuggling.eml")
-    parser.add_argument("--out", default=os.path.join(HERE, "demo.svg"))
+                        help="record demo.svg with network enrichment (needs $VT_API_KEY)")
     args = parser.parse_args()
-
-    # `python -m phishtriage` is exactly what the `phish-triage` command runs.
-    argv = [sys.executable, "-m", "phishtriage", args.eml]
-    if not args.live:
-        argv.append("--offline")
-    elif not os.environ.get("VT_API_KEY") and not os.environ.get("VIRUSTOTAL_API_KEY"):
-        print("warning: --live without VT_API_KEY, VirusTotal lines will be empty",
-              file=sys.stderr)
-
-    title = "$ phish-triage %s%s" % (
-        args.eml, "" if args.live else " --offline")
-    lines = parse_ansi(run_under_pty(argv))
-    if not lines:
-        print("error: no output captured", file=sys.stderr)
-        return 1
-    lines.insert(0, [(title, "#3ddc97", True, False)])
-    lines.insert(1, [("", FG, False, False)])
-
-    with open(args.out, "w", encoding="utf-8") as handle:
-        handle.write(to_svg(lines, os.path.basename(args.eml)))
-    print("wrote %s (%d lines)" % (args.out, len(lines)))
-    return 0
+    status = 0
+    for name, (arguments, title) in RECORDINGS.items():
+        if args.live and name == "demo.svg":
+            arguments = [a for a in arguments if a != "--offline"]
+        status |= record(arguments, title, os.path.join(HERE, name))
+    return status
 
 
 if __name__ == "__main__":

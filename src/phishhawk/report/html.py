@@ -263,7 +263,7 @@ def _section(a: Analysis, anchor: str) -> str:
 
 def render(analyses: list[Analysis]) -> str:
     title = "Phishing triage" if len(analyses) != 1 else "Phishing triage: %s" % analyses[0].verdict
-    body = ['<div class="wrap"><header class="top"><div class="brand">phishtriage <span>v%s</span></div>'
+    body = ['<div class="wrap"><header class="top"><div class="brand">phishhawk <span>v%s</span></div>'
             '<div class="gen">Generated %s</div></header>' % (__version__, utc_now())]
     if len(analyses) > 1:
         rows = ['<tr><td><a href="#msg-%d">%s</a></td><td>%s</td><td>%d</td></tr>' % (

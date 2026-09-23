@@ -154,6 +154,7 @@ def technique_rows(analysis: Analysis) -> list[dict[str, Any]]:
 
 def to_dict(analysis: Analysis) -> dict[str, Any]:
     payload = asdict(analysis)
+    payload.pop("body_text", None)  # message content stays out of exported reports
     payload["score"] = analysis.score
     payload["verdict"] = analysis.verdict
     payload["techniques"] = [{k: v for k, v in row.items()} for row in technique_rows(analysis)]

@@ -1,6 +1,6 @@
 import pytest
 
-from phishtriage.lookalike import decode_idna, edit_distance, find_lookalikes, skeletons
+from phishhawk.lookalike import decode_idna, edit_distance, find_lookalikes, skeletons
 
 
 @pytest.mark.parametrize("domain, protected, target, method", [

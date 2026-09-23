@@ -1,6 +1,6 @@
 import pytest
 
-from phishtriage.extract import (
+from phishhawk.extract import (
     defang_url,
     parse_html,
     refang,

@@ -10,7 +10,7 @@ from typing import Any
 from .. import __version__
 from ..cache import Cache
 
-USER_AGENT = "phishtriage/%s (+https://github.com/vinitrami-Soc/vinitrami-Soc.github.io)" % __version__
+USER_AGENT = "phishhawk/%s (+https://github.com/vinitrami-Soc/vinitrami-Soc.github.io)" % __version__
 CACHEABLE = ("ok", "not_found")
 
 
@@ -40,7 +40,7 @@ def new_session() -> Any:
         import requests
     except ImportError as exc:  # pragma: no cover - depends on the environment
         raise RuntimeError("enrichment needs the 'requests' package "
-                           "(pip install phishtriage) - or run with --offline") from exc
+                           "(pip install phishhawk) - or run with --offline") from exc
     session = requests.Session()
     session.headers["User-Agent"] = USER_AGENT
     return session
