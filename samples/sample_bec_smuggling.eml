@@ -1,0 +1,72 @@
+Return-Path: <it-servicedesk@examp1e-corp.co.uk>
+Received: from mail.examp1e-corp.co.uk (mail.examp1e-corp.co.uk
+ [45.148.10.77]) by mx01.example-corp.co.uk with ESMTPS; Mon, 22 Sep 2026
+ 09:12:44 +0000
+Authentication-Results: mx01.example-corp.co.uk; spf=pass
+ smtp.mailfrom=examp1e-corp.co.uk; dkim=pass header.d=examp1e-corp.co.uk;
+ dmarc=pass
+Subject: Urgent: password expires today - payroll review shared with you
+From: "IT Service Desk" <it-servicedesk@examp1e-corp.co.uk>
+To: vinit.rami@example-corp.co.uk
+Date: Tue, 22 Sep 2026 09:12:40 +0000
+Message-ID: <9b1e0c55-0a3f-4c7e-b2d1-77c2e8f1a904@examp1e-corp.co.uk>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==sample_bec_smuggling-0=="
+
+--==sample_bec_smuggling-0==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hi,
+
+Your pass=E2=80=8Bword ex=E2=80=8Bpires today. The Q3 payroll re=E2=80=8Bview=
+ has been shared with you - open the attached document and sign in to keep ac=
+cess.
+
+IT Service Desk
+
+--==sample_bec_smuggling-0==
+Content-Type: text/html
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Shared_Document.htm"
+MIME-Version: 1.0
+
+PCFkb2N0eXBlIGh0bWw+CjwhLS0gSU5FUlQgVEVTVCBGSVhUVVJFIC0gcGhpc2h0cmlhZ2Ugc2Ft
+cGxlIGNvcnB1cy4gTm8gd29ya2luZyBlbmRwb2ludCwgbm8gcGF5bG9hZC4gLS0+CjxodG1sPjxo
+ZWFkPjx0aXRsZT5TaGFyZWQgZG9jdW1lbnQ8L3RpdGxlPjwvaGVhZD48Ym9keT4KPGgzPkV4YW1w
+bGUgQ29ycCBTaGFyZVBvaW50PC9oMz4KPHA+U2lnbiBpbiB0byB2aWV3IHRoZSBzaGFyZWQgcGF5
+cm9sbCByZXZpZXcuPC9wPgo8Zm9ybSBhY3Rpb249Imh0dHBzOi8vc3NvLmV4YW1wMWUtY29ycC50
+b3Avb3dhL2F1dGgiIG1ldGhvZD0icG9zdCI+CiAgPGlucHV0IHR5cGU9ImVtYWlsIiBuYW1lPSJ1
+Ij48aW5wdXQgdHlwZT0icGFzc3dvcmQiIG5hbWU9InAiPjxidXR0b24+U2lnbiBpbjwvYnV0dG9u
+Pgo8L2Zvcm0+CjxzY3JpcHQ+CiAgLy8gQ2xhc3NpYyBzbXVnZ2xpbmcgc2hhcGUsIHdpdGggYW4g
+aW5lcnQgc3RyaW5nIHdoZXJlIGEgcGF5bG9hZCB3b3VsZCBiZS4KICB2YXIgdGFyZ2V0ID0gYXRv
+YigiYUhSMGNITTZMeTltYVd4bGN5NWxlR0Z0Y0RGbExXTnZjbkF1ZEc5d0wzTm9ZWEpsTDFFekxY
+QmhlWEp2Ykd3dGNtVjJhV1YzIik7CiAgdmFyIGJsb2IgPSBuZXcgQmxvYihbImluZXJ0IGZpeHR1
+cmUiXSwge3R5cGU6ICJ0ZXh0L3BsYWluIn0pOwogIHZhciBsaW5rID0gVVJMLmNyZWF0ZU9iamVj
+dFVSTChibG9iKTsKPC9zY3JpcHQ+CjwvYm9keT48L2h0bWw+Cg==
+
+--==sample_bec_smuggling-0==
+Content-Type: application/zip
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Invoice_0923.zip"
+MIME-Version: 1.0
+
+UEsDBBQAAAAIAABINl0nT5DAUwAAAFQAAAATAAAASW52b2ljZV8wOTIzLnBkZi5qcwXBQQqAIBAF
+0H2n+AcoO4WBGxdm0FZSVDJn0CK6fe/NM5SWxsLK1WJRu92MxAROuae7ZRcDuru4BBzU+OkCmvBS
+O3ONCNUz5XqPqAR2XyHnxfADUEsDBBQAAAAIAABINl3NMZb7UAAAAFEAAAAKAAAAcmVhZG1lLnR4
+dAXBQQqAIBAF0H2n+Acob2HgxoUZtJUUlcwZ1Ihu33tKS2Nh5WaxqsPuRmIBp9zTaNnFgO5uLgEn
+NX66gCa81K5cI0L1TLmOGZXA7ivkvJh+UEsBAhQDFAAAAAgAAEg2XSdPkMBTAAAAVAAAABMAAAAA
+AAAAAAAAAIABAAAAAEludm9pY2VfMDkyMy5wZGYuanNQSwECFAMUAAAACAAASDZdzTGW+1AAAABR
+AAAACgAAAAAAAAAAAAAAgAGEAAAAcmVhZG1lLnR4dFBLBQYAAAAAAgACAHkAAAD8AAAAAAA=
+
+--==sample_bec_smuggling-0==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="Scan_0922.pdf"
+MIME-Version: 1.0
+
+PGh0bWw+PCEtLSBJTkVSVCBURVNUIEZJWFRVUkUgLSBwaGlzaHRyaWFnZSBzYW1wbGUgY29ycHVz
+LiBObyB3b3JraW5nIGVuZHBvaW50LCBubyBwYXlsb2FkLiAtLT48Ym9keT5zY2FuPC9ib2R5Pjwv
+aHRtbD4K
+
+--==sample_bec_smuggling-0==--

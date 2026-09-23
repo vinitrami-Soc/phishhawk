@@ -1,3 +1,30 @@
+Received: from EXCH02.example-corp.local (10.20.4.30) by
+ EXCH01.example-corp.local (10.20.4.29); Tue, 16 Sep 2026 08:41:10 +0000
+Authentication-Results:
+ mx01.example-corp.co.uk; spf=pass; dkim=pass; dmarc=pass
+Subject: FW: Action required: unusual sign-in activity on your account
+From: "Priya Shah" <priya.shah@example-corp.co.uk>
+To: phishing-reports@example-corp.co.uk
+Date: Wed, 16 Sep 2026 08:41:09 +0000
+Message-ID: <report-20260916-0841@example-corp.co.uk>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==sample_reported-0=="
+
+--==sample_reported-0==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hi team, this landed in my inbox this morning and looks off. I have not click=
+ed anything.
+
+Priya
+
+--==sample_reported-0==
+Content-Type: message/rfc822; boundary="==sample_reported-2=="
+Content-Transfer-Encoding: 8bit
+MIME-Version: 1.0
+Content-Disposition: attachment
+
 Return-Path: <bounce-8841@mail-relay-07.sendgrid-bulk.top>
 Received: from mx01.example-corp.co.uk (10.20.4.11) by
  EXCH02.example-corp.local (10.20.4.30) with Microsoft SMTP Server; Tue, 16
@@ -17,17 +44,17 @@ From: "Microsoft Account Team" <security-alert@micros0ft-verify-support.top>
 To: vinit.rami@example-corp.co.uk
 Reply-To: recovery.desk@mail-secure-recovery.xyz
 Date: Wed, 16 Sep 2026 03:14:52 +0000
-Message-ID:
+Message-ID: 
  <f2a91c77-3b8e-4a21-9d55-0e1b77c3a9d4@mail-relay-07.sendgrid-bulk.top>
 X-Mailer: PHPMailer 6.8.0
 List-Unsubscribe: <https://mail-secure-recovery.xyz/unsub?u=8841>
 MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="==sample_phish-0=="
+Content-Type: multipart/mixed; boundary="==sample_reported-3=="
 
---==sample_phish-0==
-Content-Type: multipart/alternative; boundary="==sample_phish-1=="
+--==sample_reported-3==
+Content-Type: multipart/alternative; boundary="==sample_reported-4=="
 
---==sample_phish-1==
+--==sample_reported-4==
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
@@ -44,7 +71,7 @@ Open the attached transcript for details.
 
 Microsoft Account Team
 
---==sample_phish-1==
+--==sample_reported-4==
 Content-Type: text/html; charset="utf-8"
 Content-Transfer-Encoding: quoted-printable
 MIME-Version: 1.0
@@ -65,9 +92,9 @@ ay, Redmond WA.
 Questions? helpdesk@micros0ft-verify-support.top</p>
 </body></html>
 
---==sample_phish-1==--
+--==sample_reported-4==--
 
---==sample_phish-0==
+--==sample_reported-3==
 Content-Type: text/html
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="Voicemail_Transcript.pdf.html"
@@ -82,4 +109,6 @@ dW1lbnQgaXMgbG9hZGluZyZoZWxsaXA7PC9wPgogIDxwPklmIG5vdGhpbmcgaGFwcGVucywgPGEg
 aHJlZj0iaHR0cHM6Ly9taWNyb3MwZnQtdmVyaWZ5LXN1cHBvcnQudG9wL28zNjUvbG9naW4/aWQ9
 ODg0MSI+Y29udGludWUgaGVyZTwvYT4uPC9wPgo8L2JvZHk+PC9odG1sPgo=
 
---==sample_phish-0==--
+--==sample_reported-3==--
+
+--==sample_reported-0==--

@@ -1,4 +1,11 @@
 __pycache__/
 *.pyc
-*.json
-!samples/*.json
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+/*.json
+/*.html
+/*.csv
+/*.md.out
