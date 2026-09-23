@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://github.com/vinitrami-Soc/phishhawk/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/vinitrami-Soc/phishhawk/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/vinitrami-Soc/phishhawk/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/vinitrami-Soc/phishhawk?color=f08c00"></a>
+  <a href="https://github.com/vinitrami-Soc/phishhawk/tags"><img alt="Latest version" src="https://img.shields.io/github/v/tag/vinitrami-Soc/phishhawk?label=version&color=f08c00"></a>
   <img alt="Python 3.10 to 3.13" src="https://img.shields.io/badge/python-3.10%E2%80%933.13-3776ab">
   <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/license-MIT-green"></a>
   <img alt="Exports STIX 2.1" src="https://img.shields.io/badge/export-STIX%202.1-8a2be2">
