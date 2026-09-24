@@ -194,7 +194,7 @@ with `--build-arg BASE=public.ecr.aws/docker/library/python:3.12-slim`.
 
 ```console
 $ phishhawk doctor
-PhishHawk 1.0.0 doctor
+PhishHawk 1.0.1 doctor
 
   OK    Python             3.12.4
   OK    requests           2.32.3
