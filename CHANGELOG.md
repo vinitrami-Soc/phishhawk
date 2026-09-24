@@ -16,13 +16,31 @@ the JSON and STIX output are the public interface.
   lookalike domains, numbered URLs, attachments, infrastructure, ATT&CK and the
   copy-ready indicators. Every severity carries a glyph and a word as well as a
   colour, and every text colour clears 4.5:1 in both themes.
+- **The report takes the PhishHawk logo's amber-orange.** Severity is one
+  validated ramp: on paper high is deep rust, medium orange and low amber; on
+  a dark screen the order runs the other way, so the most severe is brightest.
+- **A score ring shows where the risk score came from.** It fills to the score
+  on a 0 to 30 scale, split into high, medium and low points, with ticks at
+  the verdict thresholds (4 and 8), and a legend gives the signals and points
+  behind each part. A line under the verdict says which rule produced it.
+- **The report opens in the reader's light or dark mode,** and an Auto / Light /
+  Dark switch in the top bar changes it. The switch is plain HTML and CSS, so
+  the report still runs no scripts; a printout is always light.
+- **More detail in the same wording.** Count tiles say how many URLs and files
+  were flagged, how many files came from archives, signals per severity and
+  ATT&CK tactics covered. The sender card adds Received hops, Forwarded from
+  and addresses found in the body; the report shows the reputation sources and
+  who reported the message. The signals panel shows how the score adds up,
+  URLs show their link text, attachments list SHA-1 and MD5 beside SHA-256,
+  ATT&CK techniques are grouped by tactic, and the indicators list counts each
+  type. Processing errors get their own panel.
 - **The report prints properly.** A4 pages, the summary on page one and the
   evidence from page two, column headers repeated on every page, no row split
   across a page break, and page numbers in the footer. In a batch, each
   message starts on a new page.
 - The report embeds Outfit and JetBrains Mono (SIL OFL 1.1) as data URIs, so it
   still loads nothing from the network; the Content-Security-Policy now allows
-  `font-src data:` and nothing else. A report is about 135 KB.
+  `font-src data:` and nothing else. A report is about 150 KB.
 - Tables turn into labelled cards on a phone, so nothing scrolls sideways at 390px.
 
 ### Added

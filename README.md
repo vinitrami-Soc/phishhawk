@@ -38,7 +38,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-kpis-dark.svg">
-  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 71% of held-out real phishing flagged, up from 70%. 2.1% false positives on legitimate mail, down from 12.5%. 0.44 seconds worst-case parse, down from 60 seconds. 167 automated tests.">
+  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 71% of held-out real phishing flagged, up from 70%. 2.1% false positives on legitimate mail, down from 12.5%. 0.44 seconds worst-case parse, down from 60 seconds. 168 automated tests.">
 </picture>
 
 <sub>Measured offline, with no reputation lookups, on 200 held-out real phishing emails and 48 legitimate ones.
@@ -308,7 +308,7 @@ means an input could not be read or a report could not be written.
 | Flag | Best for | Notes |
 |---|---|---|
 | *(default)* | The analyst | Colour terminal report. `--quiet` gives one block per mail; `--verbose` shows everything. |
-| `--html PATH` | The ticket, L2, a manager | Self-contained, in the IntelPulse console's design, with light and dark themes. Prints to A4 with page numbers: the summary on page one, the evidence after it. A strict Content-Security-Policy blocks scripts and network access, every value is escaped, and malicious URLs are never clickable. |
+| `--html PATH` | The ticket, L2, a manager | Self-contained, in the IntelPulse console's design and the PhishHawk logo's amber-orange. A score ring shows where the risk score came from, split by severity, with the verdict thresholds marked. Opens in the reader's light or dark mode, and an Auto / Light / Dark switch changes it without a script. Prints to A4 with page numbers: the summary on page one, the evidence after it. A strict Content-Security-Policy blocks scripts and network access, every value is escaped, and malicious URLs are never clickable. |
 | `--json PATH` | SOAR playbooks, scripts | Verdict, score, signals, techniques, indicators and actions. Message bodies are left out. |
 | `--stix PATH` | MISP, OpenCTI, Sentinel TI | STIX 2.1 bundle, validated against the official `stix2` library in CI. IDs are deterministic, so one URL reported by fifty users imports as one indicator. |
 | `--md PATH` | Jira, ServiceNow, TheHive | Ticket note with a defanged indicator table and an action checklist |
@@ -316,7 +316,7 @@ means an input could not be read or a report could not be written.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/report-dark.png">
-  <img alt="The HTML report for the BEC sample: the verdict and risk score, counts of URLs, files, signals and ATT&CK techniques, sender authentication, recommended actions, and the signals table with severity badges" src="docs/images/report-light.png" width="760">
+  <img alt="The HTML report for the BEC sample: the verdict and why, the risk score ring split into high, medium and low points, counts of URLs, files, signals and ATT&CK techniques, sender authentication, recommended actions, and the signals table with severity badges" src="docs/images/report-light.png" width="760">
 </picture>
 
 <p align="center">
@@ -574,7 +574,7 @@ phishhawk/
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, STIX, Markdown, CSV
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              167 offline tests, including the evaluation gate
+├── tests/              168 offline tests, including the evaluation gate
 ├── samples/            four inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetcher, results.json
 ├── tools/              scripts that draw the logo, banner, demo and charts in docs/images
@@ -591,7 +591,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 167 tests, offline, a few seconds
+pytest                                       # 168 tests, offline, a few seconds
 ruff check src tests samples eval tools phishhawk
 python eval/run_eval.py --synthetic          # the labelled-corpus regression gate
 ```

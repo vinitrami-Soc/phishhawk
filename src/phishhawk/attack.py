@@ -57,3 +57,25 @@ def technique_name(technique_id: str) -> str:
 
 def technique_url(technique_id: str) -> str:
     return "https://attack.mitre.org/techniques/%s/" % technique_id.replace(".", "/")
+
+
+# The ATT&CK tactic each technique belongs to (Enterprise matrix), in the order
+# the matrix lists them, so a report can show where in an intrusion the
+# evidence sits.
+TACTIC_ORDER: tuple[str, ...] = (
+    "Reconnaissance", "Resource Development", "Initial Access", "Execution", "Defense Evasion",
+)
+TACTICS: dict[str, str] = {
+    "T1598": "Reconnaissance",
+    "T1583": "Resource Development",
+    "T1608": "Resource Development",
+    "T1566": "Initial Access",
+    "T1204": "Execution",
+    "T1036": "Defense Evasion",
+    "T1027": "Defense Evasion",
+    "T1656": "Defense Evasion",
+}
+
+
+def technique_tactic(technique_id: str) -> str:
+    return TACTICS.get(technique_id.split(".", 1)[0], "")

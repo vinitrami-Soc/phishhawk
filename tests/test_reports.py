@@ -130,6 +130,20 @@ def test_html_embeds_its_fonts_and_prints_to_a4(phish):
     assert ".tbl thead{display:table-header-group}" in page  # column headers repeat on every page
 
 
+def test_html_theme_follows_the_system_and_can_be_switched_without_a_script(phish):
+    page = html.render([phish])
+    assert "<script" not in page
+    assert "@media screen and (prefers-color-scheme:dark){:root{" + html.DARK in page  # auto
+    assert ":root:has(#theme-light:checked){color-scheme:light;" + html.LIGHT in page
+    assert ":root:has(#theme-dark:checked){color-scheme:dark;" + html.DARK in page
+    for key in ("auto", "light", "dark"):
+        assert '<input type="radio" name="theme" id="theme-%s"' % key in page
+        assert '<label for="theme-%s"' % key in page
+    assert '<input type="radio" name="theme" id="theme-auto" checked>' in page
+    # the dark tokens are screen-only, so a printout is always on paper
+    assert "@media (prefers-color-scheme:dark)" not in page
+
+
 def test_html_severity_is_never_colour_alone(phish):
     page = html.render([phish])
     badges = re.findall(r'<span class="badge b-(\w+)"><svg[^>]*>.*?</svg>([^<]+)</span>', page)
