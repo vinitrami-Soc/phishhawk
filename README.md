@@ -38,7 +38,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-kpis-dark.svg">
-  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 71% of held-out real phishing flagged, up from 70%. 2.1% false positives on legitimate mail, down from 12.5%. 0.44 seconds worst-case parse, down from 60 seconds. 156 automated tests.">
+  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 71% of held-out real phishing flagged, up from 70%. 2.1% false positives on legitimate mail, down from 12.5%. 0.44 seconds worst-case parse, down from 60 seconds. 163 automated tests.">
 </picture>
 
 <sub>Measured offline, with no reputation lookups, on 200 held-out real phishing emails and 48 legitimate ones.
@@ -567,7 +567,7 @@ phishhawk/
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, STIX, Markdown, CSV
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              156 offline tests, including the evaluation gate
+├── tests/              163 offline tests, including the evaluation gate
 ├── samples/            four inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetcher, results.json
 ├── tools/              scripts that draw the logo, banner, demo and charts in docs/images
@@ -584,7 +584,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 156 tests, offline, a few seconds
+pytest                                       # 163 tests, offline, a few seconds
 ruff check src tests samples eval tools phishhawk
 python eval/run_eval.py --synthetic          # the labelled-corpus regression gate
 ```

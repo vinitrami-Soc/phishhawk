@@ -56,7 +56,7 @@ def test_protect_flag_turns_a_lookalike_into_bec(capsys):
     main([sample("sample_phish.eml"), *OFFLINE, "--no-auto-protect", "--protect", "micros0ft.com",
           "--json", "-"])
     payload = json.loads(capsys.readouterr().out)
-    assert "micros0ft.com" in payload["protected_domains"]
+    assert {"micros0ft.com"} <= set(payload["protected_domains"])
 
 
 def test_cache_command(tmp_path, capsys):

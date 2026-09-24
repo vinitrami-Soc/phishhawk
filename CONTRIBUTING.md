@@ -23,7 +23,7 @@ and bug reports are all welcome.
 git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 156 tests, offline, a few seconds
+pytest                                            # 163 tests, offline, a few seconds
 ruff check src tests samples eval tools phishhawk
 ```
 

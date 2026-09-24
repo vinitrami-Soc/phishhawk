@@ -143,6 +143,15 @@ _URLDEFENSE_V3 = re.compile(r"urldefense\.com/v3/__(.+?)__;", re.I)
 _GOOGLE_HOST = re.compile(r"(^|\.)google\.[a-z]{2,3}(\.[a-z]{2})?$")
 
 
+def _on(host: str, domain: str) -> bool:
+    """True for the domain itself or a subdomain of it.
+
+    A bare suffix check would also accept evilbing.com as Bing, and the report
+    would then call an attacker's own domain a trusted redirector.
+    """
+    return host == domain or host.endswith("." + domain)
+
+
 def unwrap_link(url: str) -> tuple[str, str, str] | None:
     """(inner URL, who wrapped it, kind) for a wrapped link, else None.
 
@@ -165,7 +174,7 @@ def unwrap_link(url: str) -> tuple[str, str, str] | None:
         return values[0] if values else ""
 
     inner, who, kind = "", "", ""
-    if host.endswith("safelinks.protection.outlook.com"):
+    if _on(host, "safelinks.protection.outlook.com"):
         inner, who, kind = first("url"), "Microsoft Safe Links", "gateway"
     elif host == "urldefense.proofpoint.com" and path.startswith("/v2/url"):
         encoded = first("u").replace("-", "%").replace("_", "/")
@@ -181,7 +190,7 @@ def unwrap_link(url: str) -> tuple[str, str, str] | None:
         rest = path[len("/amp/s/"):] if path.startswith("/amp/s/") else path[len("/amp/"):]
         scheme = "https://" if path.startswith("/amp/s/") else "http://"
         inner, who, kind = scheme + rest + ("?" + parts.query if parts.query else ""), "Google AMP", "redirect"
-    elif host.endswith("bing.com") and path == "/ck/a":
+    elif _on(host, "bing.com") and path == "/ck/a":
         token = first("u")
         if token.startswith("a1"):
             try:
@@ -190,11 +199,11 @@ def unwrap_link(url: str) -> tuple[str, str, str] | None:
             except (binascii.Error, ValueError):
                 inner = ""
         who, kind = "Bing redirect", "redirect"
-    elif host in ("l.facebook.com", "lm.facebook.com") or (host.endswith("facebook.com") and path == "/l.php"):
+    elif host in ("l.facebook.com", "lm.facebook.com") or (_on(host, "facebook.com") and path == "/l.php"):
         inner, who, kind = first("u"), "Facebook redirect", "redirect"
-    elif host.endswith("youtube.com") and path == "/redirect":
+    elif _on(host, "youtube.com") and path == "/redirect":
         inner, who, kind = first("q"), "YouTube redirect", "redirect"
-    elif host.endswith("linkedin.com") and path.startswith("/redir/redirect"):
+    elif _on(host, "linkedin.com") and path.startswith("/redir/redirect"):
         inner, who, kind = first("url"), "LinkedIn redirect", "redirect"
     inner = clean_url(inner)
     if inner and usable_url(inner) and inner != url:
