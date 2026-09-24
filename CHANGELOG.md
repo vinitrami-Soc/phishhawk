@@ -7,6 +7,29 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Changed
+
+- **The HTML report is redesigned in the IntelPulse console's design language.**
+  The verdict and risk score lead the page, followed by counts of URLs, files,
+  signals and ATT&CK techniques, sender authentication and the recommended
+  actions. The evidence follows: a severity bar over the signals table, then
+  lookalike domains, numbered URLs, attachments, infrastructure, ATT&CK and the
+  copy-ready indicators. Every severity carries a glyph and a word as well as a
+  colour, and every text colour clears 4.5:1 in both themes.
+- **The report prints properly.** A4 pages, the summary on page one and the
+  evidence from page two, column headers repeated on every page, no row split
+  across a page break, and page numbers in the footer. In a batch, each
+  message starts on a new page.
+- The report embeds Outfit and JetBrains Mono (SIL OFL 1.1) as data URIs, so it
+  still loads nothing from the network; the Content-Security-Policy now allows
+  `font-src data:` and nothing else. A report is about 135 KB.
+- Tables turn into labelled cards on a phone, so nothing scrolls sideways at 390px.
+
+### Added
+
+- `tools/make_report_shots.py` renders the README's report images, including the
+  printed pages.
+
 ## [1.0.1] - 2026-09-24
 
 ### Fixed

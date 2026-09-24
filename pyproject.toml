@@ -26,7 +26,7 @@ dependencies = ["requests>=2.28"]
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "ruff>=0.6", "stix2>=3.0"]
 # only for regenerating docs/images and the banner art (tools/make_*.py)
-assets = ["cairosvg>=2.7", "pyfiglet>=1.0", "Pillow>=10.0"]
+assets = ["cairosvg>=2.7", "pyfiglet>=1.0", "Pillow>=10.0", "playwright>=1.40", "pymupdf>=1.24"]
 
 [project.scripts]
 phishhawk = "phishhawk.cli:run"
@@ -42,6 +42,10 @@ version = { attr = "phishhawk.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# the HTML report embeds these fonts; licences travel with them
+"phishhawk.report" = ["fonts/*.woff2", "fonts/*.txt", "fonts/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

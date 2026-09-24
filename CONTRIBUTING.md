@@ -23,7 +23,7 @@ and bug reports are all welcome.
 git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 163 tests, offline, a few seconds
+pytest                                            # 167 tests, offline, a few seconds
 ruff check src tests samples eval tools phishhawk
 ```
 
@@ -102,6 +102,7 @@ pip install -e ".[assets]"
 python tools/make_logo.py      # logo PNG and the terminal banner art
 python tools/make_demo.py      # banner.svg and demo.svg, recorded from real runs
 python tools/make_charts.py    # evaluation charts, from eval/results.json
+python tools/make_report_shots.py   # report-light/dark/print.png; needs `playwright install chromium`
 ```
 
 ## Pull requests
