@@ -7,6 +7,8 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-24
+
 ### Changed
 
 - **The HTML report is redesigned in the IntelPulse console's design language.**
@@ -120,6 +122,7 @@ repository: a single-file IOC extractor (20 September 2026) and the
 `phishtriage` package (versioned 2.0.0, 23 September 2026). Version numbering
 restarted at 1.0.0 with the new name.
 
-[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.1.0
 [1.0.1]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.0.1
 [1.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.0.0

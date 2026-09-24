@@ -92,7 +92,7 @@ def kpis(data: dict, t: dict) -> str:
         body.append(text(x + 16, top + 84, note, t["muted"], 11.5))
         colour = t["good"] if delta[0] in "▲▼" else t["muted"]
         body.append(text(x + 16, top + 103, delta, colour, 11.5, 600 if delta[0] in "▲▼" else 400))
-    return frame(body, top + 116 + 28, t, "PhishHawk 1.0.1 at a glance",
+    return frame(body, top + 116 + 28, t, "PhishHawk 1.1.0 at a glance",
                  "Offline evaluation: parser and heuristics only, no reputation lookups")
 
 
@@ -131,7 +131,7 @@ def evaluation(data: dict, t: dict) -> str:
     sets, base = data["sets"], data["baseline"]
     x0, x1 = 250, WIDTH - 70
     pct = lambda v: "%.0f%%" % v if v == int(v) else "%.1f%%" % v  # noqa: E731
-    body = legend([("Before real-mail testing", t["before"]), ("PhishHawk 1.0.1", t["after"])], 28, 86, t)
+    body = legend([("Before real-mail testing", t["before"]), ("PhishHawk 1.1.0", t["after"])], 28, 86, t)
     rows = [("Held-out sample (200)", 100 * base["holdout_flagged_recall"],
              100 * sets["holdout"]["result"]["flagged"]["recall"]),
             ("Tuning sample (200)", 100 * base["tune_flagged_recall"],
