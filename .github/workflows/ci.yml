@@ -57,6 +57,10 @@ jobs:
         run: |
           ./install.sh
           "$PHISHHAWK_BIN/phishhawk" scan samples/sample_benign.eml --offline --quiet
+          # A non-editable install must still carry the report's fonts (package data).
+          "$PHISHHAWK_BIN/phishhawk" scan samples/sample_phish.eml --offline --quiet \
+            --html "$RUNNER_TEMP/report.html" || test $? -eq 1
+          test "$(grep -o 'data:font/woff2' "$RUNNER_TEMP/report.html" | wc -l)" -eq 2
           ./install.sh --uninstall
           test ! -e "$PHISHHAWK_BIN/phishhawk"
 

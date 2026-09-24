@@ -118,3 +118,49 @@ def test_csv_neutralises_formula_injection(hostile):
                                      headers=[("Reply-To", "a@other.example")]))
     rows = list(csv.DictReader(io.StringIO(csvout.render([formula]))))
     assert rows and all(row["subject"].startswith("'=") for row in rows)
+
+
+def test_html_embeds_its_fonts_and_prints_to_a4(phish):
+    page = html.render([phish])
+    assert "font-src data:" in page and "default-src 'none'" in page
+    assert page.count("@font-face") == 2 and "data:font/woff2;base64," in page
+    assert "fonts.googleapis" not in page and "fonts.gstatic" not in page  # nothing is fetched
+    assert "@page{size:A4" in page
+    assert ".evidence{break-before:page}" in page  # summary on page one, evidence after it
+    assert ".tbl thead{display:table-header-group}" in page  # column headers repeat on every page
+
+
+def test_html_theme_follows_the_system_and_can_be_switched_without_a_script(phish):
+    page = html.render([phish])
+    assert "<script" not in page
+    assert "@media screen and (prefers-color-scheme:dark){:root{" + html.DARK in page  # auto
+    assert ":root:has(#theme-light:checked){color-scheme:light;" + html.LIGHT in page
+    assert ":root:has(#theme-dark:checked){color-scheme:dark;" + html.DARK in page
+    for key in ("auto", "light", "dark"):
+        assert '<input type="radio" name="theme" id="theme-%s"' % key in page
+        assert '<label for="theme-%s"' % key in page
+    assert '<input type="radio" name="theme" id="theme-auto" checked>' in page
+    # the dark tokens are screen-only, so a printout is always on paper
+    assert "@media (prefers-color-scheme:dark)" not in page
+
+
+def test_html_severity_is_never_colour_alone(phish):
+    page = html.render([phish])
+    badges = re.findall(r'<span class="badge b-(\w+)"><svg[^>]*>.*?</svg>([^<]+)</span>', page)
+    assert badges and all(word.strip() for _, word in badges)
+    assert {("high", "high"), ("medium", "medium"), ("low", "low")} <= set(badges)
+    assert '<div class="verdict"><svg' in page and "LIKELY PHISHING" in page
+
+
+def test_html_tables_keep_their_labels_on_narrow_screens(phish):
+    page = html.render([phish])
+    assert 'data-label="URL (defanged)"' in page and 'data-label="Finding"' in page
+
+
+def test_html_font_files_ship_with_the_package():
+    from importlib.resources import files
+
+    folder = files("phishhawk.report").joinpath("fonts")
+    for name in ("Outfit-Variable-latin.woff2", "JetBrainsMono-Variable-latin.woff2",
+                 "Outfit-OFL.txt", "JetBrainsMono-OFL.txt"):
+        assert folder.joinpath(name).is_file(), name

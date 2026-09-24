@@ -89,7 +89,7 @@ stdout; only one report can go to stdout at a time.
 | Option | Output | Several messages |
 |---|---|---|
 | `--json PATH` | The full structured analysis ([format below](#the-json-report)) | `{"reports": [ ... ]}` |
-| `--html PATH` | Self-contained HTML report, light and dark themes | One page, one section per message |
+| `--html PATH` | Self-contained HTML report; follows the system's light or dark mode, with an Auto / Light / Dark switch; prints to A4 with page numbers | An index first, then one section per message, each starting on a new printed page |
 | `--stix PATH` | STIX 2.1 bundle: an indicator per IOC, the ATT&CK attack patterns and a report object per message | One bundle, duplicate indicators merged |
 | `--md PATH` | Markdown ticket note | Notes separated by `---` |
 | `--csv PATH` | One row per indicator: `type, value, defanged, context, verdict, subject, source_file` | All rows in one file |
