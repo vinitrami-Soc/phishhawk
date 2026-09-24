@@ -72,6 +72,8 @@ def test_links_inside_compressed_pdf_streams_are_found():
             "redirect",
         ),
         ("https://l.facebook.com/l.php?u=https%3A%2F%2Fevil.top%2Fx", "https://evil.top/x", "redirect"),
+        ("https://www.youtube.com/redirect?q=https://evil.top/x", "https://evil.top/x", "redirect"),
+        ("https://www.linkedin.com/redir/redirect?url=https://evil.top/x", "https://evil.top/x", "redirect"),
     ],
 )
 def test_unwrap_link(wrapped, inner, kind):
@@ -81,6 +83,22 @@ def test_unwrap_link(wrapped, inner, kind):
 
 @pytest.mark.parametrize("url", ["https://www.google.com/search?q=cats", "https://example.com/?url=https://x.top"])
 def test_ordinary_links_are_not_unwrapped(url):
+    assert unwrap_link(url) is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evilbing.com/ck/a?u=a1" + base64.urlsafe_b64encode(b"https://evil.top/x").decode().rstrip("="),
+        "https://notfacebook.com/l.php?u=https%3A%2F%2Fevil.top%2Fx",
+        "https://fakeyoutube.com/redirect?q=https://evil.top/x",
+        "https://mylinkedin.com/redir/redirect?url=https://evil.top/x",
+        "https://evilsafelinks.protection.outlook.com/?url=https%3A%2F%2Fevil.top%2Fx",
+    ],
+)
+def test_lookalikes_of_redirectors_are_not_unwrapped(url):
+    # An attacker can register evilbing.com, but it is not Bing, and the report
+    # must not call it "Bing redirect".
     assert unwrap_link(url) is None
 
 

@@ -172,5 +172,5 @@
     "cpython_false_positive_rate": 0.125,
     "worst_case_parse_seconds": 60.5
   },
-  "tests": 156
+  "tests": 163
 }

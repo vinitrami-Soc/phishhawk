@@ -7,6 +7,15 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lookalikes of trusted redirectors are no longer unwrapped.** A link on
+  `evilbing.com/ck/a`, `notfacebook.com/l.php`, `fakeyoutube.com/redirect` or
+  `mylinkedin.com/redir/redirect` matched the suffix check for the real site,
+  so the report called an attacker's own domain "Bing redirect" (and so on).
+  Hosts now have to be the domain itself or a subdomain of it. Resolves
+  CodeQL alerts 1 to 5; alert 6 was a test assertion, now a set comparison.
+
 ## [1.0.0] - 2026-09-23
 
 The first release under the PhishHawk name, as a standalone project.
