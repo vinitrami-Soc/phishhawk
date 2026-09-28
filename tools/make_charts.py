@@ -69,15 +69,17 @@ def legend(items, x, y, t):
 def kpis(data: dict, t: dict) -> str:
     sets, base = data["sets"], data["baseline"]
     holdout = sets["holdout"]["result"]
-    fpr = sets["cpython"]["result"]["flagged"]["false_positive_rate"]
-    worst = max(sets[k]["result"]["timing_ms"]["max"] for k in sets) / 1000
-    emails = sum(sets[k]["result"]["emails"] for k in sets)
+    legit = sets["ham_holdout_easy"]["result"]["flagged"]
+    whole = [k for k in sets if k not in ("ham_holdout_easy", "ham_holdout_hard")]  # parts of ham_holdout
+    worst = max(sets[k]["result"]["timing_ms"]["max"] for k in whole) / 1000
+    emails = sum(sets[k]["result"]["emails"] for k in whole)
     tiles = [
-        ("Real phishing flagged", "%.0f%%" % (100 * holdout["flagged"]["recall"]),
-         "held-out, no API keys", "▲ from %.0f%%" % (100 * base["holdout_flagged_recall"])),
-        ("False positives", "%.1f%%" % (100 * fpr), "on legitimate test mail",
-         "▼ from %.1f%%" % (100 * base["cpython_false_positive_rate"])),
-        ("Worst-case parse", "%.2f s" % worst, "slowest of %d messages" % emails,
+        ("Real phishing flagged", pct(100 * holdout["flagged"]["recall"]),
+         "held-out, no API keys", "▲ from %s" % pct(100 * base["holdout_flagged_recall"])),
+        ("False positives", "%.1f%%" % (100 * legit["false_positive_rate"]),
+         "%d of %s legit emails" % (legit["fp"], "{:,}".format(legit["fp"] + legit["tn"])),
+         "▼ from %.1f%%" % (100 * base["ham_holdout_easy_false_positive_rate"])),
+        ("Worst-case parse", "%.2f s" % worst, "slowest of {:,} emails".format(emails),
          "▼ from %.0f s" % base["worst_case_parse_seconds"]),
         ("Automated tests", str(data["tests"]), "Python 3.10 to 3.13", "incl. evaluation gate"),
     ]
@@ -92,7 +94,7 @@ def kpis(data: dict, t: dict) -> str:
         body.append(text(x + 16, top + 84, note, t["muted"], 11.5))
         colour = t["good"] if delta[0] in "▲▼" else t["muted"]
         body.append(text(x + 16, top + 103, delta, colour, 11.5, 600 if delta[0] in "▲▼" else 400))
-    return frame(body, top + 116 + 28, t, "PhishHawk 1.1.0 at a glance",
+    return frame(body, top + 116 + 28, t, "PhishHawk at a glance",
                  "Offline evaluation: parser and heuristics only, no reputation lookups")
 
 
@@ -117,21 +119,27 @@ def dumbbell_panel(rows, y0, x0, x1, maximum, ticks, fmt, t, heading):
         for cx, colour in ((bx, t["before"]), (ax, t["after"])):
             out.append('<circle cx="%.1f" cy="%.1f" r="6" fill="%s" stroke="%s" stroke-width="2"/>'
                        % (cx, y, colour, t["surface"]))
-        # each value sits on the far side of its own dot, so close pairs never collide
+        # each value sits on the far side of its own dot, so close pairs never
+        # collide; a value near zero goes inside instead of into the row labels
         after_right = after >= before
-        out.append(text(bx + (-12 if after_right else 12), y + 4.5, fmt(before), t["ink2"], 12,
-                        anchor="end" if after_right else "start"))
-        out.append(text(ax + (12 if after_right else -12), y + 4.5, fmt(after), t["ink"], 12.5, 600,
-                        anchor="start" if after_right else "end"))
+        for cx, value, ink, size, weight, right in ((bx, before, t["ink2"], 12, 400, not after_right),
+                                                    (ax, after, t["ink"], 12.5, 600, after_right)):
+            if not right and cx - 12 - 7 * len(fmt(value)) < x0 - 6:
+                right = True
+            out.append(text(cx + (12 if right else -12), y + 4.5, fmt(value), ink, size, weight,
+                            anchor="start" if right else "end"))
         y += 36
     return out, bottom + 18
+
+
+def pct(value: float) -> str:
+    return "%.0f%%" % value if value == int(value) else "%.1f%%" % value
 
 
 def evaluation(data: dict, t: dict) -> str:
     sets, base = data["sets"], data["baseline"]
     x0, x1 = 250, WIDTH - 70
-    pct = lambda v: "%.0f%%" % v if v == int(v) else "%.1f%%" % v  # noqa: E731
-    body = legend([("Before real-mail testing", t["before"]), ("PhishHawk 1.1.0", t["after"])], 28, 86, t)
+    body = legend([("Before tuning on real mail", t["before"]), ("After", t["after"])], 28, 86, t)
     rows = [("Held-out sample (200)", 100 * base["holdout_flagged_recall"],
              100 * sets["holdout"]["result"]["flagged"]["recall"]),
             ("Tuning sample (200)", 100 * base["tune_flagged_recall"],
@@ -139,13 +147,17 @@ def evaluation(data: dict, t: dict) -> str:
     panel, y = dumbbell_panel(rows, 124, x0, x1, 100, [0, 25, 50, 75, 100], pct, t,
                               "Real phishing flagged · higher is better")
     body += panel
-    rows = [("CPython test mail (48)", 100 * base["cpython_false_positive_rate"],
-             100 * sets["cpython"]["result"]["flagged"]["false_positive_rate"])]
-    panel, y = dumbbell_panel(rows, y + 40, x0, x1, 15, [0, 5, 10, 15], pct, t,
+    fpr = lambda key: 100 * sets[key]["result"]["flagged"]["false_positive_rate"]  # noqa: E731
+    rows = [("Everyday mail, held out (1,400)", 100 * base["ham_holdout_easy_false_positive_rate"],
+             fpr("ham_holdout_easy")),
+            ("Spam-like mail, held out (125)", 100 * base["ham_holdout_hard_false_positive_rate"],
+             fpr("ham_holdout_hard")),
+            ("CPython test mail (48)", 100 * base["cpython_false_positive_rate"], fpr("cpython"))]
+    panel, y = dumbbell_panel(rows, y + 40, x0, x1, 60, [0, 20, 40, 60], pct, t,
                               "Legitimate mail flagged by mistake · lower is better")
     body += panel
     return frame(body, y + 26, t, "Testing against real mail changed the numbers",
-                 "Same messages scored before and after; each panel has its own scale")
+                 "Same messages scored before and after tuning; held-out sets were scored once, at the end")
 
 
 # ----------------------------------------------------------- verdict bars --
@@ -154,7 +166,7 @@ def verdicts(data: dict, t: dict) -> str:
     sets = data["sets"]
     groups = [("Held-out phishing", sets["holdout"]["result"]["verdicts"]["phish"]),
               ("Tuning phishing", sets["tune"]["result"]["verdicts"]["phish"]),
-              ("Legitimate mail", sets["cpython"]["result"]["verdicts"]["benign"])]
+              ("Legitimate mail", sets["ham_holdout"]["result"]["verdicts"]["benign"])]
     order = [("LIKELY PHISHING", "likely phishing", t["after"]), ("SUSPICIOUS", "suspicious", t["before"]),
              ("NO STRONG INDICATORS", "not flagged", t["missed"])]
     body = legend([(name.capitalize(), colour) for _, name, colour in order], 28, 86, t)

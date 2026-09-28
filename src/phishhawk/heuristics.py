@@ -35,11 +35,12 @@ from .knowledge import (
     SUSPICIOUS_TLDS,
     TOKEN_ONLY_BRANDS,
 )
-from .lookalike import HIGH_METHODS, find_lookalikes
+from .lookalike import HIGH_METHODS, find_lookalikes, strong_subdomain
 from .models import Analysis, vt_is_malicious, vt_is_suspicious
 
 NEW_DOMAIN_DAYS = 30
 YOUNG_DOMAIN_DAYS = 90
+_GOVERNMENT_RE = re.compile(r"(^|\.)(gov|gob|gouv|govt|mil|nic)(\.[a-z]{2})?$")
 _DOUBLE_EXT_RE = re.compile(r"\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|txt|csv|rtf|wav|mp3|mp4)\.[a-z0-9]{2,5}$")
 
 
@@ -65,8 +66,8 @@ def _authentication(a: Analysis) -> None:
         value = a.auth.get(mechanism)
         if value in bad:
             a.add_signal("high" if value == "fail" else "medium", "%s=%s" % (mechanism.upper(), value))
-    if not a.auth:
-        a.add_signal("low", "no Authentication-Results header present")
+    # No Authentication-Results header is not scored: it is missing from mail
+    # exported by many clients and from all older mail, phishing or not.
 
 
 def _brand_claimed(display: str, from_domain: str) -> str:
@@ -104,9 +105,14 @@ def _subject_brand(a: Analysis) -> str:
 
 def _sender(a: Analysis) -> None:
     from_base = registrable_domain(a.from_domain)
-    if a.reply_to_domain and from_base and registrable_domain(a.reply_to_domain) != from_base:
-        a.add_signal("high", "Reply-To domain (%s) differs from From domain (%s)"
-                     % (defang_host(a.reply_to_domain), defang_host(a.from_domain)), ("T1656",))
+    reply_base = registrable_domain(a.reply_to_domain)
+    if a.reply_to_domain and from_base and reply_base != from_base:
+        if reply_base in a.list_domains:  # a mailing list sets Reply-To to itself
+            a.add_signal("low", "Reply-To goes to the mailing list at %s" % defang_host(a.reply_to_domain))
+        else:
+            a.add_signal("medium" if a.mailing_list else "high",
+                         "Reply-To domain (%s) differs from From domain (%s)"
+                         % (defang_host(a.reply_to_domain), defang_host(a.from_domain)), ("T1656",))
     if a.return_path_domain and from_base and registrable_domain(a.return_path_domain) != from_base:
         a.add_signal("low", "Return-Path domain (%s) differs from From domain (%s)"
                      % (defang_host(a.return_path_domain), defang_host(a.from_domain)))
@@ -161,7 +167,9 @@ def _lookalikes(a: Analysis) -> None:
             own = hit.target in protected
             if hit.method == "tld-swap":  # organisations often own several TLDs of their name
                 severity = "medium"
-            elif hit.method in HIGH_METHODS or own or hit.method == "subdomain":
+            elif hit.method == "subdomain":
+                severity = "high" if strong_subdomain(hit.domain, hit.target) else "medium"
+            elif hit.method in HIGH_METHODS or own:
                 severity = "high"
             else:
                 severity = "medium"
@@ -185,11 +193,14 @@ def _lookalikes(a: Analysis) -> None:
 def _shown_domain(anchor_text: str) -> str:
     for candidate in urls_from_text(anchor_text):
         return host_of(candidate)
-    match = DOMAINISH_RE.search(anchor_text)
+    # An address in the link text ("sent to you@example.com") names a mailbox,
+    # not the website the link claims to open.
+    match = DOMAINISH_RE.search(EMAIL_RE.sub(" ", anchor_text))
     return match.group(0).lower() if match else ""
 
 
 def _urls(a: Analysis) -> None:
+    tracked: set[str] = set()  # destinations already reported for a plain mismatch
     for ioc in a.urls:
         host, base = ioc.host, ioc.domain
         trusted = a.is_trusted_domain(host)
@@ -226,10 +237,19 @@ def _urls(a: Analysis) -> None:
         for anchor in ioc.anchor_texts:
             shown = _shown_domain(anchor)
             if shown and base and registrable_domain(shown) != base:
+                # Newsletters show their site and link through a click tracker,
+                # so a mismatch alone is only medium. It is high when the text
+                # borrows a name worth stealing or the destination is suspect.
+                suspect = ioc.flagged or tld in SUSPICIOUS_TLDS or bool(hosting_kind(ioc.url))
+                borrowed = a.is_trusted_domain(shown) or registrable_domain(shown) in FREEMAIL \
+                    or bool(_GOVERNMENT_RE.search(shown))
                 ioc.notes.append("link text shows %s but goes to %s" % (defang_host(shown), defang_host(host)))
                 ioc.flagged = True
-                a.add_signal("high", "link text/href mismatch: %s shown, %s real"
-                             % (defang_host(shown), defang_host(host)), ("T1036", "T1566.002"))
+                if suspect or borrowed or base not in tracked:  # one click tracker counts once
+                    a.add_signal("high" if suspect or borrowed else "medium",
+                                 "link text/href mismatch: %s shown, %s real"
+                                 % (defang_host(shown), defang_host(host)), ("T1036", "T1566.002"))
+                    tracked.add(base)
                 break
         if not trusted and any(" atob-decoded" in s for s in ioc.sources):
             ioc.flagged = True

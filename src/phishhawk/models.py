@@ -97,6 +97,8 @@ class Analysis:
     return_path_domain: str = ""
     originating_ip: str = ""
     received_hops: int = 0
+    mailing_list: bool = False  # List-Post, Mailing-List, X-BeenThere or Precedence: list
+    list_domains: list[str] = field(default_factory=list)  # where those list headers point
     auth: dict[str, str] = field(default_factory=dict)
     reported_by: dict[str, Any] | None = None
     forwarded_from: dict[str, str] | None = None  # original sender of an inline forward

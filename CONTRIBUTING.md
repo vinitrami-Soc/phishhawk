@@ -23,7 +23,7 @@ and bug reports are all welcome.
 git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 168 tests, offline, a few seconds
+pytest                                            # 191 tests, offline, a few seconds
 ruff check src tests samples eval tools phishhawk
 ```
 
@@ -76,8 +76,9 @@ The most useful details are:
    ```
 
    CI fails if synthetic recall drops below 95% or false positives rise above 2%.
-   If you have the phishing_pot sample (`python eval/fetch_phishing_pot.py`),
-   check the tuning set too, and do not tune against the held-out set.
+   If you have the phishing_pot sample (`python eval/fetch_phishing_pot.py`)
+   and the SpamAssassin legitimate mail (`python eval/fetch_spamassassin.py`),
+   check both tuning sets too, and never tune against a held-out set.
 7. **Document it** in [docs/DETECTIONS.md](docs/DETECTIONS.md), and add a line
    under *Unreleased* in [CHANGELOG.md](CHANGELOG.md).
 

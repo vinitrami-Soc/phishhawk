@@ -243,6 +243,27 @@ def _originating_ip(msg: Message) -> str:
     return ""
 
 
+# Headers only a list server adds. List-Id and List-Unsubscribe are left out on
+# purpose: every bulk-mail service sets them, including the ones phishers rent.
+_LIST_HEADERS = ("List-Post", "Mailing-List", "X-Mailing-List", "X-BeenThere")
+
+
+def _mailing_list(msg: Message) -> tuple[bool, list[str]]:
+    """Is this a mailing-list delivery, and which domains does the list live on?
+    A list sets Reply-To to itself, which otherwise looks like reply diversion."""
+    precedence = header(msg, "Precedence").strip().lower()  # "bulk" is every newsletter's
+    if not (any(header(msg, name) for name in _LIST_HEADERS) or precedence == "list"):
+        return False, []
+    domains: set[str] = set()
+    for name in _LIST_HEADERS:
+        for address in EMAIL_RE.findall(header(msg, name)):
+            domains.add(registrable_domain(domain_of_address(address)))
+    list_id = re.search(r"<([^<>\s]+)>", header(msg, "List-Id"))
+    if list_id and "." in list_id.group(1):
+        domains.add(registrable_domain(list_id.group(1)))
+    return True, sorted(d for d in domains if d)
+
+
 def _read_headers(msg: Message, analysis: Analysis) -> None:
     analysis.subject = header(msg, "Subject")
     analysis.date = header(msg, "Date")
@@ -262,6 +283,7 @@ def _read_headers(msg: Message, analysis: Analysis) -> None:
     analysis.return_path = return_path.lower()
     analysis.return_path_domain = domain_of_address(return_path)
 
+    analysis.mailing_list, analysis.list_domains = _mailing_list(msg)
     analysis.auth = _auth_results(msg)
     analysis.originating_ip = _originating_ip(msg)
     try:

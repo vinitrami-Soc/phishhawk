@@ -7,11 +7,44 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- `eval/fetch_spamassassin.py` fetches the legitimate-mail evaluation set and
+  splits it into a tuning and a held-out part.
+- The JSON report has `mailing_list` and `list_domains`.
+
 ### Changed
 
 - Empty cells in the evaluation tables (`README.md`, `eval/README.md`) read
   *n/a*, and signals with no ATT&CK technique in `docs/DETECTIONS.md` read
   *none*, each explained under its table, instead of a dash.
+
+### Fixed
+
+- **False positives on real legitimate mail, from about one message in four
+  to 0.7%.** Tested for the first time on 4,150 real legitimate emails (the
+  SpamAssassin public corpus), 1.1.0 flagged 23% of everyday mail and 55% of
+  legitimate mail that looks like spam. On the held-out part, scored once
+  after the fixes, it now flags 10 of 1,400 everyday messages and 29 of 125
+  spam-like ones. Held-out phishing recall is 70.5% (was 71.0%).
+- A mailing list that sets Reply-To to its own address is no longer scored as
+  high-severity reply diversion. List mail is recognised by `List-Post`,
+  `Mailing-List`, `X-Mailing-List`, `X-BeenThere` or `Precedence: list`, never
+  by `List-Id` or `Precedence: bulk`, which the bulk services phishers rent
+  also set.
+- A link mismatch through an ordinary click tracker is medium, and counts once
+  per destination; it stays high when the link text shows a brand, government,
+  free-mail or your own domain, or the destination is suspect. An email address
+  in link text is no longer read as a claimed website.
+- A combosquat must add only lure or business words, digits or a short code to
+  the name (`outlooksecure`, `paypal-billing`, `example-corp-payroll`):
+  `linuxmafia.com` is no longer a lookalike of `linux.ie`, nor `yahoogroups.com`
+  of Yahoo, nor `storage.googleapis.com` of Google.
+- A brand's own country site (`yahoo.co.uk`, `santander.com.br`) is not a
+  lookalike, and a brand word in a subdomain (`outlook.4team.biz`) is medium
+  unless something else is wrong with the site.
+- A missing `Authentication-Results` header is no longer scored.
+- A digest with thousands of links parses about twice as fast.
 
 ## [1.1.0] - 2026-09-24
 
