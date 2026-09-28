@@ -118,6 +118,37 @@ BRANDS: dict[str, set[str]] = {
 TOKEN_ONLY_BRANDS = {"dhl", "ups", "nhs", "hsbc", "meta", "apple", "zoom", "slack", "chase", "amex",
                      "usps", "evri", "irs", "steam", "ripple", "sbi", "hdfc", "caixa", "itau", "telegram"}
 
+# What a combosquat bolts onto a name: "outlooksecure", "paypal-billing-update",
+# "example-corp-payroll", "taxascorreios". A domain that merely contains a name
+# ("linuxmafia", "shagmail", "yahoogroups") is not a lookalike: on real mail
+# those were the commonest lookalike false positives.
+COMBO_WORDS = {
+    "secure", "security", "safe", "safety", "protect", "protection", "login", "logon", "signin", "sign",
+    "auth", "verify", "verification", "validate", "validation", "confirm", "confirmation", "check",
+    "account", "accounts", "acct", "profile", "update", "updates", "upgrade", "support", "service",
+    "services", "help", "helpdesk", "desk", "center", "centre", "care", "resolution", "recovery", "recover",
+    "restore", "unlock", "reset", "password", "billing", "bill", "bills", "pay", "payment", "payments",
+    "invoice", "invoices", "refund", "refunds", "claim", "claims", "tax", "taxes", "fee", "fees", "renew",
+    "renewal", "subscription", "online", "portal", "web", "webmail", "mail", "email", "app", "apps",
+    "access", "alert", "alerts", "notice", "notification", "notifications", "notify", "info", "official",
+    "team", "teams", "staff", "admin", "document", "documents", "docs", "doc", "file", "files", "share",
+    "sharing", "drive", "cloud", "storage", "envelope", "delivery", "deliver", "track", "tracking",
+    "parcel", "package", "shipment", "shipping", "express", "prime", "reward", "rewards", "gift", "bonus",
+    "promo", "prize", "wallet", "crypto", "customer", "customers", "client", "member", "members", "user",
+    "users", "group", "corp", "inc", "llc", "ltd", "holdings", "global", "intl", "international", "hr",
+    "payroll", "finance", "accounting", "procurement", "legal", "benefits", "office", "bank", "banking",
+    "card", "cards", "credit", "loan", "transfer", "id", "it", "us", "usa", "uk", "eu",
+    # Portuguese and Spanish, for the Brazilian and Latin American lures in real phishing data
+    "taxa", "taxas", "fatura", "boleto", "pagamento", "cliente", "conta", "seguro", "servico", "servicos",
+    "atualizacao", "cuenta", "pago", "factura", "soporte",
+}
+
+# Country-code TLDs that are sold like generic ones and routinely abused.
+# "yahoo.co.uk" and "santander.com.br" are the brands' own country sites;
+# "paypal.co" and "netflix.tk" are not.
+GENERIC_CCTLDS = {"co", "cc", "tk", "ml", "ga", "cf", "gq", "ws", "io", "me", "ly", "to", "su", "pw",
+                  "cm", "nu", "tv", "ai", "sh", "gg", "la", "vc", "st", "cx", "ms", "fm", "am", "ru"}
+
 
 def known_legit_domains() -> set[str]:
     legit: set[str] = set()

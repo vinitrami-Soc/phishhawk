@@ -1,46 +1,46 @@
 {
-  "about": "Offline evaluation of PhishHawk 1.0.0. Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py. Charts in docs/images are drawn from this file by tools/make_charts.py.",
-  "generated": "2026-09-23",
-  "tool_version": "1.0.0",
+  "about": "Offline evaluation of PhishHawk after 1.1.0, with the legitimate-mail false-positive fixes (unreleased). Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py and eval/fetch_spamassassin.py. Charts in docs/images are drawn from this file by tools/make_charts.py.",
+  "generated": "2026-09-28",
+  "tool_version": "1.1.0+unreleased",
   "sets": {
     "holdout": {
       "title": "Real phishing, held-out sample",
       "source": "phishing_pot, seed 7, 200 messages",
       "result": {
         "emails": 200,
-        "phish": 200,
-        "benign": 0,
         "verdicts": {
           "phish": {
-            "NO STRONG INDICATORS": 58,
-            "SUSPICIOUS": 81,
-            "LIKELY PHISHING": 61
+            "NO STRONG INDICATORS": 59,
+            "SUSPICIOUS": 93,
+            "LIKELY PHISHING": 48
           }
         },
+        "phish": 200,
+        "benign": 0,
+        "errors": 0,
         "flagged": {
-          "tp": 142,
-          "fn": 58,
+          "tp": 141,
+          "fn": 59,
           "fp": 0,
           "tn": 0,
-          "recall": 0.71,
+          "recall": 0.705,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 61,
-          "fn": 139,
+          "tp": 48,
+          "fn": 152,
           "fp": 0,
           "tn": 0,
-          "recall": 0.305,
+          "recall": 0.24,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 10.7,
-          "p95": 117.6,
-          "max": 373.8
-        },
-        "errors": 0
+          "median": 11.1,
+          "p95": 81.7,
+          "max": 498.2
+        }
       }
     },
     "tune": {
@@ -48,39 +48,198 @@
       "source": "phishing_pot, seed 42, 200 messages",
       "result": {
         "emails": 200,
-        "phish": 200,
-        "benign": 0,
         "verdicts": {
           "phish": {
-            "LIKELY PHISHING": 53,
-            "NO STRONG INDICATORS": 38,
-            "SUSPICIOUS": 109
+            "LIKELY PHISHING": 43,
+            "NO STRONG INDICATORS": 40,
+            "SUSPICIOUS": 117
           }
         },
+        "phish": 200,
+        "benign": 0,
+        "errors": 0,
         "flagged": {
-          "tp": 162,
-          "fn": 38,
+          "tp": 160,
+          "fn": 40,
           "fp": 0,
           "tn": 0,
-          "recall": 0.81,
+          "recall": 0.8,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 53,
-          "fn": 147,
+          "tp": 43,
+          "fn": 157,
           "fp": 0,
           "tn": 0,
-          "recall": 0.265,
+          "recall": 0.215,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 10.4,
-          "p95": 130.2,
-          "max": 443.8
+          "median": 9.6,
+          "p95": 69.3,
+          "max": 551.7
+        }
+      }
+    },
+    "ham_holdout": {
+      "title": "Real legitimate mail, held out",
+      "source": "SpamAssassin public corpus: easy_ham_2 (1,400) + half of hard_ham (125), eval/fetch_spamassassin.py",
+      "result": {
+        "emails": 1525,
+        "verdicts": {
+          "benign": {
+            "NO STRONG INDICATORS": 1486,
+            "SUSPICIOUS": 37,
+            "LIKELY PHISHING": 2
+          }
         },
-        "errors": 0
+        "phish": 0,
+        "benign": 1525,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 39,
+          "tn": 1486,
+          "recall": null,
+          "false_positive_rate": 0.0256,
+          "precision": 0.0
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 2,
+          "tn": 1523,
+          "recall": null,
+          "false_positive_rate": 0.0013,
+          "precision": 0.0
+        },
+        "timing_ms": {
+          "median": 5.5,
+          "p95": 21.1,
+          "max": 67.8
+        }
+      }
+    },
+    "ham_holdout_easy": {
+      "title": "Real legitimate mail, held out: everyday",
+      "source": "SpamAssassin easy_ham_2, 1,400 messages",
+      "result": {
+        "emails": 1400,
+        "verdicts": {
+          "benign": {
+            "NO STRONG INDICATORS": 1390,
+            "SUSPICIOUS": 10
+          }
+        },
+        "phish": 0,
+        "benign": 1400,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 10,
+          "tn": 1390,
+          "recall": null,
+          "false_positive_rate": 0.0071,
+          "precision": 0.0
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "tn": 1400,
+          "recall": null,
+          "false_positive_rate": 0.0,
+          "precision": null
+        },
+        "timing_ms": {
+          "median": 4.7,
+          "p95": 8.8,
+          "max": 44.0
+        }
+      }
+    },
+    "ham_holdout_hard": {
+      "title": "Real legitimate mail, held out: spam-like",
+      "source": "SpamAssassin hard_ham, the held-out half (seed 2026), 125 messages",
+      "result": {
+        "emails": 125,
+        "verdicts": {
+          "benign": {
+            "SUSPICIOUS": 27,
+            "NO STRONG INDICATORS": 96,
+            "LIKELY PHISHING": 2
+          }
+        },
+        "phish": 0,
+        "benign": 125,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 29,
+          "tn": 96,
+          "recall": null,
+          "false_positive_rate": 0.232,
+          "precision": 0.0
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 2,
+          "tn": 123,
+          "recall": null,
+          "false_positive_rate": 0.016,
+          "precision": 0.0
+        },
+        "timing_ms": {
+          "median": 26.0,
+          "p95": 46.2,
+          "max": 64.2
+        }
+      }
+    },
+    "ham_tune": {
+      "title": "Real legitimate mail, tuning set",
+      "source": "SpamAssassin easy_ham (2,500) + the other half of hard_ham (125)",
+      "result": {
+        "emails": 2625,
+        "verdicts": {
+          "benign": {
+            "NO STRONG INDICATORS": 2589,
+            "SUSPICIOUS": 32,
+            "LIKELY PHISHING": 4
+          }
+        },
+        "phish": 0,
+        "benign": 2625,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 36,
+          "tn": 2589,
+          "recall": null,
+          "false_positive_rate": 0.0137,
+          "precision": 0.0
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 4,
+          "tn": 2621,
+          "recall": null,
+          "false_positive_rate": 0.0015,
+          "precision": 0.0
+        },
+        "timing_ms": {
+          "median": 4.9,
+          "p95": 13.4,
+          "max": 1142.5
+        }
       }
     },
     "cpython": {
@@ -88,22 +247,22 @@
       "source": "CPython Lib/test/test_email/data, 48 messages",
       "result": {
         "emails": 48,
-        "phish": 0,
-        "benign": 48,
         "verdicts": {
           "benign": {
-            "NO STRONG INDICATORS": 47,
-            "SUSPICIOUS": 1
+            "NO STRONG INDICATORS": 48
           }
         },
+        "phish": 0,
+        "benign": 48,
+        "errors": 0,
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 1,
-          "tn": 47,
+          "fp": 0,
+          "tn": 48,
           "recall": null,
-          "false_positive_rate": 0.0208,
-          "precision": 0.0
+          "false_positive_rate": 0.0,
+          "precision": null
         },
         "strict": {
           "tp": 0,
@@ -115,11 +274,10 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 3.4,
-          "p95": 8.6,
-          "max": 12.1
-        },
-        "errors": 0
+          "median": 4.5,
+          "p95": 13.1,
+          "max": 14.8
+        }
       }
     },
     "synthetic": {
@@ -127,8 +285,6 @@
       "source": "eval/make_corpus.py, seed 7",
       "result": {
         "emails": 167,
-        "phish": 102,
-        "benign": 65,
         "verdicts": {
           "phish": {
             "SUSPICIOUS": 41,
@@ -138,6 +294,9 @@
             "NO STRONG INDICATORS": 65
           }
         },
+        "phish": 102,
+        "benign": 65,
+        "errors": 0,
         "flagged": {
           "tp": 102,
           "fn": 0,
@@ -157,11 +316,10 @@
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 3.7,
-          "p95": 7.9,
-          "max": 10.7
-        },
-        "errors": 0
+          "median": 4.2,
+          "p95": 9.3,
+          "max": 13.3
+        }
       }
     }
   },
@@ -170,7 +328,13 @@
     "holdout_flagged_recall": 0.7,
     "tune_flagged_recall": 0.75,
     "cpython_false_positive_rate": 0.125,
-    "worst_case_parse_seconds": 60.5
+    "worst_case_parse_seconds": 60.5,
+    "about_ham": "The SpamAssassin sets scored with PhishHawk 1.1.0, before any legitimate-mail tuning.",
+    "ham_holdout_false_positive_rate": 0.259,
+    "ham_holdout_easy_false_positive_rate": 0.2329,
+    "ham_holdout_hard_false_positive_rate": 0.552,
+    "ham_tune_false_positive_rate": 0.2453,
+    "holdout_strict_recall_1_1": 0.305
   },
-  "tests": 168
+  "tests": 191
 }

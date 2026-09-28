@@ -143,8 +143,10 @@ def test_file_sharing_url_is_an_ioc_but_its_domain_is_not():
             sender='"X" <x@gmail.com>',
             text="Verify your account now: https://drive.google.com/uc?id=1abc&export=download "
             "or your account will be suspended",
+            headers=[("Authentication-Results", "mx.example-corp.co.uk; spf=fail smtp.mailfrom=gmail.com")],
         )
     )
+    assert a.verdict != "NO STRONG INDICATORS"  # iocs() is empty for a clean verdict
     values = {(i["type"], i["value"]) for i in a.iocs()}
     assert ("url", "https://drive.google.com/uc?id=1abc&export=download") in values
     assert not any(t == "domain" and "google" in v for t, v in values)

@@ -12,20 +12,27 @@ human should look. "Strict" means `LIKELY PHISHING` or worse.
 
 | Data set | Emails | Flagged recall | Strict recall | False-positive rate |
 |---|---|---|---|---|
-| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **71.0%** | 30.5% | — |
-| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 81.0% | 26.5% | — |
-| Legitimate edge-case mail (CPython `test_email` corpus) | 48 | — | — | **2.1%** (1/48) |
+| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **70.5%** | 24.0% | — |
+| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 80.0% | 21.5% | — |
+| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | — | — | **0.7%** (10/1,400) |
+| Real legitimate mail, **held out**: SpamAssassin `hard_ham`, seeded half | 125 | — | — | 23.2% (29/125) |
+| Real legitimate mail, tuning set: `easy_ham` + the other half of `hard_ham` | 2,625 | — | — | 1.4% (36/2,625) |
+| Legitimate edge-case mail (CPython `test_email` corpus) | 48 | — | — | 0% (0/48) |
 | Synthetic labelled corpus (`make_corpus.py`, seed 7) | 102 phish + 65 legit | 100% | 59.8% | 0.0% |
 
-Before this evaluation, the same code scored 70.0% on the held-out set, 75.0% on
-the tuning set and 12.5% false positives on the CPython corpus. The worst-case
-parse time was 60 seconds; it is now under half a second.
+Before the first real-mail evaluation, the code scored 70.0% on the held-out
+phishing, 75.0% on the tuning phishing and 12.5% false positives on the CPython
+corpus, and its worst-case parse took 60 seconds. Before the legitimate-mail
+evaluation, PhishHawk 1.1.0 flagged **23.3%** of `easy_ham_2` (326/1,400) and
+**55.2%** of the held-out `hard_ham` (69/125); it scored 71.0% and 30.5% strict
+on the held-out phishing. The slowest message is now a 3,129-link digest at
+about one second.
 
 ## How to read these numbers
 
 * **The held-out number is the honest one.** Detections were developed while
   looking at the tuning sample only. The held-out sample, disjoint from it,
-  was scored once at the end. The gap between the two (81% vs 71%) is the
+  was scored once at the end. The gap between the two (80% vs 70.5%) is the
   expected optimism of measuring on data you tuned against.
 * **phishing_pot is a honeypot**, so its "phishing" label includes a lot of
   generic spam: casino offers, diet pills, loan consolidation, crypto
@@ -42,9 +49,51 @@ parse time was 60 seconds; it is now under half a second.
   Safe-Links-wrapped internal mail, Drive shares, Hindi text with zero-width
   joiners). None may be flagged. CI fails if recall drops below 95% or false
   positives rise above 2%.
-* **The one CPython false positive** is a message from `example.net` to
-  `example.com`, a TLD swap of the recipient's domain. It is flagged medium,
-  because that is exactly what BEC looks like.
+* **48 test messages were not a false-positive benchmark.** The CPython corpus
+  is MIME edge cases; its 2.1% hid a 23% false-positive rate on ordinary mail.
+  The SpamAssassin ham (below) is the benchmark now.
+* **`hard_ham` is legitimate mail chosen because it looks like spam**:
+  commercial newsletters, offers, mailing-list digests. It is the hardest
+  legitimate mail there is for a phishing detector, and about one in four is
+  still flagged.
+* **The SpamAssassin mail is from 2002.** It has no DKIM, DMARC or
+  `Authentication-Results`, so it cannot test those checks; it does test
+  everything else, and mailing lists, newsletters and click trackers have not
+  changed much.
+
+## False positives on real legitimate mail
+
+The [SpamAssassin public corpus](https://spamassassin.apache.org/old/publiccorpus/)
+has 4,150 real legitimate emails with full headers. `fetch_spamassassin.py`
+splits them before anything is looked at:
+
+| Set | Messages | Used for |
+|---|---|---|
+| `tune/easy`: `easy_ham` | 2,500 | Finding and fixing the causes of false positives |
+| `tune/hard`: half of `hard_ham` (seed 2026) | 125 | Same |
+| `holdout/easy`: `easy_ham_2`, collected later | 1,400 | Scored once, at the end |
+| `holdout/hard`: the other half of `hard_ham` | 125 | Scored once, at the end |
+
+On the tuning set, 1.1.0 flagged 644 of 2,625 messages. Six rules caused
+almost all of it; each fix was checked against the phishing tuning sample so
+that recall was not traded away silently:
+
+| Cause on legitimate mail | Fix |
+|---|---|
+| A mailing list sets Reply-To to its own address, which was scored as high-severity reply diversion (77% of the false positives) | List mail (`List-Post`, `Mailing-List`, `X-Mailing-List`, `X-BeenThere`, `Precedence: list`) whose Reply-To is the list's own domain scores low; other list mail medium. `List-Id` and `Precedence: bulk` do not count: the bulk services phishers rent set them |
+| Newsletters show their site and link through a click tracker, scored as a high link mismatch, once per link | High only when the text shows a brand, government, free-mail or your own domain, or the destination is suspect; otherwise medium, once per destination |
+| An email address in link text ("sent to you@...") read as a claimed website | Ignored |
+| Any name inside another read as a combosquat: `linuxmafia.com` as your own `linux.ie`, `shagmail.com` as Gmail, `yahoogroups.com` as Yahoo | A combosquat must add only lure or business words, digits or a short code (`outlooksecure`, `paypal-billing`, `example-corp-payroll`) |
+| A brand's country site (`yahoo.co.uk`) and a brand word in a subdomain (`outlook.4team.biz`) | Country sites of a brand are its own; a brand subdomain is high only with its whole domain spelled out, a high-abuse TLD, free hosting or a credential word |
+| No `Authentication-Results` header scored as a weak signal | Not scored: the header is missing from exported and older mail, phishing or not |
+
+After the fixes the tuning set dropped to 36 of 2,625. Phishing recall on the
+tuning sample went from 81% to 80%: one lost message had been flagged only
+because `storage.googleapis.com` was wrongly called a Google lookalike, the
+other is a prize spam sent through a genuine newsletter service.
+
+The held-out sets were then scored once: 10 of 1,400 everyday messages and
+29 of 125 spam-like ones flagged, 39 of 1,525 in all.
 
 ## What the evaluation changed
 
@@ -67,6 +116,8 @@ had:
 python eval/run_eval.py --synthetic                  # the regression gate, about 1 second
 python eval/fetch_phishing_pot.py /tmp/pot           # partial clone + the two seeded samples
 python eval/run_eval.py --phish /tmp/pot/holdout
+python eval/fetch_spamassassin.py /tmp/ham           # 4,150 legitimate emails, split as above
+python eval/run_eval.py --benign /tmp/ham/holdout/easy --benign /tmp/ham/holdout/hard
 python eval/run_eval.py --phish DIR --benign DIR     # your own labelled mail
 ```
 
@@ -79,6 +130,13 @@ and pass the folder with `--benign`.
 * **phishing_pot** by rf-peixoto, real phishing collected by honeypots,
   licensed CC BY-NC 4.0. It is used here for non-commercial evaluation
   only; no samples are redistributed in this repository.
+* **SpamAssassin public corpus** (Apache SpamAssassin project), the
+  `easy_ham`, `easy_ham_2` and `hard_ham` folders of 2003-02-28: real
+  legitimate mail from 2002. `fetch_spamassassin.py` downloads it from
+  spamassassin.apache.org, or from the `@stdlib/datasets-spam-assassin` npm
+  package (Apache-2.0), which ships the same files; every file is checked
+  against the MD5 in its name (one, `hard_ham/00230`, does not match in the npm
+  copy; the official download could not be checked from where this ran). No messages are redistributed in this repository.
 * **CPython `Lib/test/test_email/data`**, the Python standard library's email
   test messages (PSF licence), used as legitimate and edge-case MIME.
 * **`make_corpus.py`**, synthetic, generated deterministically.

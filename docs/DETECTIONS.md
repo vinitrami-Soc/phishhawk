@@ -64,17 +64,18 @@ Severities marked *varies* depend on context, explained in the notes.
 |---|---|---|
 | `SPF=fail`, `DKIM=fail`, `DMARC=fail` | High | – |
 | SPF `softfail`, `none`, `permerror` or `temperror`; DKIM `none`, `permerror` or `temperror`; DMARC `permerror` or `temperror` | Medium | – |
-| No `Authentication-Results` header present | Low | – |
 
 Results are read from the `Authentication-Results` header your mail server
-added. Passing authentication is **not** treated as proof of legitimacy: an
+added. A message with no such header is not scored: the header is missing from
+mail exported by many clients and from all older mail, phishing or not. Passing authentication is **not** treated as proof of legitimacy: an
 attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 
 ### Sender and impersonation
 
 | Signal | Severity | ATT&CK |
 |---|---|---|
-| Reply-To domain differs from the From domain | High | T1656 |
+| Reply-To domain differs from the From domain | High; Medium on mailing-list mail | T1656 |
+| Reply-To goes to the mailing list the message came through | Low | – |
 | Display name claims a brand (`Microsoft Account Team`) the domain does not back up | High | T1656 |
 | Display name shows a different email address | Medium | T1656 |
 | Display name reads as an organisation, address is free-mail (`HR Payroll <x@gmail.com>`) | Medium | T1656 |
@@ -86,6 +87,13 @@ attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 Brand matching ignores punctuation, spaces and case, so `Trust-Wallet`,
 `Trust Wallet` and `TRUSTWALLET` all match `trustwallet`.
 
+A mailing list sets Reply-To to its own address, which looks exactly like
+reply diversion. Mail counts as list mail when it carries `List-Post`,
+`Mailing-List`, `X-Mailing-List` or `X-BeenThere`, or `Precedence: list`; if
+Reply-To then points at the list's own domain the signal drops to Low. `List-Id`
+and `Precedence: bulk` do not count, because every bulk-mail service sets them,
+including the ones phishers rent.
+
 ### Lookalike domains
 
 Every domain in the From, Reply-To and Return-Path addresses and every URL host
@@ -96,9 +104,9 @@ is compared with 66 well-known brands and with your
 |---|---|---|---|
 | **homoglyph** | `micros0ft.com`, `rnicrosoft.com`, `paypa1.com`, `xn--pypal-4ve.com` (Cyrillic `а` in place of Latin `a`) | The label is reduced to "skeletons" that fold look-alike characters (`0→o`, `1→l` or `i`, `3→e`, `5→s`, `rn→m`, `vv→w`, `cl→d`, Cyrillic `а е о р с у х і`), accents removed, then compared | High |
 | **typosquat** | `microsfot.com`, `paypai.com`, `exmaple-corp.co.uk` | One typo (insertion, deletion, substitution or swapped letters) from a brand; up to two from a protected domain of 8+ characters | High |
-| **combosquat** | `paypal-support.com`, `example-payments.com` | The brand or your domain appears inside a longer label | Medium; High for your own domain |
-| **subdomain** | `paypal.com.secure-login.top`, `login.microsoft.verify-account.xyz` | A brand domain used as a subdomain of an unrelated domain | High |
-| **tld-swap** | `example.co` vs `example.com` | Same name, different suffix | Medium, because organisations often own several TLDs of their name |
+| **combosquat** | `paypal-support.com`, `outlooksecure.com`, `example-corp-payroll.com` | The brand or your domain plus only lure or business words (`secure`, `login`, `billing`, `payroll`, `taxa`...), digits or a two-letter code. A name that merely appears inside another (`linuxmafia.com`, `yahoogroups.com`) does not count | Medium; High for your own domain |
+| **subdomain** | `paypal.com.secure-login.top`, `login.microsoft.verify-account.xyz` | A brand used as a subdomain of an unrelated domain | High when the brand's whole domain is spelled out, the site is on a high-abuse TLD or free hosting, or its name holds a credential word; otherwise Medium (`outlook.4team.biz`) |
+| **tld-swap** | `example.co` vs `example.com`, `slack.net` | Same name, different suffix. A brand's name under an established country domain (`yahoo.co.uk`, `santander.com.br`) is taken as the brand's own site | Medium, because organisations often own several TLDs of their name |
 
 Each lookalike raises a signal tagged T1583.001 (Acquire Infrastructure:
 Domains) and T1656 (Impersonation); homoglyphs are also tagged T1036
@@ -113,9 +121,13 @@ gateway rewrites (Microsoft Safe Links, Proofpoint URL Defense, Barracuda) are
 unwrapped to the real target first, and open redirects on trusted sites
 (Google, Bing, Facebook, YouTube, LinkedIn) are decoded.
 
+Newsletters show their own site and link through a click tracker, so a plain
+mismatch is Medium and one tracker counts once, however many links use it. An
+email address in the link text names a mailbox, not a website, and is ignored.
+
 | Signal | Severity | ATT&CK |
 |---|---|---|
-| Link text shows one domain, the `href` goes to another | High | T1036, T1566.002 |
+| Link text shows one domain, the `href` goes to another | High when the text shows a brand, government, free-mail or your own domain, or the destination is itself suspect (raw IP, lookalike, shortener, high-abuse TLD, free hosting); otherwise Medium, counted once per destination | T1036, T1566.002 |
 | URL host is a raw IP address | High | T1608.005 |
 | Punycode (`xn--`) URL host | High | T1583.001 |
 | `@` in the URL hides the real host (`https://microsoft.com@evil.top/`) | High | T1036 |

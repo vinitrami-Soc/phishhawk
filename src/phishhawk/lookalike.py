@@ -10,9 +10,19 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 
 from .extract import domain_label, is_ip, registrable_domain
-from .knowledge import BRANDS, TOKEN_ONLY_BRANDS, known_legit_domains
+from .hosting import hosting_kind
+from .knowledge import (
+    BRANDS,
+    COMBO_WORDS,
+    CREDENTIAL_WORDS,
+    GENERIC_CCTLDS,
+    SUSPICIOUS_TLDS,
+    TOKEN_ONLY_BRANDS,
+    known_legit_domains,
+)
 from .models import Lookalike
 
 # Characters attackers substitute for Latin letters. Digits and symbols first,
@@ -73,8 +83,66 @@ def edit_distance(a: str, b: str, limit: int = 3) -> int:
     return previous[-1]
 
 
+def one_edit_apart(a: str, b: str) -> bool:
+    """edit_distance(a, b) == 1, in one pass: a single substitution, insertion,
+    deletion or swap of neighbours. The typosquat check asks this of every
+    link host against every brand, so the full table is too slow there."""
+    if a == b or abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) > len(b):
+        a, b = b, a
+    i = 0
+    while i < len(a) and a[i] == b[i]:
+        i += 1
+    if len(a) < len(b):
+        return a[i:] == b[i + 1:]
+    return a[i + 1:] == b[i + 1:] or (i + 1 < len(a) and a[i] == b[i + 1] and a[i + 1] == b[i]
+                                      and a[i + 2:] == b[i + 2:])
+
+
 def _tokens(text: str) -> set[str]:
     return {token for token in re.split(r"[-_.]", text) if token}
+
+
+@lru_cache(maxsize=4096)
+def _made_of_words(part: str) -> bool:
+    """Can `part` be split entirely into COMBO_WORDS ("securelogin")?"""
+    reachable = [True] + [False] * len(part)
+    for end in range(1, len(part) + 1):
+        reachable[end] = any(reachable[start] and part[start:end] in COMBO_WORDS
+                             for start in range(max(0, end - 16), end))
+    return reachable[-1]
+
+
+def _combo(raw: str, name: str) -> bool:
+    """True when `raw` is `name` plus nothing but lure or business words,
+    digits and short codes: "paypal-billing-update", "outlooksecure",
+    "taxascorreios756". "linuxmafia" and "yahoogroups" are just other names."""
+    index = raw.find(name)
+    if index < 0:
+        return False
+    rest = raw[:index] + " " + raw[index + len(name):]
+    return all(len(part) <= 2 or _made_of_words(part) for part in re.split(r"[^a-z]+", rest) if part)
+
+
+def _country_site(suffix: str) -> bool:
+    """"co.uk", "com.br", "de": a brand's own country site, not a TLD swap."""
+    last = suffix.rsplit(".", 1)[-1]
+    return len(last) == 2 and last not in GENERIC_CCTLDS
+
+
+def strong_subdomain(domain: str, target: str) -> bool:
+    """A brand in the subdomain ("outlook.4team.biz") is common on legitimate
+    mail. It is damning when the brand's whole domain is spelled out
+    ("microsoft.com.account-verify.top"), the site is on a high-abuse TLD or
+    free hosting, or the real name is a credential word."""
+    base = registrable_domain(domain)
+    if target in domain[: -len(base)]:
+        return True
+    if base.rsplit(".", 1)[-1] in SUSPICIOUS_TLDS or hosting_kind("https://%s/" % domain):
+        return True
+    label = domain_label(base)  # short words ("owa", "sso") only as a whole token: not "iowastate"
+    return any(word in label if len(word) >= 5 else word in _tokens(label) for word in CREDENTIAL_WORDS)
 
 
 def _canonical(brand: str) -> str:
@@ -99,27 +167,39 @@ def _compare_protected(raw: str, variants: set[str], target: str) -> str:
     if any(edit_distance(variant, target, threshold) <= threshold for variant in variants):
         return "typosquat"
     if len(target) >= 5 and target in raw:
-        return "combosquat"
+        return "combosquat" if _combo(raw, target) else ""
     return ""
 
 
-def _compare_brand(raw: str, variants: set[str], brand: str) -> str:
+def _compare_brand(raw: str, variants: set[str], brand: str, suffix: str) -> str:
+    if raw == brand:  # "yahoo.co.uk" is Yahoo's; "slack.net" is somebody else's
+        return "" if _country_site(suffix) else "tld-swap"
     if brand in TOKEN_ONLY_BRANDS:
         if brand in _tokens(raw):
-            return "combosquat"
+            return "combosquat" if _combo(raw, brand) else ""
         if any(brand in _tokens(variant) for variant in variants):
             return "homoglyph"
         return ""
     if brand in raw:
-        return "combosquat"
+        return "combosquat" if _combo(raw, brand) else ""
     if any(brand in variant for variant in variants):
         return "homoglyph"
     if len(brand) >= 6:
         for variant in variants:
             for token in _tokens(variant):
-                if len(token) >= 5 and edit_distance(token, brand, 1) == 1:
+                if len(token) >= 5 and one_edit_apart(token, brand):
                     return "typosquat"
     return ""
+
+
+@lru_cache(maxsize=4096)
+def _brand_hits(base: str) -> tuple[tuple[str, str], ...]:
+    """Brand comparisons depend only on the registrable domain, and a digest
+    newsletter can carry thousands of links to the same few sites."""
+    label = domain_label(base)
+    raw, suffix, variants = decode_idna(label).lower(), base[len(label) + 1:], skeletons(label)
+    hits = ((_canonical(brand), _compare_brand(raw, variants, brand, suffix)) for brand in BRANDS)
+    return tuple((target, method) for target, method in hits if method)
 
 
 def find_lookalikes(domain: str, where: str, protected: list[str] | set[str] = ()) -> list[Lookalike]:
@@ -146,8 +226,8 @@ def find_lookalikes(domain: str, where: str, protected: list[str] | set[str] = (
         if len(target_label) >= 4:
             record(protected_base, _compare_protected(raw, variants, target_label))
 
-    for brand in BRANDS:
-        record(_canonical(brand), _compare_brand(raw, variants, brand))
+    for target, method in _brand_hits(base):
+        record(target, method)
 
     # "microsoft.com.account-verify.top": the brand sits in the subdomain,
     # where a hurried reader's eye stops.
@@ -159,7 +239,8 @@ def find_lookalikes(domain: str, where: str, protected: list[str] | set[str] = (
             sub_variants |= skeletons(token)
         for brand in BRANDS:
             hit = brand in sub_tokens or any(brand == variant for variant in sub_variants) \
-                or (brand not in TOKEN_ONLY_BRANDS and any(brand in variant for variant in sub_variants))
+                or (brand not in TOKEN_ONLY_BRANDS
+                    and any(brand in variant and _combo(variant, brand) for variant in sub_variants))
             if hit:
                 record(_canonical(brand), "subdomain")
     return found

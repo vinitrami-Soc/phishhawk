@@ -50,7 +50,66 @@ def test_rtl_override_filename():
 def test_reply_to_diversion():
     eml = build_eml(headers=[("Reply-To", "ceo.private@proton.me")], sender='"CEO" <ceo@corp.example>')
     a = triage_bytes(eml)
-    assert any("Reply-To domain" in label for label in labels(a))
+    assert ("high", "Reply-To domain (proton[.]me) differs from From domain (corp[.]example)") in \
+        [(s.severity, s.label) for s in a.signals]
+
+
+def severity_of(a, prefix):
+    return [s.severity for s in a.signals if s.label.startswith(prefix)]
+
+
+def test_a_mailing_list_replying_to_itself_is_not_diversion():
+    # Real list mail (SpamAssassin ham): the list sets Reply-To to its own address.
+    a = triage_bytes(build_eml(sender='"Tim" <timc@2ubh.example>', headers=[
+        ("Reply-To", "forteana@yahoogroups.example"),
+        ("Mailing-List", "list forteana@yahoogroups.example; contact forteana-owner@yahoogroups.example")]))
+    assert a.mailing_list and a.list_domains == ["yahoogroups.example"]
+    assert severity_of(a, "Reply-To goes to the mailing list") == ["low"]
+    assert severity_of(a, "Reply-To domain") == []
+    assert a.verdict == "NO STRONG INDICATORS"
+
+
+def test_a_list_elsewhere_or_a_bulk_sender_keeps_reply_to_diversion():
+    elsewhere = triage_bytes(build_eml(sender='"News" <news@site.example>', headers=[
+        ("Reply-To", "person@other.example"), ("List-Post", "<mailto:list@lists.site.example>")]))
+    assert severity_of(elsewhere, "Reply-To domain") == ["medium"]
+    # List-Id and Precedence: bulk are set by every bulk-mail service, the ones phishers rent included.
+    rented = triage_bytes(build_eml(sender='"Bank" <alerts@bank.example>', headers=[
+        ("Reply-To", "help@attacker.example"), ("List-Id", "<123.xt.local>"), ("Precedence", "bulk")]))
+    assert not rented.mailing_list
+    assert severity_of(rented, "Reply-To domain") == ["high"]
+
+
+def test_a_missing_authentication_header_is_not_scored():
+    a = triage_bytes(build_eml())
+    assert a.auth == {}
+    assert not any("Authentication" in label for label in labels(a))
+
+
+def mismatch(a):
+    return severity_of(a, "link text/href mismatch")
+
+
+def test_a_click_tracker_is_a_medium_mismatch_and_counts_once():
+    html = "".join('<a href="http://clickthru.tracker.example/c?%d">%s</a> ' % (i, site)
+                   for i, site in enumerate(("news.example", "builder.example", "shop.example")))
+    a = triage_bytes(build_eml(html=html))
+    assert mismatch(a) == ["medium"]
+
+
+def test_a_mismatch_borrowing_a_brand_or_going_somewhere_suspect_is_high():
+    brand = triage_bytes(build_eml(html='<a href="https://secure.pay-help.example/">paypal.com</a>'))
+    assert mismatch(brand) == ["high"]
+    government = triage_bytes(build_eml(html='<a href="https://x.example/">detran.gov.br</a>'))
+    assert mismatch(government) == ["high"]
+    suspect = triage_bytes(build_eml(html='<a href="https://pay.example.top/">shop.example</a>'))
+    assert mismatch(suspect) == ["high"]
+
+
+def test_an_address_in_link_text_is_not_a_claimed_website():
+    a = triage_bytes(build_eml(
+        html='This was sent to <a href="http://lists.example/unsubscribe">you@example-corp.co.uk</a>'))
+    assert mismatch(a) == []
 
 
 def test_iocs_skip_trusted_shorteners_and_freemail_domains():
