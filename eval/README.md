@@ -12,10 +12,13 @@ human should look. "Strict" means `LIKELY PHISHING` or worse.
 
 | Data set | Emails | Flagged recall | Strict recall | False-positive rate |
 |---|---|---|---|---|
-| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **71.0%** | 30.5% | — |
-| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 81.0% | 26.5% | — |
-| Legitimate edge-case mail (CPython `test_email` corpus) | 48 | — | — | **2.1%** (1/48) |
+| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **71.0%** | 30.5% | n/a |
+| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 81.0% | 26.5% | n/a |
+| Legitimate edge-case mail (CPython `test_email` corpus) | 48 | n/a | n/a | **2.1%** (1/48) |
 | Synthetic labelled corpus (`make_corpus.py`, seed 7) | 102 phish + 65 legit | 100% | 59.8% | 0.0% |
+
+*n/a* means the measure does not apply: a set of only phishing has no legitimate
+mail to flag by mistake, and a set of only legitimate mail has no phishing to catch.
 
 Before this evaluation, the same code scored 70.0% on the held-out set, 75.0% on
 the tuning set and 12.5% false positives on the CPython corpus. The worst-case
