@@ -12,13 +12,16 @@ human should look. "Strict" means `LIKELY PHISHING` or worse.
 
 | Data set | Emails | Flagged recall | Strict recall | False-positive rate |
 |---|---|---|---|---|
-| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **70.5%** | 24.0% | — |
-| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 80.0% | 21.5% | — |
-| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | — | — | **0.7%** (10/1,400) |
-| Real legitimate mail, **held out**: SpamAssassin `hard_ham`, seeded half | 125 | — | — | 23.2% (29/125) |
-| Real legitimate mail, tuning set: `easy_ham` + the other half of `hard_ham` | 2,625 | — | — | 1.4% (36/2,625) |
-| Legitimate edge-case mail (CPython `test_email` corpus) | 48 | — | — | 0% (0/48) |
+| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **70.5%** | 24.0% | n/a |
+| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 80.0% | 21.5% | n/a |
+| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.7%** (10/1,400) |
+| Real legitimate mail, **held out**: SpamAssassin `hard_ham`, seeded half | 125 | n/a | n/a | 23.2% (29/125) |
+| Real legitimate mail, tuning set: `easy_ham` + the other half of `hard_ham` | 2,625 | n/a | n/a | 1.4% (36/2,625) |
+| Legitimate edge-case mail (CPython `test_email` corpus) | 48 | n/a | n/a | 0% (0/48) |
 | Synthetic labelled corpus (`make_corpus.py`, seed 7) | 102 phish + 65 legit | 100% | 59.8% | 0.0% |
+
+*n/a* means the measure does not apply: a set of only phishing has no legitimate
+mail to flag by mistake, and a set of only legitimate mail has no phishing to catch.
 
 Before the first real-mail evaluation, the code scored 70.0% on the held-out
 phishing, 75.0% on the tuning phishing and 12.5% false positives on the CPython

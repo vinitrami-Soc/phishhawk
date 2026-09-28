@@ -7,6 +7,18 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- `eval/fetch_spamassassin.py` fetches the legitimate-mail evaluation set and
+  splits it into a tuning and a held-out part.
+- The JSON report has `mailing_list` and `list_domains`.
+
+### Changed
+
+- Empty cells in the evaluation tables (`README.md`, `eval/README.md`) read
+  *n/a*, and signals with no ATT&CK technique in `docs/DETECTIONS.md` read
+  *none*, each explained under its table, instead of a dash.
+
 ### Fixed
 
 - **False positives on real legitimate mail, from about one message in four
@@ -33,12 +45,6 @@ the JSON and STIX output are the public interface.
   unless something else is wrong with the site.
 - A missing `Authentication-Results` header is no longer scored.
 - A digest with thousands of links parses about twice as fast.
-
-### Added
-
-- `eval/fetch_spamassassin.py` fetches the legitimate-mail evaluation set and
-  splits it into a tuning and a held-out part.
-- The JSON report has `mailing_list` and `list_domains`.
 
 ## [1.1.0] - 2026-09-24
 

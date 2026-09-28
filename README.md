@@ -426,15 +426,17 @@ on, detection can only go up.
 
 | Data set | Emails | Flagged | Strict | False positives | Median time |
 |---|---|---|---|---|---|
-| Real phishing, **held-out** sample of the [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot corpus | 200 | **70.5%** | 24.0% | – | 11.1 ms |
-| Real phishing, sample used while developing detections | 200 | 80.0% | 21.5% | – | 9.6 ms |
-| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | – | – | **0.7%** (10 of 1,400) | 4.7 ms |
-| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | – | – | 23.2% (29 of 125) | 26.0 ms |
-| Real legitimate mail used while fixing false positives (`easy_ham` + the other half of `hard_ham`) | 2,625 | – | – | 1.4% (36 of 2,625) | 4.9 ms |
-| Legitimate and edge-case mail (CPython email test corpus) | 48 | – | – | 0% (0 of 48) | 4.5 ms |
+| Real phishing, **held-out** sample of the [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot corpus | 200 | **70.5%** | 24.0% | n/a | 11.1 ms |
+| Real phishing, sample used while developing detections | 200 | 80.0% | 21.5% | n/a | 9.6 ms |
+| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.7%** (10 of 1,400) | 4.7 ms |
+| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 23.2% (29 of 125) | 26.0 ms |
+| Real legitimate mail used while fixing false positives (`easy_ham` + the other half of `hard_ham`) | 2,625 | n/a | n/a | 1.4% (36 of 2,625) | 4.9 ms |
+| Legitimate and edge-case mail (CPython email test corpus) | 48 | n/a | n/a | 0% (0 of 48) | 4.5 ms |
 | Labelled synthetic corpus, including tricky legitimate mail | 167 | 100% | 59.8% | 0.0% | 4.2 ms |
 
-*Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse.
+*Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse. *n/a* means the
+measure does not apply: a set of only phishing has no legitimate mail to flag by
+mistake, and a set of only legitimate mail has no phishing to catch.
 
 **The held-out numbers are the honest ones.** Those sets were scored once, at
 the end, after all tuning was finished. Two things to know about them:
