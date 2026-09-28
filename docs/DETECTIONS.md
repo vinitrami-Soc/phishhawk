@@ -56,15 +56,17 @@ therefore 36, and with at least two high signals the verdict is `LIKELY PHISHING
 
 ## Signal catalogue
 
-Severities marked *varies* depend on context, explained in the notes.
+Severities marked *varies* depend on context, explained in the notes. *none* in the
+ATT&CK column means the signal counts towards the verdict but evidences no
+single technique on its own.
 
 ### Authentication
 
 | Signal | Severity | ATT&CK |
 |---|---|---|
-| `SPF=fail`, `DKIM=fail`, `DMARC=fail` | High | – |
-| SPF `softfail`, `none`, `permerror` or `temperror`; DKIM `none`, `permerror` or `temperror`; DMARC `permerror` or `temperror` | Medium | – |
-| No `Authentication-Results` header present | Low | – |
+| `SPF=fail`, `DKIM=fail`, `DMARC=fail` | High | none |
+| SPF `softfail`, `none`, `permerror` or `temperror`; DKIM `none`, `permerror` or `temperror`; DMARC `permerror` or `temperror` | Medium | none |
+| No `Authentication-Results` header present | Low | none |
 
 Results are read from the `Authentication-Results` header your mail server
 added. Passing authentication is **not** treated as proof of legitimacy: an
@@ -81,7 +83,7 @@ attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 | Subject poses as a brand's notice, but neither the sender nor any link belongs to that brand | *varies*: High with a credential ask and links, else Medium | T1656 |
 | Forwarded original: display name claims a brand the address does not back up | High | T1656 |
 | Forwarded original: an organisation writes from free-mail | Medium | T1656 |
-| Return-Path domain differs from the From domain | Low | – |
+| Return-Path domain differs from the From domain | Low | none |
 
 Brand matching ignores punctuation, spaces and case, so `Trust-Wallet`,
 `Trust Wallet` and `TRUSTWALLET` all match `trustwallet`.
@@ -186,8 +188,8 @@ These need network access and, for VirusTotal and AbuseIPDB, an API key.
 | urlscan.io: earlier scans of the host were judged malicious | Medium | T1608.005 |
 | RDAP: a domain was registered under 30 days ago | High | T1583.001 |
 | RDAP: a domain is under 90 days old | Medium | T1583.001 |
-| AbuseIPDB: the sending IP has an abuse confidence of 75% or more | High | – |
-| AbuseIPDB: 25% to 74% | Medium | – |
+| AbuseIPDB: the sending IP has an abuse confidence of 75% or more | High | none |
+| AbuseIPDB: 25% to 74% | Medium | none |
 
 ## Protected domains
 

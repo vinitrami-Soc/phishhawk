@@ -7,6 +7,12 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Changed
+
+- Empty cells in the evaluation tables (`README.md`, `eval/README.md`) read
+  *n/a*, and signals with no ATT&CK technique in `docs/DETECTIONS.md` read
+  *none*, each explained under its table, instead of a dash.
+
 ## [1.1.0] - 2026-09-24
 
 ### Changed

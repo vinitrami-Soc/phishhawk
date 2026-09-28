@@ -426,12 +426,14 @@ on, detection can only go up.
 
 | Data set | Emails | Flagged | Strict | False positives | Median time |
 |---|---|---|---|---|---|
-| Real phishing, **held-out** sample of the [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot corpus | 200 | **71.0%** | 30.5% | – | 10.7 ms |
-| Real phishing, sample used while developing detections | 200 | 81.0% | 26.5% | – | 10.4 ms |
-| Legitimate and edge-case mail (CPython email test corpus) | 48 | – | – | **2.1%** (1 of 48) | 3.4 ms |
+| Real phishing, **held-out** sample of the [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot corpus | 200 | **71.0%** | 30.5% | n/a | 10.7 ms |
+| Real phishing, sample used while developing detections | 200 | 81.0% | 26.5% | n/a | 10.4 ms |
+| Legitimate and edge-case mail (CPython email test corpus) | 48 | n/a | n/a | **2.1%** (1 of 48) | 3.4 ms |
 | Labelled synthetic corpus, including tricky legitimate mail | 167 | 100% | 59.8% | 0.0% | 3.7 ms |
 
-*Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse.
+*Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse. *n/a* means the
+measure does not apply: a set of only phishing has no legitimate mail to flag by
+mistake, and a set of only legitimate mail has no phishing to catch.
 
 **The held-out number is the honest one.** Those 200 messages were scored once,
 at the end, after all tuning was finished. The honeypot also labels a lot of
