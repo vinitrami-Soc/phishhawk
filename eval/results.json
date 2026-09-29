@@ -1,7 +1,7 @@
 {
-  "about": "Offline evaluation of PhishHawk after 1.1.0, with the legitimate-mail false-positive fixes (unreleased). Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py and eval/fetch_spamassassin.py. Charts in docs/images are drawn from this file by tools/make_charts.py.",
+  "about": "Offline evaluation of PhishHawk 1.2.0. Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py and eval/fetch_spamassassin.py. Charts in docs/images are drawn from this file by tools/make_charts.py.",
   "generated": "2026-09-28",
-  "tool_version": "1.1.0+unreleased",
+  "tool_version": "1.2.0",
   "sets": {
     "holdout": {
       "title": "Real phishing, held-out sample",
