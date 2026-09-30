@@ -14,7 +14,7 @@ from hypothesis import strategies as st  # noqa: E402
 
 import filebuild as fb  # noqa: E402
 from phishhawk.extract import URL_RE, clean_url, defang_text, parse_html, usable_url  # noqa: E402
-from phishhawk.formats import archives, disk, lnk, mailparts, msg  # noqa: E402
+from phishhawk.formats import archives, disk, lnk, mailparts, msg, vdisk  # noqa: E402
 from phishhawk.formats.cfb import CompoundFile  # noqa: E402
 from phishhawk.indicators import find_wallets  # noqa: E402
 from phishhawk.pipeline import triage_bytes  # noqa: E402
@@ -63,11 +63,14 @@ SEEDS = {
     "fat": fb.fat12({"a.exe": b"MZ"}), "lnk": fb.lnk(), "tnef": fb.tnef({"a.exe": b"MZ"}, "hi"),
     "7z-packed": fb.seven_zip_packed({"a.js": b"x" * 300, "b.exe": b"MZ" + bytes(200)}, bcj=True),
     "rar-stored": fb.rar5(["a.js", "b.txt"], contents={"a.js": b"alert(1)" * 20}),
+    "vhd": fb.vhd_dynamic(fb.mbr_disk([(0x07, fb.ntfs({"a.exe": b"MZ" * 400}))]), block_size=65536),
+    "vhdx-fat": fb.vhd_fixed(fb.fat12({"a.js": b"x" * 700})),
 }
 READERS = {"rar": archives.list_rar, "rar4": archives.list_rar, "7z": archives.list_7z, "iso": disk.list_iso,
            "fat": disk.list_fat, "lnk": lnk.parse_lnk, "tnef": mailparts.parse_tnef,
            "7z-packed": lambda data: archives.list_7z(data, budget=1 << 20),
-           "rar-stored": lambda data: archives.list_rar(data, budget=1 << 20)}
+           "rar-stored": lambda data: archives.list_rar(data, budget=1 << 20),
+           "vhd": vdisk.list_vhd, "vhdx-fat": vdisk.list_vhd}
 
 
 @st.composite

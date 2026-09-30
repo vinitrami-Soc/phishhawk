@@ -1,5 +1,5 @@
 """Disk images mailed as attachments: ISO 9660 (with Joliet names) and
-FAT floppy or disk images (.img).
+FAT12, FAT16 and FAT32 disk images (.img). Virtual hard disks are in vdisk.
 
 Windows opens them with a double-click, and files inside do not carry the
 Mark of the Web, so SmartScreen and Office's macro block never see them.
@@ -21,6 +21,7 @@ MAX_FILE_BYTES = 25 * 1024 * 1024
 # files are listed without their content.
 MAX_TOTAL_BYTES = 100 * 1024 * 1024
 MAX_DIRECTORY_BYTES = 16 * 1024 * 1024  # directory records read, all directories together
+MAX_FAT_BYTES = 16 * 1024 * 1024  # of the file allocation table: a 32 GB FAT32 volume's
 
 
 @dataclass
@@ -115,22 +116,30 @@ def list_iso(data: bytes) -> list[DiskFile]:
 # --------------------------------------------------------------------- FAT --
 
 def list_fat(data: bytes) -> list[DiskFile]:
-    """Files in a FAT12/16 image: the root directory and its subdirectories."""
-    if len(data) < 512:
-        raise ValueError("not a FAT12/16 image")
+    """Files in a FAT12, FAT16 or FAT32 image: the root directory and its
+    subdirectories. `data` is anything that slices like bytes (a partition
+    of a virtual disk is read on demand)."""
+    head = bytes(data[:512])
+    if len(head) < 512:
+        raise ValueError("not a FAT image")
     sector_size, cluster_sectors, reserved, fats, root_entries, total16, _, fat_sectors = \
-        struct.unpack_from("<HBHBHHBH", data, 11)
-    total = total16 or struct.unpack_from("<I", data, 32)[0]
+        struct.unpack_from("<HBHBHHBH", head, 11)
+    total = total16 or struct.unpack_from("<I", head, 32)[0]
+    fat32 = fat_sectors == 0  # FAT32 keeps a 32-bit FAT size, and its root directory in clusters
+    root_cluster = 0
+    if fat32:
+        fat_sectors, = struct.unpack_from("<I", head, 36)
+        root_cluster, = struct.unpack_from("<I", head, 44)
     if sector_size not in (512, 1024, 2048, 4096) or not cluster_sectors or not fats or not fat_sectors:
-        raise ValueError("not a FAT12/16 image")
+        raise ValueError("not a FAT image")
     fat_start = reserved * sector_size
-    fat = data[fat_start:fat_start + fat_sectors * sector_size]
+    fat = bytes(data[fat_start:fat_start + min(fat_sectors * sector_size, MAX_FAT_BYTES)])
     root_start = (reserved + fats * fat_sectors) * sector_size
-    root_size = root_entries * 32
+    root_size = 0 if fat32 else root_entries * 32
     data_start = root_start + ((root_size + sector_size - 1) // sector_size) * sector_size
     cluster_size = cluster_sectors * sector_size
     clusters = max(0, (total * sector_size - data_start) // cluster_size)
-    fat12 = clusters < 4085
+    fat12 = not fat32 and clusters < 4085
 
     def next_cluster(cluster: int) -> int:
         if fat12:
@@ -139,11 +148,15 @@ def list_fat(data: bytes) -> list[DiskFile]:
                 return 0xFFF
             value = struct.unpack_from("<H", fat, offset)[0]
             return (value >> 4) if cluster & 1 else (value & 0xFFF)
+        if fat32:
+            if 4 * cluster + 3 >= len(fat):
+                return 0x0FFFFFFF
+            return struct.unpack_from("<I", fat, 4 * cluster)[0] & 0x0FFFFFFF
         if 2 * cluster + 1 >= len(fat):
             return 0xFFFF
         return struct.unpack_from("<H", fat, 2 * cluster)[0]
 
-    end_marker = 0xFF8 if fat12 else 0xFFF8
+    end_marker = 0xFF8 if fat12 else 0x0FFFFFF8 if fat32 else 0xFFF8
 
     def read_chain(first: int, size: int) -> bytes | None:
         out, cluster, seen = bytearray(), first, set()
@@ -175,13 +188,20 @@ def list_fat(data: bytes) -> list[DiskFile]:
             long_name = []
             if entry[11] & 0x08 or name in (".", ".."):
                 continue
-            yield name.replace("￿", ""), entry[11], struct.unpack_from("<H", entry, 26)[0], \
-                struct.unpack_from("<I", entry, 28)[0]
+            cluster = struct.unpack_from("<H", entry, 26)[0]
+            if fat32:  # FAT32 keeps the high half of the first cluster number at offset 20
+                cluster |= struct.unpack_from("<H", entry, 20)[0] << 16
+            yield name.replace("￿", ""), entry[11], cluster, struct.unpack_from("<I", entry, 28)[0]
 
     files: list[DiskFile] = []
     budget, directory_budget = MAX_TOTAL_BYTES, MAX_DIRECTORY_BYTES
-    stack = [(data[root_start:root_start + root_size], "", 0)]
-    visited: set[int] = set()
+    if fat32:
+        root = read_chain(root_cluster, min(1024 * 1024, directory_budget)) or b""
+        directory_budget -= max(len(root), cluster_size)
+    else:
+        root = bytes(data[root_start:root_start + root_size])
+    stack = [(root, "", 0)]
+    visited: set[int] = {root_cluster} if fat32 else set()
     while stack and len(files) < MAX_FILES:
         raw, prefix, depth = stack.pop()
         for name, attributes, cluster, size in entries(raw):

@@ -23,7 +23,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .extract import defang_text, sniff_type, urls_from_pdf, urls_from_text
-from .formats import archives, disk, documents, lnk, mailparts
+from .formats import archives, disk, documents, lnk, mailparts, vdisk
 from .formats.cfb import SIGNATURE as OLE_SIGNATURE
 from .models import Analysis, FileIoc
 
@@ -149,9 +149,10 @@ class Inspector:
         elif kind == "fatimg":
             self._disk(ioc, "FAT disk image", lambda: disk.list_fat(data), depth)
         elif kind == "vhd":
-            ioc.details["container"] = {"kind": "virtual hard disk"}
-            ioc.notes.append("virtual hard disk: mounts with a double-click, contents not listed")
-            ioc.flagged = True
+            label = "VHDX disk image" if data[:8] == b"vhdxfile" else "VHD disk image"
+            ioc.details["container"] = {"kind": label}
+            ioc.flagged = True  # mounts with a double-click, even when it cannot be read here
+            self._disk(ioc, label, lambda: vdisk.list_vhd(data), depth)
         elif kind in ("rar", "7z"):
             self._listing(ioc, data, kind, depth)
         elif kind == "gzip":

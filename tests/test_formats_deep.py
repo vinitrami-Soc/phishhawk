@@ -108,7 +108,9 @@ def test_joliet_names_and_folders():
 def test_virtual_disks_and_unreadable_images():
     vhd = b"\0" * 1024 + b"conectix" + b"\0" * 504
     a = attach(vhd, "invoice.vhd")
-    assert any(f.details.get("container", {}).get("kind") == "virtual hard disk" for f in a.attachments)
+    unreadable = a.attachments[0]
+    assert unreadable.details["container"]["kind"] == "VHD disk image" and unreadable.flagged
+    assert any(note.startswith("unreadable VHD disk image") for note in unreadable.notes)
     assert disk.is_vhd(b"vhdxfile" + b"\0" * 100)
     broken = bytearray(fb.iso({"a.txt": b"x"}))
     broken[16 * 2048 + 1:16 * 2048 + 6] = b"XXXXX"  # the volume descriptor is gone, the marker at 0x8001 too
