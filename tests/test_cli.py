@@ -22,8 +22,8 @@ def test_exit_codes_follow_the_verdict(capsys):
 def test_directory_input_and_batch_table(capsys):
     assert main([SAMPLES, *OFFLINE, "--quiet"]) == 1
     out = capsys.readouterr().out
-    assert "BATCH SUMMARY (4 messages)" in out
-    assert out.count("== ") == 4
+    assert "BATCH SUMMARY (5 messages)" in out
+    assert out.count("== ") == 5
 
 
 def test_json_to_stdout_is_pure_json(capsys):
@@ -120,3 +120,17 @@ def test_argument_errors(argv):
     with pytest.raises(SystemExit) as error:
         main(argv + ["--offline"])
     assert error.value.code == 2
+
+
+def test_an_mbox_export_is_scanned_message_by_message(tmp_path, capsys):
+    import mailbox
+
+    box = mailbox.mbox(str(tmp_path / "Inbox.mbox"))
+    for name in ("sample_benign.eml", "sample_phish.eml"):
+        with open(sample(name), "rb") as handle:
+            box.add(mailbox.mboxMessage(handle.read()))
+    box.flush()
+    box.close()
+    assert main([str(tmp_path), *OFFLINE, "--quiet"]) == 1
+    out = capsys.readouterr().out
+    assert "Inbox.mbox#1" in out and "Inbox.mbox#2" in out and "BATCH SUMMARY (2 messages)" in out

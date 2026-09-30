@@ -47,18 +47,29 @@ phishhawk scan [options] PATH [PATH ...]
 | Input | Meaning |
 |---|---|
 | `mail.eml` | One message |
-| `reported/` | Every file ending in `.eml` under that folder, searched recursively and in name order |
+| `Inbox.mbox` | Every message in an mbox export (Google Takeout, Thunderbird), labelled `Inbox.mbox#1`, `#2`, ... |
+| `reported/` | Every regular file ending in `.eml` or `.mbox` under that folder, searched recursively and in name order |
 | `-` | One message read from stdin |
 
 Several inputs can be mixed: `phishhawk scan a.eml b.eml reported/`. One
 unreadable or malformed file does not stop a batch; it is reported on stderr,
-the rest are analysed and the exit code becomes `3`.
+the rest are analysed and the exit code becomes `3`. Only regular files are
+read, so a named pipe or a link to a device in a scanned folder is skipped
+instead of hanging the batch, and so is any message over `--max-size`.
+
+To measure PhishHawk on your own mail without sending anything anywhere, point
+the evaluation script at an export: `python eval/run_eval.py --benign Inbox.mbox`
+prints totals only (how many messages were flagged), never a subject or a sender.
 
 When a message was **reported as an attachment** (the user forwarded the phish
 as an attached `.eml`, which is what most "Report phishing" buttons do),
 PhishHawk analyses the attached original, up to three layers deep, and names
 the reporter. When it was forwarded **inline**, the original sender is
 recovered from the quoted `From:` block.
+
+Every layer that was unwrapped is analysed as well. A phish that carries a
+harmless attached message, so that the attachment gets analysed instead, keeps
+its own findings: they are listed as `carrier email: ...`.
 
 ### Display options
 
@@ -107,6 +118,9 @@ free-mail providers are never exported as domain-level blocks.
 | `-p DOMAIN`, `--protect DOMAIN` | Your organisation's domain. Repeat for several. Lookalikes of it (`examp1e.com`, `example-payments.com`, `example.co`) are flagged as impersonation, and it is never sent to reputation services. Also read from `PHISHHAWK_PROTECT`. |
 | `--no-auto-protect` | By default the recipients' domains are protected too, because a lookalike of the recipient's own domain is the classic BEC pattern. This turns that off, for example when analysing mail sent to a shared or free-mail inbox. |
 | `--no-unwrap` | Analyse the covering note from the reporter, not the attached original |
+| `--trusted-authserv ID` | Your mail server's authserv-id, the first word of the `Authentication-Results` headers it writes (for example `mx.google.com`). Repeat for several; also read from `PHISHHAWK_TRUSTED_AUTHSERV`. Without it, only the block of headers at the top (the receiving server's) is believed, and a pass claimed further down is ignored and flagged as forged. |
+| `--no-qr` | Do not decode QR codes. Decoding needs the optional extra, `pip install 'phishhawk[qr]'` (included by `install.sh` and the Docker image); `phishhawk doctor` shows whether it is available. |
+| `--max-size MB` | Skip messages larger than this (default 50) |
 
 ### Enrichment options
 
@@ -177,6 +191,7 @@ phishhawk techniques --json    # the same, machine-readable
 | `ABUSEIPDB_API_KEY` | AbuseIPDB key |
 | `URLSCAN_API_KEY` | urlscan.io key, only needed for `--urlscan-submit` |
 | `PHISHHAWK_PROTECT` | Comma-separated domains to treat as your own, e.g. `example.com,example.co.uk` |
+| `PHISHHAWK_TRUSTED_AUTHSERV` | Comma-separated authserv-ids of your own mail servers, e.g. `mx.google.com` |
 | `PHISHHAWK_NO_BANNER` | Any value turns the banner off |
 | `NO_COLOR` | Any value turns colour off ([no-color.org](https://no-color.org)) |
 | `XDG_CACHE_HOME` | Where the cache folder goes (default `~/.cache`) |
@@ -228,6 +243,8 @@ In `jq`, `(.reports // [.])[]` handles both shapes. The main fields:
 | `recommendations[]` | The actions to take, in order |
 | `subject`, `date`, `message_id`, `to` | Message metadata |
 | `from_display`, `from_address`, `from_domain`, `reply_to`, `return_path`, `originating_ip`, `auth` | Sender and SPF/DKIM/DMARC details |
+| `forged_auth[]` | Pass results claimed below the receiving server's own: `claim`, `authserv`, and `impersonates` when the forged header uses the receiving server's name |
+| `qr_codes[]` | Every QR code found: `where` it was (an image, a PDF, an embedded image, a drawn table or block characters), its `payload`, and the `url` it leads to |
 | `reported_by`, `forwarded_from` | Set when the message was reported as an attachment or forwarded inline |
 | `urls[]` | Every URL with its sources, anchor texts, notes, unwrap/redirect details, and `vt` and `urlscan` results |
 | `attachments[]` | Name, declared and true type, size, MD5/SHA-1/SHA-256, archive listing, HTML-attachment findings, `vt` result |

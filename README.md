@@ -595,7 +595,7 @@ phishhawk/
 │   ├── report/         console, HTML, STIX, Markdown, CSV
 │   └── pipeline.py     parse → detect → enrich
 ├── tests/              191 offline tests, including the evaluation gate
-├── samples/            four inert sample emails and the script that makes them
+├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetcher, results.json
 ├── tools/              scripts that draw the logo, banner, demo and charts in docs/images
 ├── docs/               usage, detections and integrations guides; images

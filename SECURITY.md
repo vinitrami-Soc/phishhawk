@@ -7,7 +7,8 @@ matter. Thank you for reporting them responsibly.
 
 | Version | Supported |
 |---|---|
-| 1.0.x | Yes |
+| 1.3.x | Yes |
+| 1.2.x and earlier | No: upgrade, 1.3.0 fixes the issues in [the security review](docs/SECURITY-REVIEW.md) |
 | Earlier prototypes (`phishtriage`, the single-file extractor) | No |
 
 ## Reporting a vulnerability
@@ -34,6 +35,10 @@ severity warrants, and you will be credited unless you prefer not to be.
   linear time, or exhausts memory despite the archive and PDF caps.
 - Script execution, network requests or clickable malicious links in the HTML
   report, despite its Content-Security-Policy and escaping.
+- Terminal control sequences from a message reaching the analyst's terminal, or
+  live links, images or HTML from a message appearing in the Markdown note.
+- A way to make PhishHawk trust forged authentication results, or analyse a
+  harmless part of a message instead of the phish.
 - Formula injection through the CSV export.
 - Data leaks: protected domains, message bodies, attachments or recipient
   addresses sent to a third-party service.
@@ -53,4 +58,6 @@ severity warrants, and you will be credited unless you prefer not to be.
 - Keep API keys in environment variables, not on the command line.
 - Analyse untrusted mail inside the Docker image, which runs as a non-root user
   and supports `--network none` with a read-only mount.
+- Set `PHISHHAWK_TRUSTED_AUTHSERV` to your mail server's authserv-id (for
+  example `mx.google.com`), so only its `Authentication-Results` are believed.
 - Use `--offline` for mail that must not leave your organisation.

@@ -125,6 +125,9 @@ TOKEN_ONLY_BRANDS = {"dhl", "ups", "nhs", "hsbc", "meta", "apple", "zoom", "slac
 COMBO_WORDS = {
     # a domain name spelled into the label: paypal-com.top, www-paypal.com
     "com", "www", "net", "org", "http", "https", "site",
+    # sign-in and remote-access lures: example-corp-mfa.top, microsoft-sso.com
+    "mfa", "2fa", "sso", "otp", "vpn", "remote", "enrol", "enroll", "servicedesk", "o365", "m365",
+    "sharepoint", "outlook",
     "secure", "security", "safe", "safety", "protect", "protection", "login", "logon", "signin", "sign",
     "auth", "verify", "verification", "validate", "validation", "confirm", "confirmation", "check",
     "account", "accounts", "acct", "profile", "update", "updates", "upgrade", "support", "service",

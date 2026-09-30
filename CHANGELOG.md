@@ -7,6 +7,54 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- **QR-code phishing detection.** With the optional extra
+  (`pip install 'phishhawk[qr]'`, included by `install.sh` and the Docker
+  image), QR codes are decoded in image attachments, inline images (named or
+  not), images embedded in the HTML as `data:` URIs, images inside PDFs (JPEG,
+  Flate with PNG predictors, CCITT fax) and codes drawn with HTML table cells or
+  block characters. Their links are analysed like any other link, and a QR code
+  that leads somewhere suspect, or comes with a credential or MFA ask, is high.
+  `--no-qr` turns decoding off; `phishhawk doctor` shows whether it is available.
+- `.mbox` input: `phishhawk scan Inbox.mbox` reads every message in a Google
+  Takeout or Thunderbird export, and `eval/run_eval.py --benign Inbox.mbox`
+  measures false positives on your own mail and prints totals only.
+- `--trusted-authserv ID` (and `PHISHHAWK_TRUSTED_AUTHSERV`) names your mail
+  server, so only its `Authentication-Results` are believed.
+- `--max-size MB` (default 50) skips oversized messages.
+- The JSON report has `qr_codes` and `forged_auth`.
+- [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md): PhishHawk attacked as a
+  target, every finding with its fix and a test.
+
+### Security
+
+- Control characters from a message (terminal escape sequences that clear the
+  screen, write the clipboard or hide a link) no longer reach the terminal: they
+  are shown escaped, and right-to-left overrides are shown as `<U+202E>`.
+- The Markdown note escapes Markdown and HTML in message text and defangs bare
+  URLs, so a subject cannot put a live link, an image or HTML into a ticket.
+- A phish that carries a harmless attached message is no longer analysed as the
+  attachment alone: every unwrapped layer is analysed, and a suspicious one keeps
+  its findings (`carrier email: ...`).
+- Only the receiving server's `Authentication-Results` are believed. A pass
+  written further down by the sender is ignored and flagged, and a forged
+  `Received-SPF` no longer fills in a missing SPF result.
+- Named pipes, device files and messages over `--max-size` are skipped instead
+  of hanging a batch.
+- The lookup cache is readable by its owner only (`0600` in a `0700` folder).
+- `--urlscan-submit` replaces your recipients' addresses in a URL, plain,
+  URL-encoded or base64, with `user@example.com` before submitting it.
+
+### Fixed
+
+- Lookalikes that spell a domain into the name (`paypal-com.top`,
+  `www-paypal.com`, `paypalcom.top`) or split it with a hyphen (`micros-oft.com`)
+  are found.
+- A message with 50,000 links takes 3 s instead of 31 s. Lookalike checks stop
+  at 5,000 distinct hosts, and a message over that is flagged, so padding cannot
+  hide a link.
+
 ## [1.2.0] - 2026-09-29
 
 ### Added

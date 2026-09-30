@@ -4,6 +4,7 @@
     python eval/run_eval.py --synthetic                  score the synthetic corpus (built in a temp dir)
     python eval/run_eval.py --phish DIR --benign DIR     score your own labelled folders
     python eval/run_eval.py --synthetic --json           machine-readable results
+    python eval/run_eval.py --benign ~/Takeout/Inbox.mbox   your own mail: totals only, nothing leaves the machine
 
 "Flagged" means a verdict of SUSPICIOUS or worse: the point at which a human
 should look. "Strict" means LIKELY PHISHING or worse.
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import mailbox
 import os
 import re
 import statistics
@@ -24,7 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "src"))
 sys.path.insert(0, HERE)
 
-from phishhawk.pipeline import triage_file  # noqa: E402
+from phishhawk.pipeline import triage_bytes  # noqa: E402
 
 FLAGGED = {"SUSPICIOUS", "LIKELY PHISHING", "MALICIOUS"}
 STRICT = {"LIKELY PHISHING", "MALICIOUS"}
@@ -35,14 +37,25 @@ def scenario_of(name: str) -> str:
     return re.sub(r"-\d+$", "", stem) if re.search(r"-\d+$", stem) else "(unlabelled)"
 
 
+def _messages(path: str):
+    """(name, raw bytes) from a folder of .eml files or an .mbox export."""
+    if os.path.isfile(path) and path.lower().endswith(".mbox"):
+        box = mailbox.mbox(path, create=False)
+        for index, key in enumerate(box.iterkeys(), 1):
+            yield "%s#%d" % (os.path.basename(path), index), box.get_bytes(key)
+        return
+    for name in sorted(os.listdir(path)):
+        if name.lower().endswith((".eml", ".txt")):
+            with open(os.path.join(path, name), "rb") as handle:
+                yield name, handle.read()
+
+
 def score_folder(path: str, label: str) -> list[dict]:
     rows = []
-    for name in sorted(os.listdir(path)):
-        if not name.lower().endswith((".eml", ".txt")):
-            continue
+    for name, data in _messages(path):
         started = time.perf_counter()
         try:
-            analysis = triage_file(os.path.join(path, name))
+            analysis = triage_bytes(data, name)
             verdict, score, error = analysis.verdict, analysis.score, ""
         except Exception as exc:  # a crash is a result worth reporting, not a reason to stop
             verdict, score, error = "ERROR", 0, "%s: %s" % (type(exc).__name__, exc)
@@ -157,8 +170,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--synthetic", action="store_true", help="build and score the synthetic corpus")
     parser.add_argument("--seed", type=int, default=7, help="seed for the synthetic corpus")
-    parser.add_argument("--phish", action="append", default=[], metavar="DIR")
-    parser.add_argument("--benign", action="append", default=[], metavar="DIR")
+    parser.add_argument("--phish", action="append", default=[], metavar="DIR_OR_MBOX")
+    parser.add_argument("--benign", action="append", default=[], metavar="DIR_OR_MBOX")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 

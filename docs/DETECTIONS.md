@@ -66,9 +66,14 @@ single technique on its own.
 |---|---|---|
 | `SPF=fail`, `DKIM=fail`, `DMARC=fail` | High | none |
 | SPF `softfail`, `none`, `permerror` or `temperror`; DKIM `none`, `permerror` or `temperror`; DMARC `permerror` or `temperror` | Medium | none |
+| Forged `Authentication-Results`: a pass claimed below the receiving server's own results, in that server's name | Medium | T1036 |
+| An earlier `Authentication-Results` header from another server claims a pass (ignored) | Low | none |
 
 Results are read from the `Authentication-Results` header your mail server
-added. A message with no such header is not scored: the header is missing from
+added: the block at the top of the message, which is one header or, as
+ProtonMail writes it, one per check under the same server name. A header
+further down was written before the message reached your server, so a pass
+it claims is never believed. `--trusted-authserv` names your server outright. A message with no such header is not scored: the header is missing from
 mail exported by many clients and from all older mail, phishing or not. Passing authentication is **not** treated as proof of legitimacy: an
 attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 
@@ -105,8 +110,8 @@ is compared with 66 well-known brands and with your
 | Method | Example (target) | How it is found | Severity |
 |---|---|---|---|
 | **homoglyph** | `micros0ft.com`, `rnicrosoft.com`, `paypa1.com`, `xn--pypal-4ve.com` (Cyrillic `а` in place of Latin `a`) | The label is reduced to "skeletons" that fold look-alike characters (`0→o`, `1→l` or `i`, `3→e`, `5→s`, `rn→m`, `vv→w`, `cl→d`, Cyrillic `а е о р с у х і`), accents removed, then compared | High |
-| **typosquat** | `microsfot.com`, `paypai.com`, `exmaple-corp.co.uk` | One typo (insertion, deletion, substitution or swapped letters) from a brand; up to two from a protected domain of 8+ characters | High |
-| **combosquat** | `paypal-support.com`, `outlooksecure.com`, `example-corp-payroll.com` | The brand or your domain plus only lure or business words (`secure`, `login`, `billing`, `payroll`, `taxa`...), digits or a two-letter code. A name that merely appears inside another (`linuxmafia.com`, `yahoogroups.com`) does not count | Medium; High for your own domain |
+| **typosquat** | `microsfot.com`, `paypai.com`, `exmaple-corp.co.uk`, `micros-oft.com` | One typo (insertion, deletion, substitution or swapped letters) from a brand, or the name split by a hyphen; up to two typos from a protected domain of 8+ characters | High |
+| **combosquat** | `paypal-support.com`, `outlooksecure.com`, `example-corp-payroll.com`, `paypal-com.top`, `www-paypal.com` | The brand or your domain plus only lure or business words (`secure`, `login`, `billing`, `payroll`, `taxa`...), a spelled-out domain word (`com`, `www`, `net`...), digits or a two-letter code. A name that merely appears inside another (`linuxmafia.com`, `yahoogroups.com`) does not count | Medium; High for your own domain |
 | **subdomain** | `paypal.com.secure-login.top`, `login.microsoft.verify-account.xyz` | A brand used as a subdomain of an unrelated domain | High when the brand's whole domain is spelled out, the site is on a high-abuse TLD or free hosting, or its name holds a credential word; otherwise Medium (`outlook.4team.biz`) |
 | **tld-swap** | `example.co` vs `example.com`, `slack.net` | Same name, different suffix. A brand's name under an established country domain (`yahoo.co.uk`, `santander.com.br`) is taken as the brand's own site | Medium, because organisations often own several TLDs of their name |
 
@@ -139,6 +144,23 @@ email address in the link text names a mailbox, not a website, and is ignored.
 | Link to free hosting, a form builder or file sharing | Low | T1583.006 |
 | High-abuse TLD (`.top`, `.xyz`, `.zip`, `.click` …) | Low | T1583.001 |
 | Credential-harvesting path (`/login`, `/verify`, `/owa` …) on an untrusted host | Low | T1598.003 |
+| More than 5,000 distinct link hosts: only the first 5,000 are checked for lookalikes | Medium | none |
+
+### QR codes
+
+A QR code is scanned on a phone, away from the mail gateway and the desktop's
+link checks. With the optional extra installed (`pip install 'phishhawk[qr]'`),
+codes are decoded wherever attackers put them: image attachments and inline
+images, images embedded in the HTML as `data:` URIs, images inside PDFs (JPEG,
+Flate with or without PNG predictors, CCITT fax), and codes drawn with HTML table
+cells or with block characters (`█ ▀ ▄`), which contain no image at all. The
+link a code holds is analysed like any other link: lookalikes, hosting,
+reputation.
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| QR code links somewhere | High when the link is suspect (raw IP, shortener, free hosting or tunnel, high-abuse TLD, lookalike, login path, your address in the link) or the message asks for credentials or MFA; Low when it leads to the sender's own domain and DMARC passes; otherwise Medium | T1566.002 |
+| QR code calls or texts a number (`tel:`, `sms:`) | Medium | T1566 |
 
 ### Attachments
 
@@ -187,6 +209,14 @@ also with whitespace squeezed out so `v e r i f y` still matches.
 | Random mixed-case token in the subject (hash-busting) | Low | T1027 |
 | Recipient's address pasted into the subject | Low | T1566 |
 | No URLs or attachments at all (possible BEC or reply-chain lure) | Low | T1656 |
+
+### Carrier emails
+
+When a message is unwrapped to an attached original, the layers around it are
+analysed too. If one of them is itself suspicious, which is how an attacker
+would hide a phish behind a harmless attached message, each of its signals is
+added with the prefix `carrier email:` at its own severity, and its links join
+the message's links.
 
 ### Reputation (enrichment)
 

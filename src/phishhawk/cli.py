@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import mailbox
 import os
 import platform
 import shutil
 import sys
 import textwrap
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from . import __version__, banner
 from . import qr as qrcodes
@@ -227,7 +228,7 @@ def expand_inputs(inputs: list[str]) -> list[str]:
         if item != "-" and os.path.isdir(item):
             for root, _, names in os.walk(item):  # symlinked directories are not followed
                 paths += [os.path.join(root, n) for n in sorted(names)
-                          if n.lower().endswith(".eml") and os.path.isfile(os.path.join(root, n))]
+                          if n.lower().endswith((".eml", ".mbox")) and os.path.isfile(os.path.join(root, n))]
         else:
             paths.append(item)
     return paths
@@ -249,6 +250,33 @@ def read_input(path: str, limit: int) -> bytes:
     if len(data) > limit:
         raise InputTooLarge("larger than %d MB" % (limit // (1024 * 1024)))
     return data
+
+
+def iter_messages(paths: list[str], limit: int) -> Iterator[tuple[str, bytes | Exception]]:
+    """(label, raw message or the reason it was skipped). An .mbox file (a
+    Google Takeout or Thunderbird export) yields each message it holds."""
+    for path in paths:
+        if path != "-" and path.lower().endswith(".mbox") and os.path.isfile(path):
+            try:
+                box = mailbox.mbox(path, create=False)
+                keys = list(box.iterkeys())
+            except Exception as exc:
+                yield path, exc
+                continue
+            for index, key in enumerate(keys, 1):
+                label = "%s#%d" % (path, index)
+                try:
+                    data = box.get_bytes(key)
+                except Exception as exc:
+                    yield label, exc
+                    continue
+                too_big = InputTooLarge("larger than %d MB" % (limit // (1024 * 1024)))
+                yield label, too_big if len(data) > limit else data
+            continue
+        try:
+            yield path, read_input(path, limit)
+        except Exception as exc:
+            yield path, exc
 
 
 def build_enricher(args: argparse.Namespace, cache: Cache | None, notices: list[str]) -> Enricher | None:
@@ -294,7 +322,7 @@ def _write(path: str, content: str) -> None:
 def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     scan_parser = parser._subparsers._group_actions[0].choices["scan"]  # noqa: SLF001
     if not args.inputs:
-        scan_parser.error("no input: give .eml files, directories or '-' for stdin")
+        scan_parser.error("no input: give .eml or .mbox files, directories or '-' for stdin")
     outputs = {"json": args.json, "html": args.html, "stix": args.stix, "md": args.md, "csv": args.csv}
     if list(outputs.values()).count("-") > 1:
         scan_parser.error("only one report can go to stdout ('-')")
@@ -328,9 +356,10 @@ def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
 
     analyses: list[Analysis] = []
     worst = 0
-    for path in expand_inputs(args.inputs):
+    for path, data in iter_messages(expand_inputs(args.inputs), args.max_size * 1024 * 1024):
         try:
-            data = read_input(path, args.max_size * 1024 * 1024)
+            if isinstance(data, Exception):
+                raise data
             analysis = triage_bytes(data, "<stdin>" if path == "-" else path, options, enricher, progress)
         except FileNotFoundError:
             print(err("[!] %s: file not found" % printable(path), "red"), file=sys.stderr)

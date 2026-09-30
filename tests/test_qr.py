@@ -159,3 +159,15 @@ def test_qr_codes_in_pdfs_written_by_real_software(mode):
     buffer = io.BytesIO()
     Image.open(io.BytesIO(png())).convert(mode).save(buffer, "PDF")
     assert qr.decode_pdf(buffer.getvalue()) == [LINK]
+
+
+def test_the_quishing_sample_is_caught_through_its_pdf():
+    from phishhawk.pipeline import triage_file
+
+    from conftest import sample
+
+    a = triage_file(sample("sample_quishing.eml"))
+    assert a.verdict == "LIKELY PHISHING"
+    assert [code["where"] for code in a.qr_codes] == ["MFA_Enrolment_Notice.pdf"]
+    qr_signals = [s for s in a.signals if s.label.startswith("QR code in MFA_Enrolment_Notice.pdf")]
+    assert [s.severity for s in qr_signals] == ["high"]
