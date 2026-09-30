@@ -34,6 +34,10 @@
   <img src="docs/images/banner.svg" width="560" alt="The PhishHawk start-up banner in a terminal: the hawk emblem, the PHISHHAWK lettering and the command overview">
 </p>
 
+<p align="center">
+  <img src="docs/images/hero.webp" width="760" alt="PhishHawk's mascot, an orange hawk in a PhishHawk hoodie, leaps with a hooked phishing email in one hand and a laptop showing a LIKELY PHISHING verdict with a risk score of 36 in the other, under the words Detect, Defang, Defend. Cards around it show what PhishHawk does: a lookalike domain found, an attachment scanned with nothing run, a QR code decoded and its link defanged, SPF and DKIM passing and DMARC failing, 79.9% of phishing caught with 0.9% false alarms on held-out mail, 403 tests and 9.7 million fuzz runs, export to STIX 2.1, MISP, HTML and JSON, 29 MITRE ATT&amp;CK techniques mapped, and a read-only IMAP mailbox watch.">
+</p>
+
 ## At a glance
 
 <picture>
@@ -105,6 +109,10 @@ The full list of signals, their severities and the ATT&CK techniques behind
 each is in [docs/DETECTIONS.md](docs/DETECTIONS.md).
 
 ## How it works
+
+<p align="center">
+  <img src="docs/images/how-it-works.webp" width="600" alt="The PhishHawk pipeline as an exploded scale model on a workbench, read from top to bottom. Input: .eml, .msg and .mbox files, a folder, stdin or IMAP. 1, Parse: MIME layers peeled apart, and archives, disk images and documents opened in a sealed box where nothing runs. 2, Extract: drawers for URLs, domains, IPs and hashes, and SPF, DKIM and DMARC checks. 3, Detect: a lookalike domain, fishing lures, a masked figure, a smuggling crate and a BEC invoice. An --offline switch: no leads into 4, Enrich, where VirusTotal, urlscan.io, RDAP and AbuseIPDB are asked through a SQLite cache; yes skips it. 5, Score: weighted signals, a risk gauge at 36 and a LIKELY PHISHING stamp next to an ATT&amp;CK technique board. 6, Report: HTML, JSON, STIX 2.1, MISP, Markdown and CSV reports. The same steps follow as a diagram and a list.">
+</p>
 
 ```mermaid
 flowchart TD
