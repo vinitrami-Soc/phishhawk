@@ -70,6 +70,7 @@ BRANDS: dict[str, set[str]] = {
     "barclays": {"barclays.co.uk", "barclays.com"},
     "hsbc": {"hsbc.co.uk", "hsbc.com"},
     "lloyds": {"lloydsbank.com", "lloydsbank.co.uk"},
+    "ledger": {"ledger.com"},
     "natwest": {"natwest.com"},
     "santander": {"santander.co.uk", "santander.com"},
     "dropbox": {"dropbox.com", "dropboxmail.com"},
@@ -111,18 +112,94 @@ BRANDS: dict[str, set[str]] = {
     "itau": {"itau.com.br"},
     "bradesco": {"bradesco.com.br"},
     "correios": {"correios.com.br"},
+    # 2.0: the brands most phished in 2024-2026 industry reports, and the
+    # banks, couriers and tax offices in the lures of the tuning data
+    "booking": {"booking.com"},
+    "airbnb": {"airbnb.com"},
+    "okta": {"okta.com", "oktapreview.com", "okta-emea.com"},
+    "docsend": {"docsend.com", "dropbox.com"},
+    "canva": {"canva.com"},
+    "intuit": {"intuit.com"},
+    "quickbooks": {"intuit.com", "quickbooks.com"},
+    "xero": {"xero.com"},
+    "stripe": {"stripe.com"},
+    "shopify": {"shopify.com"},
+    "spotify": {"spotify.com"},
+    "disneyplus": {"disneyplus.com", "disney.com"},
+    "roblox": {"roblox.com"},
+    "alibaba": {"alibaba.com", "aliexpress.com"},
+    "aliexpress": {"aliexpress.com", "alibaba.com"},
+    "revolut": {"revolut.com"},
+    "venmo": {"venmo.com"},
+    "cashapp": {"cash.app", "squareup.com"},
+    "zelle": {"zellepay.com"},
+    "citibank": {"citi.com", "citibank.com"},
+    "capitalone": {"capitalone.com"},
+    "mastercard": {"mastercard.com"},
+    "webex": {"webex.com", "cisco.com"},
+    "salesforce": {"salesforce.com"},
+    "workday": {"workday.com", "myworkday.com"},
+    "costco": {"costco.com"},
+    "kucoin": {"kucoin.com"},
+    "bybit": {"bybit.com"},
+    "opensea": {"opensea.io"},
+    "uniswap": {"uniswap.org"},
+    "trezor": {"trezor.io"},
+    "kraken": {"kraken.com"},
+    "robinhood": {"robinhood.com"},
+    "dpd": {"dpd.com", "dpd.co.uk", "dpd.de", "dpd.fr"},
+    "aramex": {"aramex.com"},
+    "postnl": {"postnl.nl"},
+    "laposte": {"laposte.fr", "laposte.net"},
+    "colissimo": {"colissimo.fr", "laposte.fr"},
+    "chronopost": {"chronopost.fr"},
+    "auspost": {"auspost.com.au"},
+    "canadapost": {"canadapost.ca", "canadapost-postescanada.ca"},
+    "inpost": {"inpost.pl", "inpost.co.uk", "inpost.eu"},
+    "correos": {"correos.es"},
+    "posteitaliane": {"poste.it", "posteitaliane.it"},
+    "ameli": {"ameli.fr"},
+    "adac": {"adac.de"},
+    "sparkasse": {"sparkasse.de"},
+    "commerzbank": {"commerzbank.de", "commerzbank.com"},
+    "postbank": {"postbank.de"},
+    "rabobank": {"rabobank.nl", "rabobank.com"},
+    "abnamro": {"abnamro.nl", "abnamro.com"},
+    "belastingdienst": {"belastingdienst.nl"},
+    "tvlicensing": {"tvlicensing.co.uk"},
+    "vodafone": {"vodafone.com", "vodafone.co.uk", "vodafone.de"},
+    "nubank": {"nubank.com.br"},
+    "mercadolivre": {"mercadolivre.com.br", "mercadolibre.com"},
+    "serasa": {"serasa.com.br"},
+    "incometax": {"incometax.gov.in", "gov.in"},
+    "uidai": {"uidai.gov.in"},
+    "axisbank": {"axisbank.com", "axisbank.co.in"},
+    "kotak": {"kotak.com", "kotakbank.com"},
+    "phonepe": {"phonepe.com"},
+    "flipkart": {"flipkart.com"},
+    "irctc": {"irctc.co.in"},
+    "airtel": {"airtel.in", "airtel.com"},
+    "unitedhealthcare": {"uhc.com", "unitedhealthcare.com"},
+    "medicare": {"medicare.gov", "cms.gov"},
 }
 
 # Brands whose name is a common word or a substring of unrelated words: these
 # only match as a whole hyphen/dot token ("dhl-parcel.top"), never inside one.
 TOKEN_ONLY_BRANDS = {"dhl", "ups", "nhs", "hsbc", "meta", "apple", "zoom", "slack", "chase", "amex",
-                     "usps", "evri", "irs", "steam", "ripple", "sbi", "hdfc", "caixa", "itau", "telegram"}
+                     "usps", "evri", "irs", "steam", "ripple", "sbi", "hdfc", "caixa", "itau", "telegram",
+                     "ledger", "okta", "canva", "xero", "stripe", "venmo", "zelle", "kraken", "dpd", "adac",
+                     "ameli", "kotak", "airtel", "correos", "booking", "costco", "webex", "serasa", "roblox"}
 
 # What a combosquat bolts onto a name: "outlooksecure", "paypal-billing-update",
 # "example-corp-payroll", "taxascorreios". A domain that merely contains a name
 # ("linuxmafia", "shagmail", "yahoogroups") is not a lookalike: on real mail
 # those were the commonest lookalike false positives.
 COMBO_WORDS = {
+    # a domain name spelled into the label: paypal-com.top, www-paypal.com
+    "com", "www", "net", "org", "http", "https", "site",
+    # sign-in and remote-access lures: example-corp-mfa.top, microsoft-sso.com
+    "mfa", "2fa", "sso", "otp", "vpn", "remote", "enrol", "enroll", "servicedesk", "o365", "m365",
+    "sharepoint", "outlook",
     "secure", "security", "safe", "safety", "protect", "protection", "login", "logon", "signin", "sign",
     "auth", "verify", "verification", "validate", "validation", "confirm", "confirmation", "check",
     "account", "accounts", "acct", "profile", "update", "updates", "upgrade", "support", "service",
@@ -150,11 +227,27 @@ GENERIC_CCTLDS = {"co", "cc", "tk", "ml", "ga", "cf", "gq", "ws", "io", "me", "l
                   "cm", "nu", "tv", "ai", "sh", "gg", "la", "vc", "st", "cx", "ms", "fm", "am", "ru"}
 
 
+_LEGIT: set[str] = set()
+
+
 def known_legit_domains() -> set[str]:
-    legit: set[str] = set()
-    for domains in BRANDS.values():
-        legit |= domains
-    return legit
+    if not _LEGIT:
+        for domains in BRANDS.values():
+            _LEGIT.update(domains)
+    return _LEGIT
+
+
+def extend(brands: dict[str, list[str]] | None = None, lures: dict[str, list[str]] | None = None) -> None:
+    """Add an organisation's own brands ({name: [domains]}) and lure phrases
+    ({category: [phrases]}) to the built-in lists."""
+    for name, domains in (brands or {}).items():
+        BRANDS.setdefault(name, set()).update(domains)
+    for category, phrases in (lures or {}).items():
+        LURES[category] = tuple(dict.fromkeys(LURES.get(category, ()) + tuple(phrases)))
+    _LEGIT.clear()
+    from . import lookalike  # noqa: PLC0415 - lookalike imports this module
+
+    lookalike.clear_caches()
 
 
 # Display-name words that say "an organisation sent this". From a free-mail
@@ -213,12 +306,30 @@ LURES: dict[str, tuple[str, ...]] = {
         "password will expire", "sign in to view", "shared a document with you",
         "you have received a voicemail", "new voicemail", "action required", "re-validate",
         "revalidate your", "keep your account", "avoid suspension", "within 24 hours",
+        "photos and videos will be deleted", "your photos will be deleted", "storage limit", "icloud storage",
+        "certificate expires", "your password has expired", "confirm your email address to avoid",
+        "update your kyc", "kyc update", "kyc verification", "complete your kyc", "kyc is pending",
+        "kyc has expired", "account will be blocked", "will be disconnected tonight",
+        "electricity will be disconnected", "power will be disconnected",
     ),
     "prize": (
         "you have been selected", "you've been selected", "you have won", "you've won",
-        "claim your", "free spins", "airdrop", "giveaway", "lottery", "jackpot", "gift card",
+        "claim your", "free spins", "giveaway", "lottery", "jackpot", "gift card",
         "you are a winner", "you're a winner", "reward is waiting", "exclusive reward",
         "gutschein im wert von", "cartão presente", "tarjeta de regalo", "carte cadeau",
+        "cadeaukaart", "wij verloten", "je hebt gewonnen", "hai vinto", "wir gratulieren",
+    ),
+    # Wallet drainers: the seed phrase is the account, and nothing legitimate
+    # asks for it. Measured on the tuning sets: 0 of 2,625 legitimate emails.
+    "crypto": (
+        "seed phrase", "recovery phrase", "secret phrase", "secret recovery phrase", "mnemonic phrase",
+        "12-word", "24-word", "airdrop", "claim your tokens", "connect your wallet", "validate your wallet",
+        "synchronize your wallet", "sync your wallet", "verify your wallet", "wallet verification",
+        "wallet will be", "your wallet has been",
+    ),
+    "gambling": (
+        "free spins", "freispiele", "giros gratis", "rodadas grátis", "tiradas gratis",
+        "tours gratuits", "welcome bonus", "deposit bonus", "no deposit", "jackpot",
     ),
     "advance-fee": (
         "inheritance", "next of kin", "beneficiary", "dying bed", "million dollars", "million usd",
@@ -238,6 +349,9 @@ LURES: dict[str, tuple[str, ...]] = {
         "overdue invoice", "payment failed", "payment declined", "bank details have changed",
         "new bank account", "outstanding balance", "wire transfer", "urgent payment",
         "payment made today", "process a payment", "buy gift cards", "gift cards for",
+        "payment overdue", "invoice is overdue", "update my direct deposit", "change my direct deposit",
+        "change my payroll", "update my payroll", "new banking details", "tax documents are ready",
+        "tax refund", "refund is pending",
     ),
     "foreign-language": (
         "valores a receber", "parcela liberada", "encomenda pendente", "confirmar ahora",
@@ -245,6 +359,12 @@ LURES: dict[str, tuple[str, ...]] = {
         "bestätigen sie", "votre compte", "vérifiez votre", "conta bloqueada", "cuenta bloqueada",
         "você ganhou", "has ganado", "sie haben gewonnen", "vous avez gagné", "reembolso",
         "atualize seus dados", "actualice sus datos",
+        # French, German, Dutch, Italian and Spanish credential and parcel lures
+        "vérifiez votre", "confirmez votre", "votre colis", "notification de retard", "mettre à jour vos",
+        "ihr zertifikat", "läuft in kürze ab", "ihr konto wird", "ihr paket", "aktualisieren sie ihre",
+        "verifieer uw", "bevestig uw", "uw account", "uw pakket", "uw rekening",
+        "il tuo account", "verifica il tuo", "il tuo pacco", "aggiorna i tuoi dati",
+        "necesitamos su confirmación", "su paquete", "verifique su identidad",
     ),
     "qr-code": (
         "scan the qr code", "scan the qr", "scan this qr", "scan the code below", "qr code below",

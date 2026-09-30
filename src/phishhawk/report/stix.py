@@ -19,6 +19,7 @@ PATTERNS = {
     "url": "[url:value = '%s']",
     "domain": "[domain-name:value = '%s']",
     "ipv4": "[ipv4-addr:value = '%s']",
+    "ipv6": "[ipv6-addr:value = '%s']",
     "email": "[email-addr:value = '%s']",
     "sha256": "[file:hashes.'SHA-256' = '%s']",
 }
@@ -52,6 +53,8 @@ def build_bundle(analyses: list[Analysis]) -> dict[str, Any]:
         verdict = analysis.verdict
         refs: list[str] = []
         for ioc in analysis.iocs():
+            if ioc["type"] not in PATTERNS:  # wallets and phone numbers have no STIX cyber-observable
+                continue
             pattern = PATTERNS[ioc["type"]] % _escape(ioc["value"])
             indicator_id = _stix_id("indicator", ioc["type"], ioc["value"])
             shown = ioc["value"] if ioc["type"] == "sha256" else defang_url(ioc["value"])

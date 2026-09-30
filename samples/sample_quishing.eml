@@ -1,0 +1,68 @@
+Return-Path: <bounce@example-corp-mfa.top>
+Received: from mail.example-corp-mfa.top (mail.example-corp-mfa.top
+ [185.225.73.19]) by mx01.example-corp.co.uk with ESMTPS; Mon, 29 Sep 2026
+ 08:41:09 +0000
+Authentication-Results: mx01.example-corp.co.uk; spf=pass
+ smtp.mailfrom=example-corp-mfa.top; dkim=pass header.d=example-corp-mfa.top;
+ dmarc=pass
+Subject: Action required: re-enrol your multi-factor authentication by Friday
+From: "IT Service Desk" <it-servicedesk@example-corp-mfa.top>
+To: vinit.rami@example-corp.co.uk
+Date: Tue, 29 Sep 2026 08:41:07 +0000
+Message-ID: <20260929084107.51d2@example-corp-mfa.top>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="==sample_quishing-0=="
+
+--==sample_quishing-0==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: quoted-printable
+
+Hello,
+
+Microsoft 365 multi-factor authentication is being upgraded. To keep access t=
+o your mailbox, open the attached notice and scan the QR code with your phone=
+'s camera by Friday.
+
+IT Service Desk
+
+INERT TEST FIXTURE - phishhawk sample corpus. No working endpoint, no payload.
+
+--==sample_quishing-0==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="MFA_Enrolment_Notice.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjQKJSBJTkVSVCBURVNUIEZJWFRVUkUgLSBwaGlzaGhhd2sgc2FtcGxlIGNvcnB1cy4g
+Tm8gd29ya2luZyBlbmRwb2ludCwgbm8gcGF5bG9hZC4KMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxv
+ZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFsz
+IDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAy
+IDAgUiAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8
+PCAvWE9iamVjdCA8PCAvSW0wIDUgMCBSID4+IC9Gb250IDw8IC9GMSA2IDAgUiA+PiA+PiA+Pgpl
+bmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDExNyA+PgpzdHJlYW0KQlQgL0YxIDEzIFRmIDcyIDc0
+MCBUZCAoU2NhbiB3aXRoIHlvdXIgcGhvbmUgdG8ga2VlcCBhY2Nlc3MgdG8gTWljcm9zb2Z0IDM2
+NSkgVGogRVQgcSAyMTYgMCAwIDIxNiA3MiA0ODAgY20gL0ltMCBEbyBRCmVuZHN0cmVhbQplbmRv
+YmoKNSAwIG9iago8PCAvVHlwZSAvWE9iamVjdCAvU3VidHlwZSAvSW1hZ2UgL1dpZHRoIDI3MCAv
+SGVpZ2h0IDI3MCAvQ29sb3JTcGFjZSAvRGV2aWNlR3JheSAvQml0c1BlckNvbXBvbmVudCA4IC9G
+aWx0ZXIgL0ZsYXRlRGVjb2RlIC9MZW5ndGggNzg4ID4+CnN0cmVhbQp42u3a0U7kMAwFUP7/p+EV
+CU10bSeZAuc+rdhOmx6QMo79+SkiIiIiIiIiIiIiIiKdfMRJrs/v/P2an596dZ/emmnQoEGDxk2N
+6jWvPlW9cv2mr+7TWzMNGjRo0Lipke+D6+vz903usHfNNGjQoEHjORp5zZXvwuuVJGugQYMGDRp/
+QyO/fn4OSYMGDRo0fotGLtbrH+XnftWd/V3nojRo0KBBY7LHPeffz5nfoEGDBg0avfSmC/LJul17
+5Z3QoEGDBo1dUwHJrt17Vu/7wLkalgYNGjRo9DSqvaT8U/l+Otl/JzsyDRo0aNA4V9dUz9l2KfWm
+6U7XdzRo0KBBY3K+l8xR50rrO0yqueRuNGjQoEHjvkZ1VcmbVucN8h0//18aNGjQoHFaY14lJbtq
+b3477yLtrddo0KBBg8a57lKyht4UQa/iOzdNTYMGDRo09vaSTnSjqjVgsqq8P0WDBg0aNO5o5DXX
+evbgXEcp73xVu1E0aNCgQeOcRm+d1bPE6rT2/BoaNGjQoHFfo1c35T7VblSyk56oOmnQoEGDxukd
+Nllzddotr9EmvTAaNGjQoHFHo7rn9va46uRDvo/v3WFp0KBBg8Zeh+r5XnK3/InzLtUuExo0aNCg
+MXfY9cRqx2dS5e2t12jQoEGDxomqLZ9863WO8lqsenK49++EBg0aNGjMq7bkdC7fVat1We+bwLka
+lgYNGjRonBaY7IO9LlLyfYAGDRo0aNzXqNZra59ezbX+XVQrRxo0aNCg8QSNaqepd5qX37P3u3hX
+340GDRo0aOQ1VL7+/A7Vme18SoEGDRo0aNzXmFd21em1Xs343remQYMGDRq97tJknjmvv6p6d84D
+adCgQYPGXKN6zeS91tVfr8O1dwqOBg0aNGicqMImp4LzTlPvm8C8u0SDBg0aNO5oTGqlvAbMa8bJ
+NwcaNGjQoPEEjfxNe3to/pT8szRo0KBB46bG5CQwqbOSXbL6k3y2gQYNGjRo3NGYTyz03jF/VnWf
+nVRtNGjQoEFjXrOIiIiIiIiIiIiIiIj853wBmoZczAplbmRzdHJlYW0KZW5kb2JqCjYgMCBvYmoK
+PDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CmVu
+ZG9iagp4cmVmCjAgNwowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwOTAgMDAwMDAgbiAKMDAw
+MDAwMDEzOSAwMDAwMCBuIAowMDAwMDAwMTk2IDAwMDAwIG4gCjAwMDAwMDAzNDggMDAwMDAgbiAK
+MDAwMDAwMDUxNiAwMDAwMCBuIAowMDAwMDAxNDc0IDAwMDAwIG4gCnRyYWlsZXIKPDwgL1NpemUg
+NyAvUm9vdCAxIDAgUiA+PgpzdGFydHhyZWYKMTU0NAolJUVPRgo=
+
+--==sample_quishing-0==--

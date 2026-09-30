@@ -123,6 +123,15 @@ def test_iocs_skip_trusted_shorteners_and_freemail_domains():
     assert any(t == "sha256" for t, _ in values)
 
 
-def test_no_url_no_attachment_mail_hints_at_bec():
+def test_a_message_without_links_is_judged_on_its_words():
+    # No link and no attachment is as common in legitimate mail as in phishing,
+    # so that alone is not scored; the payment request still is.
     a = triage_bytes(build_eml(text="Can you process a wire transfer today? Reply asap."))
-    assert any("possible BEC" in label for label in labels(a))
+    assert not any("possible BEC" in label for label in labels(a))
+    assert any(label.startswith("payment lure wording") for label in labels(a))
+
+
+def test_a_return_path_elsewhere_is_not_scored():
+    a = triage_bytes(build_eml(sender="news@shop.example", headers=[("Return-Path", "<bounce@esp.example>")]))
+    assert a.return_path_domain == "esp.example"
+    assert not any("Return-Path" in label for label in labels(a))

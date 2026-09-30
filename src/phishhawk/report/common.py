@@ -2,17 +2,64 @@
 
 from __future__ import annotations
 
+import dataclasses
+import re
 import time
 from dataclasses import asdict
 from typing import Any
 
 from .. import __version__
 from ..attack import technique_name, technique_url
+from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, vt_is_malicious
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 VERDICT_TONE = {"MALICIOUS": "red", "LIKELY PHISHING": "red", "SUSPICIOUS": "amber",
                 "NO STRONG INDICATORS": "green"}
+
+
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
+_BIDI_RE = re.compile(r"[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def printable(text: str) -> str:
+    """Attacker text made safe to show. Control characters (ESC opens the
+    terminal sequences that clear the screen, write the clipboard or hide
+    output; a newline could forge a report line) are shown escaped, and
+    bidirectional overrides are named, so "invoice<U+202E>fdp.exe" reads as
+    what it is instead of rendering as "invoiceexe.pdf"."""
+    text = _CONTROL_RE.sub(lambda m: "\\x%02x" % ord(m.group()), str(text).replace("\t", " "))
+    return _BIDI_RE.sub(lambda m: "<U+%04X>" % ord(m.group()), text)
+
+
+def display_copy(value: Any) -> Any:
+    """A copy of an analysis (or any part of one) with every string printable."""
+    if isinstance(value, str):
+        return printable(value)
+    if isinstance(value, list):
+        return [display_copy(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(display_copy(item) for item in value)
+    if isinstance(value, dict):
+        return {display_copy(key): display_copy(item) for key, item in value.items()}
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.replace(value, **{f.name: display_copy(getattr(value, f.name))
+                                             for f in dataclasses.fields(value) if f.init})
+    return value
+
+
+RAW_IOC_TYPES = {"sha256", "crypto-wallet", "phone"}  # nothing in them can be clicked
+REPORT_VERSION = "2.0"  # the JSON layout; docs/report.schema.json describes it
+
+
+def defang_ioc(kind: str, value: str) -> str:
+    """An indicator made safe to paste: URLs and hosts defanged, hashes,
+    wallet addresses and phone numbers as they are."""
+    if kind == "url":
+        return defang_url(value)
+    if kind in RAW_IOC_TYPES:
+        return value
+    return defang_host(value)
 
 
 def utc_now() -> str:
@@ -37,7 +84,7 @@ def human_size(size: int) -> str:
 
 
 def vt_queried(report: dict[str, Any] | None) -> bool:
-    return bool(report) and report.get("status") not in ("skipped",)
+    return bool(report) and (report or {}).get("status") != "skipped"
 
 
 def vt_text(report: dict[str, Any] | None) -> tuple[str, str]:
@@ -62,9 +109,9 @@ def vt_text(report: dict[str, Any] | None) -> tuple[str, str]:
         "not_found": "no record: never submitted to VirusTotal",
         "rate_limited": "rate limited (free tier: 4 lookups/min)",
         "auth_error": "API key rejected",
-        "skipped": report.get("detail", "skipped"),
+        "skipped": str(report.get("detail", "skipped")),
     }
-    return messages.get(status, report.get("detail") or str(status)) + cached, "dim"
+    return messages.get(str(status), str(report.get("detail") or status)) + cached, "dim"
 
 
 def urlscan_text(report: dict[str, Any] | None) -> tuple[str, str]:
@@ -85,6 +132,15 @@ def top_level_files(analysis: Analysis) -> list[FileIoc]:
 
 def children_of(analysis: Analysis, parent: FileIoc) -> list[FileIoc]:
     return [f for f in analysis.attachments if f.parent == parent.filename and f is not parent]
+
+
+def unopened_members(analysis: Analysis, parent: FileIoc) -> list[str]:
+    """Names listed in a container that were not opened (RAR and 7-Zip
+    members, encrypted or oversized ones), so the report still shows them."""
+    if not parent.archive:
+        return []
+    opened = {f.filename for f in children_of(analysis, parent)}
+    return [name for name in parent.archive.get("listing", []) if name not in opened]
 
 
 def summary_sentences(analysis: Analysis) -> list[str]:
@@ -163,6 +219,7 @@ def to_dict(analysis: Analysis) -> dict[str, Any]:
     payload["summary"] = summary_sentences(analysis)
     payload["generated_at"] = utc_now()
     payload["tool_version"] = __version__
+    payload["report_version"] = REPORT_VERSION
     for item, ioc in zip(payload["urls"], analysis.urls, strict=True):
         item["defanged"] = ioc.defanged
     return payload

@@ -32,12 +32,15 @@ from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, vt_is_malicious
 from .common import (
     children_of,
+    defang_ioc,
+    display_copy,
     human_size,
     recommendations,
     sorted_signals,
     summary_sentences,
     technique_rows,
     top_level_files,
+    unopened_members,
     urlscan_text,
     utc_now,
     vt_text,
@@ -693,6 +696,12 @@ def _sender(a: Analysis) -> str:
             rows.append((label, '<span class="mono">%s</span>' % escape(defang_host(value))))
     rows.append(("Received hops", str(a.received_hops)))
     rows.append(("Auth", _auth_badges(a)))
+    if a.forged_auth:
+        rows.append(("Forged auth", "<br>".join(
+            "%s claimed as <span class=\"mono\">%s</span>%s" % (
+                escape(claim["claim"]), escape(claim["authserv"]),
+                " (your server's name)" if claim.get("impersonates") else "")
+            for claim in a.forged_auth[:6])))
     if a.protected_domains:
         rows.append(("Protected", escape(", ".join(a.protected_domains))))
     if a.reported_by:
@@ -742,7 +751,11 @@ def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]
     cls = " ".join(c for c in ("child" if depth else "", "flagged" if f.flagged else "") if c)
     hashes = "".join('<div><dt>%s</dt><dd>%s</dd></div>' % (label, escape(value))
                      for label, value in (("SHA-256", f.sha256), ("SHA-1", f.sha1), ("MD5", f.md5)) if value)
-    rows = [(cls, ['%s<span class="ioc">%s</span>%s' % (arrow, escape(f.filename), _notes(f.notes)),
+    listing = unopened_members(a, f)
+    contains = ('<div class="sub">contains: %s</div>' % escape(
+        ", ".join(listing[:12]) + (" (+%d more)" % (len(listing) - 12) if len(listing) > 12 else ""))
+        if listing else "")
+    rows = [(cls, ['%s<span class="ioc">%s</span>%s%s' % (arrow, escape(f.filename), _notes(f.notes), contains),
                    '%s%s<div class="sub">%s</div>' % (escape(f.content_type), real, escape(human_size(f.size))),
                    '<dl class="hashes">%s</dl>' % hashes,
                    _vt_cell(f.vt)])]
@@ -752,15 +765,7 @@ def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]
 
 
 def _defanged_iocs(a: Analysis) -> list[tuple[str, str]]:
-    out = []
-    for ioc in a.iocs():
-        value = ioc["value"]
-        if ioc["type"] == "url":
-            value = defang_url(value)
-        elif ioc["type"] != "sha256":
-            value = defang_host(value)
-        out.append((ioc["type"], value))
-    return out
+    return [(ioc["type"], defang_ioc(ioc["type"], ioc["value"])) for ioc in a.iocs()]
 
 
 def _url_cell(ioc) -> str:
@@ -821,6 +826,60 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
         out.append(_panel("Attachments", _table(["File", "Type", "Hashes", "VirusTotal"], [27, 17, 40, 16], rows),
                           len(files)))
 
+    if a.qr_codes:
+        rows = [("flagged" if code.get("url") else "",
+                 [escape(code["where"]),
+                  '<span class="mono ioc">%s</span>' % escape(defang_url(code["url"]) if code.get("url")
+                                                               else code.get("payload", "")[:200])])
+                for code in a.qr_codes]
+        out.append(_panel("QR codes", _table(["Found in", "Leads to (defanged)"], [34, 66], rows),
+                          len(a.qr_codes),
+                          note="decoded offline; the phone that scans one skips every desktop link check"))
+
+    if a.calendar:
+        rows = [("", [escape(invite.get("summary") or "(no title)"),
+                      '<span class="mono ioc">%s</span>' % escape(defang_host(invite.get("organizer") or "")),
+                      escape(invite.get("method") or "-"), str(invite.get("links", 0)), escape(invite["where"])])
+                for invite in a.calendar]
+        out.append(_panel("Calendar invitations", _table(["Title", "Organiser", "Method", "Links", "Found in"],
+                                                         [30, 28, 12, 10, 20], rows), len(a.calendar)))
+
+    if a.wallets or a.phones:
+        rows = [("flagged", [escape(w["currency"]), '<span class="mono ioc">%s</span>' % escape(w["address"])])
+                for w in a.wallets]
+        rows += [("flagged", ["phone", '<span class="mono ioc">%s</span>' % escape(number)])
+                 for number in a.phones]
+        out.append(_panel("Payment and callback details", _table(["Kind", "Value"], [20, 80], rows),
+                          len(a.wallets) + len(a.phones),
+                          note="where the message asks the reader to send money or to call"))
+
+    if a.yara:
+        rows = [("flagged" if m.get("severity") == "high" else "",
+                 [_badge(m.get("severity", "high"), m.get("severity", "high")), escape(m["rule"]),
+                  escape(m["where"]), escape(m.get("description") or "-")]) for m in a.yara]
+        out.append(_panel("YARA matches", _table(["Severity", "Rule", "Matched", "Description"], [13, 27, 30, 30],
+                                                 rows), len(a.yara)))
+
+    if a.hops:
+        rows = []
+        for index, hop in enumerate(a.hops, 1):
+            delay = hop.get("delay_seconds")
+            timing = ("+%d s" % delay if delay >= 0 else "%d s (clock skew)" % delay) if isinstance(delay, int) \
+                else "-"
+            when = escape(hop.get("time", "")[:19].replace("T", " ")) or "-"
+            rows.append(("", ['<span class="idx">%d</span>' % index,
+                              '<span class="mono ioc">%s</span>%s' % (
+                                  escape(defang_host(hop.get("from", "?"))),
+                                  '<div class="sub">%s</div>' % escape(defang_host(hop["ip"]))
+                                  if hop.get("ip") else ""),
+                              '<span class="mono ioc">%s</span>' % escape(defang_host(hop.get("by", "?"))),
+                              escape(hop.get("with", "-")),
+                              '<span class="sub">%s</span>%s' % (when, "<div>%s</div>" % timing
+                                                                  if timing != "-" else "")]))
+        out.append(_panel("Mail path", _table(["#", "From", "By", "With", "When"], [6, 32, 30, 12, 20], rows),
+                          len(a.hops), note="oldest hop first; only the receiving server's own entries are "
+                                            "trustworthy"))
+
     if a.domain_intel or a.ip_intel:
         rows = []
         for domain, info in a.domain_intel.items():
@@ -847,17 +906,17 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
                               "IP reputation", detail]))
         out.append(_panel("Infrastructure", _table(["Indicator", "Check", "Result"], [34, 18, 48], rows)))
 
-    rows = technique_rows(a)
-    if rows:
+    techniques = technique_rows(a)
+    if techniques:
         order = {t: i for i, t in enumerate(TACTIC_ORDER)}
-        rows = sorted(rows, key=lambda r: (order.get(technique_tactic(r["id"]), 99), r["id"]))
+        techniques = sorted(techniques, key=lambda r: (order.get(technique_tactic(r["id"]), 99), r["id"]))
         cells = [("", ['<span class="sub">%s</span>' % escape(technique_tactic(r["id"])),
                        _link(r["url"], r["id"], "chip"), escape(r["name"]),
                        '<span class="sub">%s</span>' % escape(
                            "; ".join(r["evidence"][:3]) + (" ..." if len(r["evidence"]) > 3 else ""))])
-                 for r in rows]
-        out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(rows) + _table(
-            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(rows)))
+                 for r in techniques]
+        out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(techniques) + _table(
+            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(techniques)))
 
     iocs = _defanged_iocs(a)
     if iocs:
@@ -905,6 +964,7 @@ def _theme_switch() -> str:
 
 
 def render(analyses: list[Analysis]) -> str:
+    analyses = display_copy(analyses)  # escaped anyway; this also names bidi overrides
     title = "Phishing triage" if len(analyses) != 1 else "Phishing triage: %s" % analyses[0].verdict
     body = ['<div class="wrap"><header class="topbar"><div class="brand">%s<span>PhishHawk</span></div>'
             '<span class="version">v%s</span><span class="pill">Generated <span class="mono">%s</span></span>%s'

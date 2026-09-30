@@ -28,8 +28,14 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Lint
         run: ruff check src tests samples eval tools phishhawk
-      - name: Unit tests and evaluation gate
-        run: pytest
+      - name: Type check
+        run: mypy
+      - name: Optional YARA support (skipped by the tests if it will not install)
+        run: python -m pip install yara-python || echo "yara-python unavailable; YARA tests will skip"
+      - name: Unit tests, evaluation gate and coverage
+        run: |
+          coverage run -m pytest
+          coverage report
       - name: Smoke-test every command
         # Exit code 1 means "suspicious": expected, since most samples are phishing.
         run: |

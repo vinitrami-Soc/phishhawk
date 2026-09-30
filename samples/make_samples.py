@@ -10,6 +10,7 @@ import base64
 import io
 import os
 import zipfile
+import zlib
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
@@ -189,4 +190,66 @@ prepend(bec, [
                                "dkim=pass header.d=examp1e-corp.co.uk; dmarc=pass"),
 ])
 write(bec, "sample_bec_smuggling.eml")
+
+
+# ------------------------------------------------------------- 5. quishing --
+# The link is inside a QR code inside a PDF: nothing in the body for a gateway
+# to rewrite or a desktop to hover over. Needs segno (pip install segno).
+def qr_pdf(payload: str, caption: str) -> bytes:
+    import segno  # noqa: PLC0415 - only needed to regenerate this fixture
+
+    matrix = segno.make(payload, error="m").matrix
+    scale, quiet = 6, 4
+    side = (len(matrix) + 2 * quiet) * scale
+    rows = []
+    for y in range(side):
+        cells = matrix[y // scale - quiet] if quiet <= y // scale < quiet + len(matrix) else []
+        rows.append(bytes(0 if 0 <= x // scale - quiet < len(cells) and cells[x // scale - quiet] else 255
+                          for x in range(side)))
+    image = zlib.compress(b"".join(rows), 9)
+    text = ("BT /F1 13 Tf 72 740 Td (%s) Tj ET q 216 0 0 216 72 480 cm /Im0 Do Q" % caption).encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+        b"/Resources << /XObject << /Im0 5 0 R >> /Font << /F1 6 0 R >> >> >>",
+        b"<< /Length %d >>\nstream\n" % len(text) + text + b"\nendstream",
+        b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray "
+        b"/BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n" % (side, side, len(image))
+        + image + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out, offsets = bytearray(b"%%PDF-1.4\n%% %s\n" % BANNER.encode()), []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
+quish = EmailMessage()
+quish["Subject"] = "Action required: re-enrol your multi-factor authentication by Friday"
+quish["From"] = '"IT Service Desk" <it-servicedesk@example-corp-mfa.top>'
+quish["To"] = "vinit.rami@example-corp.co.uk"
+quish["Date"] = "Mon, 29 Sep 2026 08:41:07 +0000"
+quish["Message-ID"] = "<20260929084107.51d2@example-corp-mfa.top>"
+quish.set_content(
+    "Hello,\n\nMicrosoft 365 multi-factor authentication is being upgraded. To keep access to your "
+    "mailbox, open the attached notice and scan the QR code with your phone's camera by Friday.\n\n"
+    "IT Service Desk\n\n" + BANNER + "\n")
+quish.add_attachment(
+    qr_pdf("https://example-corp-mfa.top/enrol?u=vinit.rami@example-corp.co.uk",
+           "Scan with your phone to keep access to Microsoft 365"),
+    maintype="application", subtype="pdf", filename="MFA_Enrolment_Notice.pdf")
+prepend(quish, [
+    ("Return-Path", "<bounce@example-corp-mfa.top>"),
+    ("Received", "from mail.example-corp-mfa.top (mail.example-corp-mfa.top [185.225.73.19]) by "
+                 "mx01.example-corp.co.uk with ESMTPS; Mon, 29 Sep 2026 08:41:09 +0000"),
+    ("Authentication-Results", "mx01.example-corp.co.uk; spf=pass smtp.mailfrom=example-corp-mfa.top; "
+                               "dkim=pass header.d=example-corp-mfa.top; dmarc=pass"),
+])
+write(quish, "sample_quishing.eml")
 print("written:", sorted(f for f in os.listdir(OUT) if f.endswith(".eml")))

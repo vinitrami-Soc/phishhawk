@@ -33,7 +33,11 @@ class Cache:
         try:
             directory = os.path.dirname(path)
             if directory:
-                os.makedirs(directory, exist_ok=True)
+                os.makedirs(directory, mode=0o700, exist_ok=True)
+            # The cache records every URL and file hash looked up, victims'
+            # addresses inside URLs included: readable by this user only.
+            os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
+            os.chmod(path, 0o600)
             self._conn = sqlite3.connect(path)
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS lookups ("
@@ -80,9 +84,9 @@ class Cache:
         self._conn.commit()
         return cursor.rowcount
 
-    def stats(self) -> dict[str, object]:
+    def stats(self) -> dict[str, Any]:
         """Entry counts per provider, how many are still fresh, and file size."""
-        info: dict[str, object] = {"path": self.path, "enabled": self.enabled, "entries": 0,
+        info: dict[str, Any] = {"path": self.path, "enabled": self.enabled, "entries": 0,
                                    "fresh": 0, "providers": {}, "bytes": 0}
         if self._conn is None:
             return info

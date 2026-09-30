@@ -7,6 +7,142 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-30
+
+PhishHawk now reads nearly every format phish arrive in, finds the evasions
+built to get past mail filters, and fits into a SOC's workflow (IMAP, MISP,
+a config file, YARA). It was then attacked as a target: fuzzed for 9.7 million
+runs, scanned for regular-expression denial of service, and run on 19,917 real
+messages through every report format. On held-out real mail, scored once after
+all tuning: 79.9% of 5,714 phishing emails from 2022 to 2026 flagged (1.2.0:
+75.4%), and 0.9% of 5,945 legitimate emails (1.2.0: 1.0%). No field was removed
+from the JSON report; `report_version` starts at `2.0`.
+
+### Added
+
+- **Outlook `.msg` files**, read directly by a pure-Python compound-file
+  reader: the message is rebuilt as the email it was sent as, with its original
+  transport headers when Outlook kept them, its RTF body decompressed, and its
+  attachments and attached messages. Folders pick up `.msg` files too.
+- **`phishhawk imap`** triages a mailbox folder, such as a shared "report
+  phishing" mailbox, read-only (`EXAMINE` and `BODY.PEEK`): `--unseen`,
+  `--since`, `--limit`, `--out DIR` for a report per message, and `--watch
+  SECONDS` to keep going. Password from `PHISHHAWK_IMAP_PASSWORD` or a prompt,
+  or an OAuth token (`XOAUTH2`) for Microsoft 365 and Gmail.
+- **Every file is opened in memory, and nothing is run.** RAR (4 and 5) and 7z
+  are listed, including 7z headers packed with LZMA or LZMA2, and archives that
+  encrypt even their file names are flagged. ISO 9660 and FAT disk images are
+  opened (their files lose the Mark of the Web). gzip, tar and `winmail.dat`
+  are unpacked. A password-protected ZIP is opened when the message gives the
+  password. Office files are read for VBA and Excel 4.0 macros, DDE fields,
+  remote templates and frames, Follina-style protocol handlers, ActiveX and
+  embedded packages; PDFs for launch actions, JavaScript, embedded files and
+  forms; RTF for Equation Editor and other exploit objects, remote templates
+  and packages; OneNote sections for embedded payloads; shortcuts (`.lnk`) for
+  command interpreters, encoded PowerShell, downloads and padded command lines;
+  SVG images for script. Files inside files are checked down to three levels.
+- **QR-code phishing.** With the optional extra (`pip install
+  'phishhawk[qr]'`), QR codes are decoded in image attachments, inline images,
+  images embedded as `data:` URIs, images inside PDFs and codes drawn with HTML
+  table cells or block characters. `--no-qr` turns decoding off.
+- **Calendar invitations** (`.ics` files, `text/calendar` parts): organiser,
+  links and attachments; an organiser who is not the sender is flagged.
+- **Filter evasion:** text hidden with CSS to break up words or to feed filters
+  filler, words split by tags one letter at a time, styled Unicode and
+  invisible characters in the subject, mixed alphabets inside a word, brand
+  names spelled with look-alike characters (`PayPaI`, `Amaz0n`, `Iedger`),
+  IP addresses written as one number (`http://3232235777/`), IPv6 hosts,
+  `javascript:` and `data:` links, MIME nested past any mail client, and floods
+  of links past the 1,000 checked.
+- **Sender and money:** a brand's own domain in the From line without the
+  authentication to back it (a forged sender); links that download runnable
+  files; business email compromise from a lookalike of your own domain
+  (T1657); crypto wallets (Bitcoin, Litecoin and TRON checksum-verified,
+  Ethereum and Monero by shape) and payment demands; callback numbers.
+  Crypto-wallet recovery and casino lures, 68 more brands (134 in all), and
+  11 more ATT&CK techniques (29 in all).
+- **Exports and workflow:** `--misp` writes a MISP event per message, with
+  ATT&CK galaxy tags and a TLP tag (`--tlp`). A config file
+  (`~/.config/phishhawk/config.toml`, never read from the current folder) holds
+  your domains, partners, block list, own brands and lure phrases. `--allow`
+  and `--block` for partners and known-bad domains, `--yara` for your YARA rules
+  (`pip install 'phishhawk[yara]'`), `--fail-on` for pipelines,
+  `--trusted-authserv` to name your mail server, `--max-size`, and `.mbox`
+  input.
+- **Reports** show the mail path (every Received hop, with delays), QR codes,
+  calendar invitations, payment and callback details, YARA matches and forged
+  authentication results. Indicators now include IPv6 addresses, crypto wallets
+  and phone numbers; MISP gets the sending IP as `ip-src`.
+- [`docs/report.schema.json`](docs/report.schema.json), a JSON Schema for the
+  JSON report; [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md); a release
+  workflow that builds, checks and publishes the package when a release is
+  published; `eval/fetch_fresh.py` for the new held-out sets.
+- 403 tests, including Hypothesis property tests, a test for every finding of
+  the security review, type checking with mypy, and a coverage gate (89%).
+
+### Changed
+
+- **Evaluation on more and fresher real mail.** Besides the 5,714 held-out
+  phishing_pot emails, four sets never looked at while developing: 2,279
+  phishing emails from 2005 to 2007 (57.7% flagged; 1.2.0: 54.7%), 4,279 Enron
+  emails (0.2% false positives, as before), 136 mail-library edge cases (11.0%;
+  1.2.0: 9.6%, two more) and five `.msg` files. Every year from 2022 to 2026
+  improved. See [eval/README.md](eval/README.md).
+- Two low-severity checks were removed because they fired more often on
+  legitimate mail than on phishing: a Return-Path that differs from the sender
+  (59% of legitimate mail, 16% of phishing) and a message with no links.
+- A message keeps at most 1,000 distinct links; a flood past that is a medium
+  signal (it replaces the 1.x check that stopped at 5,000 hosts).
+- A `javascript:` link is medium, a `data:text/html` link high. A TLD swap of a
+  brand that is an ordinary word, and a brand word in the subdomain of an
+  otherwise unremarkable site, are low.
+- With `--no-unwrap`, the covering note is analysed without opening the email
+  attached to it, as documented. Otherwise, emails attached below the three
+  unwrapped layers, or beside the one unwrapped, are opened and checked.
+
+### Security
+
+The full list, with each fix and its test, is in
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md).
+
+- Control characters from a message no longer reach the terminal; right-to-left
+  overrides are shown as `<U+202E>`. The Markdown note escapes Markdown and HTML
+  and defangs bare URLs. No report shows a live attacker link, including those
+  inside QR codes, shortcuts, remote templates and calendar invitations.
+- A phish that carries a harmless attached message is no longer analysed as the
+  attachment alone. Only the receiving server's `Authentication-Results` are
+  believed; a pass forged further down is flagged.
+- Named pipes, device files and oversized messages are skipped instead of
+  hanging a batch. The lookup cache is private to its owner. `--urlscan-submit`
+  replaces your recipients' addresses before submitting a URL.
+- A header can no longer turn a verdict into an error: charset names that make
+  Python's email package raise (a NUL byte, `idna`, `undefined`), address
+  headers with thousands of colons, and MIME nested a thousand levels deep are
+  all handled. Headers built to stall the parser (a `To:` of 50,000 quotes took
+  49 s) are kept as text.
+- Memory and time bombs are defused: disk images and `.msg` files whose entries
+  share the same bytes (9.6 GB and 7.2 GB before), Office files of parts that
+  each inflate to 8 MB, a 7z header asking for a 4 GB dictionary, quadratic
+  regular expressions, and a 1.4 MB "link" of NUL bytes.
+- Four evasions by structure are closed: a message that is only
+  `message/rfc822`, an email attached deeper than the unwrapping, a second
+  attached email behind a harmless one, and a multipart part without a boundary.
+
+### Fixed
+
+- Lookalikes that spell a domain into the name (`paypal-com.top`,
+  `www-paypal.com`, `paypalcom.top`) or split it with a hyphen (`micros-oft.com`)
+  are found; MFA, SSO, VPN and Microsoft 365 words count in combosquats.
+- A malformed header such as a broken `Message-Id` no longer erases the SPF,
+  DKIM and DMARC results; `Authentication-Results` sent as base64 encoded words
+  (Microsoft 365) are decoded.
+- A quoted From address (`"service@brand.de"`) keeps no stray quote in its
+  domain.
+- The slowest real messages are faster: a 50,000-link message takes 3 s instead
+  of 31 s, PDF images with PNG predictors go through Pillow (2 s to 0.45 s), and
+  the address search no longer crawls through base64 bodies (1.7 s to 0.3 s).
+- `scan --help` had a garbled example.
+
 ## [1.2.0] - 2026-09-29
 
 ### Added
@@ -163,7 +299,8 @@ repository: a single-file IOC extractor (20 September 2026) and the
 `phishtriage` package (versioned 2.0.0, 23 September 2026). Version numbering
 restarted at 1.0.0 with the new name.
 
-[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.0.0
 [1.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.2.0
 [1.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.1.0
 [1.0.1]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.0.1

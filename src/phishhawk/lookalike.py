@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from functools import lru_cache
 
 from .extract import domain_label, is_ip, registrable_domain
@@ -100,8 +101,9 @@ def one_edit_apart(a: str, b: str) -> bool:
                                       and a[i + 2:] == b[i + 2:])
 
 
-def _tokens(text: str) -> set[str]:
-    return {token for token in re.split(r"[-_.]", text) if token}
+@lru_cache(maxsize=65536)
+def _tokens(text: str) -> frozenset[str]:
+    return frozenset(token for token in re.split(r"[-_.]", text) if token)
 
 
 @lru_cache(maxsize=4096)
@@ -145,6 +147,7 @@ def strong_subdomain(domain: str, target: str) -> bool:
     return any(word in label if len(word) >= 5 else word in _tokens(label) for word in CREDENTIAL_WORDS)
 
 
+@lru_cache(maxsize=256)
 def _canonical(brand: str) -> str:
     domains = sorted(BRANDS[brand])
     if brand + ".com" in domains:
@@ -161,6 +164,8 @@ def _canonical(brand: str) -> str:
 def _compare_protected(raw: str, variants: set[str], target: str) -> str:
     if raw == target:
         return "tld-swap"
+    if raw.replace("-", "") == target.replace("-", ""):  # example-corp vs examplecorp, exam-ple-corp
+        return "typosquat"
     if any(target in variant for variant in variants) and target not in raw:
         return "homoglyph"
     threshold = 1 if len(target) < 8 else 2
@@ -182,6 +187,11 @@ def _compare_brand(raw: str, variants: set[str], brand: str, suffix: str) -> str
         return ""
     if brand in raw:
         return "combosquat" if _combo(raw, brand) else ""
+    squashed = raw.replace("-", "")
+    if squashed == brand:  # micros-oft: a hyphen dropped into the name
+        return "typosquat"
+    if brand in squashed and _combo(squashed, brand):
+        return "combosquat"
     if any(brand in variant for variant in variants):
         return "homoglyph"
     if len(brand) >= 6:
@@ -190,6 +200,12 @@ def _compare_brand(raw: str, variants: set[str], brand: str, suffix: str) -> str
                 if len(token) >= 5 and one_edit_apart(token, brand):
                     return "typosquat"
     return ""
+
+
+def clear_caches() -> None:
+    """After the brand list changes (knowledge.extend)."""
+    _brand_hits.cache_clear()
+    _canonical.cache_clear()
 
 
 @lru_cache(maxsize=4096)
@@ -202,7 +218,7 @@ def _brand_hits(base: str) -> tuple[tuple[str, str], ...]:
     return tuple((target, method) for target, method in hits if method)
 
 
-def find_lookalikes(domain: str, where: str, protected: list[str] | set[str] = ()) -> list[Lookalike]:
+def find_lookalikes(domain: str, where: str, protected: Iterable[str] = ()) -> list[Lookalike]:
     domain = (domain or "").lower().strip(".")
     if not domain or is_ip(domain):
         return []

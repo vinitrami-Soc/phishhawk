@@ -1,6 +1,6 @@
 """PhishHawk command-line interface.
 
-    phishhawk scan mail.eml        triage messages (the default command)
+    phishhawk scan mail.eml        triage messages: .eml, Outlook .msg or .mbox (the default command)
     phishhawk doctor               check dependencies, API keys, cache and network
     phishhawk cache stats|clear    inspect or empty the lookup cache
     phishhawk techniques           the MITRE ATT&CK techniques PhishHawk can evidence
@@ -9,24 +9,30 @@
 from __future__ import annotations
 
 import argparse
+import datetime
+import getpass
 import json
+import mailbox
 import os
 import platform
+import re
 import shutil
 import sys
 import textwrap
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 
-from . import __version__, banner
+from . import __version__, banner, config, imapfetch, yararules
+from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
 from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
-from .pipeline import Options, triage_bytes, triage_file
-from .report import console, csvout, html, markdown, stix
-from .report.common import to_dict
+from .pipeline import Options, triage_bytes
+from .report import console, csvout, html, markdown, misp, stix
+from .report.common import printable, to_dict
 
-COMMANDS = ("scan", "doctor", "cache", "techniques", "help")
+COMMANDS = ("scan", "imap", "doctor", "cache", "techniques", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -38,7 +44,7 @@ it finds to MITRE ATT&CK, and tells you what to do next."""
 MAIN_EPILOG = """\
 quick start:
   phishhawk suspicious.eml            triage one message (same as: phishhawk scan ...)
-  phishhawk scan reported/ --quiet    every .eml in a folder, one summary each
+  phishhawk scan reported/ --quiet    every .eml, .msg and .mbox in a folder, one summary each
   phishhawk doctor                    check keys and setup before the first real run
 
 Run `phishhawk <command> -h` for everything a command can do."""
@@ -47,14 +53,18 @@ SCAN_EPILOG = """\
 examples:
   phishhawk scan suspicious.eml                  full report in the terminal
   phishhawk suspicious.eml                       the same: scan is the default command
-  phishhawk scan reported/ --quiet               every .eml in a folder, one summary each
+  phishhawk scan reported/ --quiet               every .eml, .msg and .mbox in a folder
+  phishhawk scan "Invoice overdue.msg"           an Outlook message, as saved or reported
   cat suspicious.eml | phishhawk scan -          read the message from stdin
   phishhawk scan suspicious.eml --offline        nothing leaves this machine
   phishhawk scan mail.eml --html r.html --stix iocs.json --md ticket.md
   phishhawk scan mail.eml --json - | jq .verdict pure JSON on stdout, notices on stderr
   phishhawk scan mail.eml --protect example.com  flag lookalikes of your own domain
+  phishhawk scan mail.eml --misp event.json      a MISP event with ATT&CK galaxy tags
+  phishhawk scan reported/ --fail-on likely      exit 1 only for likely phishing or worse
 
 environment:
+  PHISHHAWK_CONFIG    settings file (protect, allow and block lists, brands, lures, YARA ...)
   VT_API_KEY          VirusTotal key; the free tier works (VIRUSTOTAL_API_KEY also read)
   ABUSEIPDB_API_KEY   AbuseIPDB key for originating-IP reputation
   URLSCAN_API_KEY     urlscan.io key, only needed for --urlscan-submit
@@ -64,6 +74,17 @@ environment:
 exit codes:
   0  nothing notable              1  suspicious or likely phishing
   2  malicious                    3  an input could not be read or a report not written"""
+
+IMAP_EPILOG = """\
+examples:
+  export PHISHHAWK_IMAP_PASSWORD=...   (or PHISHHAWK_IMAP_TOKEN=... for OAuth / XOAUTH2)
+  phishhawk imap --host outlook.office365.com --user soc@example.com --folder "Phish reports" --unseen
+  phishhawk imap --host imap.gmail.com --user soc@example.com --since 2026-09-01 --out reports/
+  phishhawk imap --host mail.example.com --user soc --watch 300 --quiet
+
+The folder is opened read-only (EXAMINE) and fetched with BODY.PEEK, so nothing
+changes on the server. The password is read from $PHISHHAWK_IMAP_PASSWORD or a
+prompt, never from the command line."""
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +111,10 @@ def _banner_ok(stream) -> bool:
 
 
 class _Parser(argparse.ArgumentParser):
-    """ArgumentParser that shows the banner above help on a terminal."""
+    """ArgumentParser that shows the banner above help on a terminal, and
+    knows its sub-commands by name."""
+
+    commands: dict[str, argparse.ArgumentParser]
 
     def print_help(self, file=None) -> None:
         stream = file or sys.stdout
@@ -99,53 +123,62 @@ class _Parser(argparse.ArgumentParser):
         super().print_help(file)
 
 
-def _display_options() -> argparse.ArgumentParser:
-    common = argparse.ArgumentParser(add_help=False)
+def _display_options() -> _Parser:
+    common = _Parser(add_help=False)
     group = common.add_argument_group("display")
     group.add_argument("--no-color", action="store_true", help="disable ANSI colours (or set NO_COLOR)")
     group.add_argument("--no-banner", action="store_true", help="do not print the PhishHawk banner")
     return common
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = _Parser(prog="phishhawk", description=OVERVIEW, epilog=MAIN_EPILOG, formatter_class=_Formatter)
-    parser.add_argument("-V", "--version", action="version", version="PhishHawk %s" % __version__)
-    parser.add_argument("--no-color", dest="top_no_color", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--no-banner", dest="top_no_banner", action="store_true", help=argparse.SUPPRESS)
-    commands = parser.add_subparsers(dest="command", title="commands", metavar="<command>")
-    display = _display_options()
-
-    scan = commands.add_parser(
-        "scan", parents=[display], formatter_class=_Formatter, epilog=SCAN_EPILOG,
-        help="triage .eml files, folders or stdin (the default command)",
-        description="Triage one or more reported emails: extract indicators, detect, enrich, report.")
-    scan.add_argument("inputs", nargs="*", metavar="PATH",
-                      help=".eml files, directories (searched recursively) or '-' for stdin")
-
-    out = scan.add_argument_group("reports")
+def _triage_options(command: argparse.ArgumentParser) -> None:
+    """Report, detection, enrichment and cache options shared by scan and imap."""
+    command.add_argument("--config", metavar="PATH",
+                         help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
+    out = command.add_argument_group("reports")
     out.add_argument("--json", metavar="PATH", help="full structured report ('-' for stdout)")
     out.add_argument("--html", metavar="PATH", help="self-contained HTML report for tickets and L2")
-    out.add_argument("--stix", metavar="PATH", help="STIX 2.1 bundle for MISP / OpenCTI ('-' for stdout)")
+    out.add_argument("--stix", metavar="PATH", help="STIX 2.1 bundle for OpenCTI and Sentinel ('-' for stdout)")
+    out.add_argument("--misp", metavar="PATH", help="MISP event JSON, one event per message ('-' for stdout)")
     out.add_argument("--md", metavar="PATH", help="Markdown ticket note ('-' for stdout)")
     out.add_argument("--csv", metavar="PATH", help="CSV indicator list for blocklists ('-' for stdout)")
+    out.add_argument("--tlp", choices=("clear", "green", "amber", "amber+strict", "red"),
+                     help="TLP tag for the MISP event (default amber)")
     out.add_argument("-q", "--quiet", action="store_true", help="one summary block per message")
     out.add_argument("-v", "--verbose", action="store_true", help="every signal, MD5 hashes and all actions")
+    out.add_argument("--fail-on", choices=("never", "suspicious", "likely", "malicious"),
+                     help="exit 0 unless a verdict reaches this level (for pipelines; default: exit codes below)")
 
-    det = scan.add_argument_group("detection")
+    det = command.add_argument_group("detection")
     det.add_argument("-p", "--protect", action="append", default=[], metavar="DOMAIN",
                      help="your organisation's domain (repeatable); lookalikes of it are flagged "
                           "as BEC and it is never sent to third parties")
+    det.add_argument("--allow", action="append", default=[], metavar="DOMAIN",
+                     help="a partner's domain: never reported as a lookalike or an indicator (repeatable)")
+    det.add_argument("--block", action="append", default=[], metavar="DOMAIN",
+                     help="a domain always flagged when a message uses it (repeatable)")
+    det.add_argument("--yara", metavar="PATH",
+                     help="YARA rules (a file or folder) run on the message and every file in it "
+                          "(needs: pip install 'phishhawk[yara]')")
     det.add_argument("--no-auto-protect", action="store_true",
                      help="do not treat recipient domains as protected")
     det.add_argument("--no-unwrap", action="store_true",
                      help="analyse the covering note instead of the attached, reported original")
+    det.add_argument("--trusted-authserv", action="append", default=[], metavar="ID",
+                     help="your mail server's authserv-id, e.g. mx.google.com (repeatable; default "
+                          "$PHISHHAWK_TRUSTED_AUTHSERV): only its Authentication-Results are believed")
+    det.add_argument("--max-size", type=int, default=None, metavar="MB",
+                     help="skip messages larger than this (default 50 MB)")
+    det.add_argument("--no-qr", action="store_true",
+                     help="do not decode QR codes in images, PDFs and drawn tables "
+                          "(decoding needs: pip install 'phishhawk[qr]')")
 
-    enr = scan.add_argument_group("enrichment")
+    enr = command.add_argument_group("enrichment")
     enr.add_argument("-o", "--offline", action="store_true", help="no network access at all")
     enr.add_argument("--vt-key", default="", metavar="KEY", help="VirusTotal key (default: $VT_API_KEY)")
-    enr.add_argument("--vt-rate", type=int, default=4, metavar="N",
+    enr.add_argument("--vt-rate", type=int, default=None, metavar="N",
                      help="VirusTotal lookups per minute (default 4, the free tier)")
-    enr.add_argument("--vt-budget", type=int, default=20, metavar="N",
+    enr.add_argument("--vt-budget", type=int, default=None, metavar="N",
                      help="max VirusTotal network lookups per message (default 20)")
     enr.add_argument("--no-virustotal", action="store_true", help="skip VirusTotal")
     enr.add_argument("--urlscan-key", default="", metavar="KEY", help="urlscan.io key (default: $URLSCAN_API_KEY)")
@@ -159,12 +192,49 @@ def build_parser() -> argparse.ArgumentParser:
     enr.add_argument("--timeout", type=float, default=20, metavar="SECONDS",
                      help="HTTP timeout per request (default 20)")
 
-    cache_opts = scan.add_argument_group("cache")
+    cache_opts = command.add_argument_group("cache")
     cache_opts.add_argument("--no-cache", action="store_true", help="do not read or write the lookup cache")
     cache_opts.add_argument("--cache-ttl", type=float, default=24, metavar="HOURS",
                             help="how long a lookup stays fresh (default 24)")
     cache_opts.add_argument("--cache-path", default=default_cache_path(), metavar="PATH",
                             help="SQLite cache file (default: %(default)s)")
+
+
+def build_parser() -> _Parser:
+    parser = _Parser(prog="phishhawk", description=OVERVIEW, epilog=MAIN_EPILOG, formatter_class=_Formatter)
+    parser.add_argument("-V", "--version", action="version", version="PhishHawk %s" % __version__)
+    parser.add_argument("--no-color", dest="top_no_color", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--no-banner", dest="top_no_banner", action="store_true", help=argparse.SUPPRESS)
+    commands = parser.add_subparsers(dest="command", title="commands", metavar="<command>")
+    display = _display_options()
+
+    scan = commands.add_parser(
+        "scan", parents=[display], formatter_class=_Formatter, epilog=SCAN_EPILOG,
+        help="triage .eml, .msg or .mbox files, folders or stdin (the default command)",
+        description="Triage one or more reported emails: extract indicators, detect, enrich, report.")
+    scan.add_argument("inputs", nargs="*", metavar="PATH",
+                      help=".eml, .msg or .mbox files, directories (searched recursively) or '-' for stdin")
+    _triage_options(scan)
+
+    imap = commands.add_parser(
+        "imap", parents=[display], formatter_class=_Formatter, epilog=IMAP_EPILOG,
+        help="triage messages straight from an IMAP folder, read-only",
+        description="Triage the messages in an IMAP folder (a shared 'report phishing' mailbox, say). "
+                    "The folder is opened read-only: nothing is marked read, moved or deleted.")
+    box = imap.add_argument_group("mailbox")
+    box.add_argument("--host", required=True, help="IMAP server, e.g. outlook.office365.com")
+    box.add_argument("--user", default=os.environ.get("PHISHHAWK_IMAP_USER", ""),
+                     help="login (default $PHISHHAWK_IMAP_USER)")
+    box.add_argument("--folder", default="INBOX", help="folder to read (default INBOX)")
+    box.add_argument("--port", type=int, default=0, help="port (default 993, or 143 with --starttls)")
+    box.add_argument("--starttls", action="store_true", help="plain connection upgraded with STARTTLS")
+    box.add_argument("--since", metavar="YYYY-MM-DD", help="only messages received on or after this date")
+    box.add_argument("--unseen", action="store_true", help="only messages nobody has read yet")
+    box.add_argument("--limit", type=int, default=50, metavar="N", help="the newest N messages (default 50)")
+    box.add_argument("--out", metavar="DIR", help="also write a JSON and an HTML report per message here")
+    box.add_argument("--watch", type=int, default=0, metavar="SECONDS",
+                     help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
+    _triage_options(imap)
 
     doctor = commands.add_parser(
         "doctor", parents=[display], formatter_class=_Formatter,
@@ -193,6 +263,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     helper = commands.add_parser("help", help="show help for a command")
     helper.add_argument("topic", nargs="?", choices=COMMANDS[:-1])
+    parser.commands = dict(commands.choices)
     return parser
 
 
@@ -211,14 +282,64 @@ def normalise_argv(argv: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def expand_inputs(inputs: list[str]) -> list[str]:
+    """Files to scan. Inside a directory only regular .eml, .msg and .mbox
+    files count: a planted FIFO or a symlink to /dev/zero would otherwise
+    hang the batch."""
     paths: list[str] = []
     for item in inputs:
         if item != "-" and os.path.isdir(item):
-            for root, _, names in os.walk(item):
-                paths += [os.path.join(root, n) for n in sorted(names) if n.lower().endswith(".eml")]
+            for root, _, names in os.walk(item):  # symlinked directories are not followed
+                paths += [os.path.join(root, n) for n in sorted(names)
+                          if n.lower().endswith((".eml", ".msg", ".mbox"))
+                          and os.path.isfile(os.path.join(root, n))]
         else:
             paths.append(item)
     return paths
+
+
+class InputTooLarge(Exception):
+    pass
+
+
+def read_input(path: str, limit: int) -> bytes:
+    """One message, refusing what is not a regular file or is over the limit."""
+    if path == "-":
+        data = sys.stdin.buffer.read(limit + 1)
+    else:
+        if os.path.exists(path) and not os.path.isdir(path) and not os.path.isfile(path):
+            raise InputTooLarge("not a regular file")
+        with open(path, "rb") as handle:
+            data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise InputTooLarge("larger than %d MB" % (limit // (1024 * 1024)))
+    return data
+
+
+def iter_messages(paths: list[str], limit: int) -> Iterator[tuple[str, bytes | Exception]]:
+    """(label, raw message or the reason it was skipped). An .mbox file (a
+    Google Takeout or Thunderbird export) yields each message it holds."""
+    for path in paths:
+        if path != "-" and path.lower().endswith(".mbox") and os.path.isfile(path):
+            try:
+                box = mailbox.mbox(path, create=False)
+                keys = list(box.iterkeys())
+            except Exception as exc:
+                yield path, exc
+                continue
+            for index, key in enumerate(keys, 1):
+                label = "%s#%d" % (path, index)
+                try:
+                    data = box.get_bytes(key)
+                except Exception as exc:
+                    yield label, exc
+                    continue
+                too_big = InputTooLarge("larger than %d MB" % (limit // (1024 * 1024)))
+                yield label, too_big if len(data) > limit else data
+            continue
+        try:
+            yield path, read_input(path, limit)
+        except Exception as exc:
+            yield path, exc
 
 
 def build_enricher(args: argparse.Namespace, cache: Cache | None, notices: list[str]) -> Enricher | None:
@@ -261,65 +382,125 @@ def _write(path: str, content: str) -> None:
         handle.write(content)
 
 
-def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    scan_parser = parser._subparsers._group_actions[0].choices["scan"]  # noqa: SLF001
+FAIL_ORDER = {"never": 99, "suspicious": 1, "likely": 2, "malicious": 3}
+VERDICT_RANK = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 2, "MALICIOUS": 3}
+
+
+def _settings(args: argparse.Namespace, error: Callable[[str], None]) -> tuple[Options, config.Config]:
+    """Command line over config file over built-in defaults."""
+    try:
+        settings = config.load(args.config or "")
+    except config.ConfigError as exc:
+        error(str(exc))
+        raise
+    config.apply_knowledge(settings)
+    args.offline = args.offline or settings.offline
+    args.max_size = args.max_size or settings.max_size or 50
+    args.vt_rate = args.vt_rate or settings.vt_rate or 4
+    args.vt_budget = args.vt_budget or settings.vt_budget or 20
+    args.fail_on = args.fail_on or settings.fail_on or ""
+    args.tlp = args.tlp or settings.tlp
+    protected = list(args.protect) + settings.protect
+    protected += [d.strip() for d in os.environ.get("PHISHHAWK_PROTECT", "").split(",") if d.strip()]
+    trusted = args.trusted_authserv or settings.trusted_authserv or [
+        item.strip() for item in os.environ.get("PHISHHAWK_TRUSTED_AUTHSERV", "").split(",") if item.strip()]
+    rules = None
+    yara_path = args.yara or settings.yara
+    if yara_path:
+        try:
+            rules = yararules.Rules(os.path.expanduser(yara_path))
+        except yararules.YaraError as exc:
+            error(str(exc))
+            raise
+    options = Options(unwrap=not args.no_unwrap, protected=protected, auto_protect=not args.no_auto_protect,
+                      qr=not args.no_qr, trusted_authserv=trusted,
+                      allow_domains=[d.strip().lower() for d in args.allow] + settings.allow_domains,
+                      block_domains=[d.strip().lower() for d in args.block] + settings.block_domains,
+                      yara=rules)
+    return options, settings
+
+
+def _exit_code(analyses: list[Analysis], failed: bool, fail_on: str) -> int:
+    if failed:
+        return EXIT_ERROR
+    worst = max((VERDICT_RANK.get(a.verdict, 0) for a in analyses), default=0)
+    if fail_on:
+        return 1 if worst >= FAIL_ORDER[fail_on] else 0
+    return {0: 0, 1: 1, 2: 1, 3: 2}[worst]
+
+
+def cmd_scan(args: argparse.Namespace, parser: _Parser) -> int:
+    scan_parser = parser.commands["scan"]
     if not args.inputs:
-        scan_parser.error("no input: give .eml files, directories or '-' for stdin")
-    outputs = {"json": args.json, "html": args.html, "stix": args.stix, "md": args.md, "csv": args.csv}
+        scan_parser.error("no input: give .eml, .msg or .mbox files, directories or '-' for stdin")
+    return _triage(args, scan_parser, lambda limit: iter_messages(expand_inputs(args.inputs), limit))
+
+
+def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
+            source: Callable[[int], Iterator[tuple[str, bytes | Exception]]],
+            per_message: Callable[[str, Analysis], None] | None = None) -> int:
+    outputs = {"json": args.json, "html": args.html, "stix": args.stix, "misp": args.misp, "md": args.md,
+               "csv": args.csv}
     if list(outputs.values()).count("-") > 1:
-        scan_parser.error("only one report can go to stdout ('-')")
+        command.error("only one report can go to stdout ('-')")
     if args.html == "-":
-        scan_parser.error("--html needs a file path")
+        command.error("--html needs a file path")
     machine_mode = "-" in outputs.values()
 
     colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
     err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    try:
+        options, _ = _settings(args, lambda message: print(err("[!] %s" % printable(message), "red"),
+                                                           file=sys.stderr))
+    except (config.ConfigError, yararules.YaraError):
+        return EXIT_ERROR
     if not (args.no_banner or args.quiet or machine_mode) and _banner_ok(sys.stderr):
         sys.stderr.write(banner.render(colour=err.enabled) + "\n")
 
     cache = None if (args.no_cache or args.offline) else Cache(args.cache_path, args.cache_ttl)
-    protected = list(args.protect)
-    protected += [d.strip() for d in os.environ.get("PHISHHAWK_PROTECT", "").split(",") if d.strip()]
-    options = Options(unwrap=not args.no_unwrap, protected=protected, auto_protect=not args.no_auto_protect)
-
     notices: list[str] = []
     enricher = build_enricher(args, cache, notices)
+    if options.yara is not None:
+        notices.append("YARA: %d rule file(s) from %s" % (options.yara.count, options.yara.path))
     for notice in notices:
         print(err("[i] " + notice, "dim"), file=sys.stderr)
 
     progress: Callable[[str], None] | None = None
     if sys.stderr.isatty() and not args.quiet:
         def progress(message: str) -> None:
-            sys.stderr.write("\r  ... %-60s" % message[:60])
+            sys.stderr.write("\r  ... %-60s" % printable(message)[:60])
             sys.stderr.flush()
 
     analyses: list[Analysis] = []
-    worst = 0
-    for path in expand_inputs(args.inputs):
+    failed = False
+    for path, data in source(args.max_size * 1024 * 1024):
         try:
-            if path == "-":
-                analysis = triage_bytes(sys.stdin.buffer.read(), "<stdin>", options, enricher, progress)
-            else:
-                analysis = triage_file(path, options, enricher, progress)
+            if isinstance(data, Exception):
+                raise data
+            analysis = triage_bytes(data, "<stdin>" if path == "-" else path, options, enricher, progress)
         except FileNotFoundError:
-            print(err("[!] %s: file not found" % path, "red"), file=sys.stderr)
-            worst = EXIT_ERROR
+            print(err("[!] %s: file not found" % printable(path), "red"), file=sys.stderr)
+            failed = True
             continue
         except IsADirectoryError:
-            print(err("[!] %s: is a directory" % path, "red"), file=sys.stderr)
-            worst = EXIT_ERROR
+            print(err("[!] %s: is a directory" % printable(path), "red"), file=sys.stderr)
+            failed = True
+            continue
+        except InputTooLarge as exc:
+            print(err("[!] %s: skipped, %s" % (printable(path), exc), "red"), file=sys.stderr)
+            failed = True
             continue
         except Exception as exc:  # one malformed mail must not kill a batch run
-            print(err("[!] %s: could not analyse (%s: %s)" % (path, type(exc).__name__, exc), "red"),
-                  file=sys.stderr)
-            worst = EXIT_ERROR
+            print(err("[!] %s: could not analyse (%s: %s)" % (printable(path), type(exc).__name__,
+                                                              printable(str(exc))), "red"), file=sys.stderr)
+            failed = True
             continue
         finally:
             if progress:
                 sys.stderr.write("\r%-66s\r" % "")
         analyses.append(analysis)
-        if worst != EXIT_ERROR:
-            worst = max(worst, EXIT_CODES.get(analysis.verdict, 0))
+        if per_message is not None:
+            per_message(path, analysis)
         if not machine_mode:
             print(console.render_quiet(analysis, colour) if args.quiet
                   else console.render(analysis, colour, verbose=args.verbose))
@@ -335,6 +516,7 @@ def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                                    indent=2, ensure_ascii=False) + "\n",
         "html": lambda: html.render(analyses),
         "stix": lambda: json.dumps(stix.build_bundle(analyses), indent=2) + "\n",
+        "misp": lambda: json.dumps(misp.build(analyses, args.tlp), indent=2, ensure_ascii=False) + "\n",
         "md": lambda: "\n---\n\n".join(markdown.render(a) for a in analyses),
         "csv": lambda: csvout.render(analyses),
     }
@@ -347,13 +529,74 @@ def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
                 print(err("[i] %s report written to %s" % (kind.upper(), path), "dim"), file=sys.stderr)
         except OSError as exc:
             print(err("[!] could not write %s: %s" % (path, exc), "red"), file=sys.stderr)
-            worst = EXIT_ERROR
+            failed = True
 
     if cache is not None:
         if cache.hits:
             print(err("[i] %d lookup(s) served from cache" % cache.hits, "dim"), file=sys.stderr)
         cache.close()
-    return worst
+    return _exit_code(analyses, failed, args.fail_on)
+
+
+# ---------------------------------------------------------------------------
+# imap
+# ---------------------------------------------------------------------------
+
+def cmd_imap(args: argparse.Namespace, parser: _Parser) -> int:
+    imap_parser = parser.commands["imap"]
+    err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    if not args.user:
+        imap_parser.error("--user (or $PHISHHAWK_IMAP_USER) is required")
+    since = None
+    if args.since:
+        try:
+            since = datetime.date.fromisoformat(args.since)
+        except ValueError:
+            imap_parser.error("--since must be a date like 2026-09-01")
+    token = os.environ.get("PHISHHAWK_IMAP_TOKEN", "")
+    password = os.environ.get("PHISHHAWK_IMAP_PASSWORD", "")
+    if not token and not password:
+        if not sys.stdin.isatty():
+            imap_parser.error("set PHISHHAWK_IMAP_PASSWORD or PHISHHAWK_IMAP_TOKEN (no terminal to ask on)")
+        password = getpass.getpass("IMAP password for %s@%s: " % (args.user, args.host))
+    source = imapfetch.ImapSource(host=args.host, user=args.user, password=password, token=token,
+                                  folder=args.folder, port=args.port or (143 if args.starttls else 993),
+                                  starttls=args.starttls, since=since, unseen=args.unseen,
+                                  limit=max(0, args.limit), timeout=args.timeout)
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+
+    def save(label: str, analysis: Analysis) -> None:
+        if not args.out:
+            return
+        uid = label.rsplit("=", 1)[-1]
+        name = os.path.join(args.out, "imap-%s" % re.sub(r"[^0-9A-Za-z_-]", "_", uid))
+        try:
+            _write(name + ".json", json.dumps(to_dict(analysis), indent=2, ensure_ascii=False) + "\n")
+            _write(name + ".html", html.render([analysis]))
+        except OSError as exc:
+            print(err("[!] could not write %s: %s" % (name, exc), "red"), file=sys.stderr)
+
+    last_uid = 0
+    code = 0
+    while True:
+        seen: list[int] = []
+
+        def messages(limit: int, seen: list[int] = seen, after: int = last_uid,
+                     ) -> Iterator[tuple[str, bytes | Exception]]:
+            try:
+                for label, uid, data in imapfetch.fetch(source, limit, after_uid=after):
+                    seen.append(uid)
+                    yield label, data
+            except imapfetch.ImapError as exc:
+                yield "imap://%s/%s" % (args.host, args.folder), exc
+
+        code = max(code, _triage(args, imap_parser, messages, save))
+        if not args.watch:
+            return code
+        last_uid = max(seen + [last_uid])
+        print(err("[i] waiting %d s for new messages (Ctrl+C stops)" % args.watch, "dim"), file=sys.stderr)
+        time.sleep(args.watch)
 
 
 # ---------------------------------------------------------------------------
@@ -383,11 +626,32 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     rows.append(("Python", version, "ok" if sys.version_info >= (3, 10) else "fail",
                  "" if sys.version_info >= (3, 10) else "PhishHawk needs Python 3.10+"))
     try:
-        import requests
-        rows.append(("requests", requests.__version__, "ok", "used for enrichment"))
+        import requests as http
+        rows.append(("requests", http.__version__, "ok", "used for enrichment"))
     except ImportError:
-        requests = None
+        http = None  # type: ignore[assignment]
         rows.append(("requests", "not installed", "fail", "pip install requests  (or always use --offline)"))
+    qr_versions = qrcodes.versions()
+    if qr_versions:
+        rows.append(("QR decoding", ", ".join("%s %s" % item for item in qr_versions.items()), "ok",
+                     "codes in images, PDFs and drawn tables are decoded"))
+    else:
+        rows.append(("QR decoding", "not installed", "info",
+                     "optional: pip install 'phishhawk[qr]'  (QR lure wording is still flagged)"))
+    if yararules.available():
+        rows.append(("YARA", "yara-python %s" % yararules.version(), "ok", "run your rules with --yara PATH"))
+    else:
+        rows.append(("YARA", "not installed", "info", "optional: pip install 'phishhawk[yara]'"))
+    try:
+        settings = config.load()
+        if settings.path:
+            rows.append(("Config", settings.path, "ok", "%d protected, %d allowed, %d blocked domain(s)"
+                         % (len(settings.protect), len(settings.allow_domains), len(settings.block_domains))))
+        else:
+            rows.append(("Config", "none", "info",
+                         "optional: ~/.config/phishhawk/config.toml (see docs/USAGE.md)"))
+    except config.ConfigError as exc:
+        rows.append(("Config", "invalid", "fail", str(exc)[:200]))
 
     for name, envs, level, hint in (
         ("VirusTotal key", ("VT_API_KEY", "VIRUSTOTAL_API_KEY"), "warn",
@@ -414,15 +678,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         rows.append(("Cache", default_cache_path(), "warn", "not writable: lookups will not be cached"))
 
     if args.network:
-        if requests is None:
+        if http is None:
             rows.append(("Network", "skipped", "fail", "needs the requests package"))
         else:
-            session = requests.Session()
+            session = http.Session()
             for name, url in ENDPOINTS.items():
                 try:
                     code = session.get(url, timeout=8).status_code
                     rows.append((name + " API", "reachable (HTTP %d)" % code, "ok", ""))
-                except requests.RequestException as exc:
+                except http.RequestException as exc:
                     rows.append((name + " API", "unreachable", "fail", type(exc).__name__))
 
     print(colour("PhishHawk %s doctor" % __version__, "bold"))
@@ -496,11 +760,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     if args.command == "help":
-        target = parser._subparsers._group_actions[0].choices.get(args.topic) if args.topic else parser  # noqa: SLF001
+        target = parser.commands.get(args.topic, parser) if args.topic else parser
         target.print_help()
         return 0
     if args.command == "scan":
         return cmd_scan(args, parser)
+    if args.command == "imap":
+        return cmd_imap(args, parser)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "cache":

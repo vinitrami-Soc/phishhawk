@@ -3,8 +3,11 @@ never leaves the machine."""
 
 from __future__ import annotations
 
+import base64
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import quote, unquote
 
 from ..extract import PRIVATE_IP_RE, is_ip, registrable_domain
 from ..knowledge import FREEMAIL, SHORTENERS
@@ -19,6 +22,29 @@ __all__ = ["AbuseIPDB", "Enricher", "Provider", "RateLimiter", "Rdap", "UrlScan"
 
 TRUSTED_SKIP = {"status": "skipped", "detail": "trusted domain, not sent to third parties"}
 BUDGET_SKIP = {"status": "skipped", "detail": "per-message VirusTotal budget used"}
+
+
+_PLACEHOLDER = "user@example.com"
+_ADDRESS_RE = re.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})*\.[A-Za-z]{2,24}")
+
+
+def redact_recipients(url: str, a: Analysis) -> str:
+    """Phishing links often carry the victim's address (plain, URL-encoded or
+    base64) so the kit can pre-fill its login form. Scans submitted to
+    urlscan.io are visible to others, "unlisted" ones included, so your
+    people's addresses are swapped for a placeholder before submission."""
+    addresses = {m.lower() for m in _ADDRESS_RE.findall(unquote(a.to or ""))}
+    addresses |= {m.lower() for m in _ADDRESS_RE.findall(unquote(url))
+                  if a.is_protected(m.rsplit("@", 1)[-1])}
+    for address in sorted(addresses, key=len, reverse=True):
+        forms = {address: _PLACEHOLDER, quote(address, safe=""): quote(_PLACEHOLDER, safe="")}
+        for encode in (base64.b64encode, base64.urlsafe_b64encode):
+            encoded, placeholder = encode(address.encode()).decode(), encode(_PLACEHOLDER.encode()).decode()
+            forms[encoded] = placeholder
+            forms[encoded.rstrip("=")] = placeholder.rstrip("=")
+        for form, placeholder in forms.items():
+            url = re.sub(re.escape(form), placeholder, url, flags=re.I if "@" in form else 0)
+    return url
 
 
 @dataclass
@@ -52,6 +78,8 @@ class Enricher:
 
     def _virustotal(self, a: Analysis, note: Callable[[str], None]) -> None:
         vt = self.virustotal
+        if vt is None:
+            return
         start = vt.calls
         # Spend the budget where it matters: already-suspicious IOCs first.
         for ioc in sorted(a.urls, key=lambda u: not u.flagged):
@@ -71,18 +99,27 @@ class Enricher:
                 f.vt = vt.lookup_file(f.sha256)
 
     def _urlscan(self, a: Analysis, note: Callable[[str], None]) -> None:
+        urlscan = self.urlscan
+        if urlscan is None:
+            return
         results: dict[str, dict] = {}
         for ioc in a.urls:
             if a.is_trusted_domain(ioc.host):
                 continue
             if ioc.host not in results:
                 note("urlscan.io %s" % ioc.host)
-                results[ioc.host] = self.urlscan.search_host(ioc.host)
+                results[ioc.host] = urlscan.search_host(ioc.host)
             ioc.urlscan = dict(results[ioc.host])
             if self.urlscan_submit:
-                ioc.urlscan["submission"] = self.urlscan.submit(ioc.url)
+                redacted = redact_recipients(ioc.url, a)
+                ioc.urlscan["submission"] = urlscan.submit(redacted)
+                if redacted != ioc.url:
+                    ioc.urlscan["submission"]["redacted"] = True
 
     def _rdap(self, a: Analysis, note: Callable[[str], None]) -> None:
+        rdap = self.rdap
+        if rdap is None:
+            return
         candidates = [a.from_domain, a.reply_to_domain, a.return_path_domain]
         candidates += [ioc.host for ioc in a.urls]
         for host in candidates:
@@ -91,4 +128,4 @@ class Enricher:
                     or base in FREEMAIL or a.is_trusted_domain(base)):
                 continue
             note("RDAP %s" % base)
-            a.domain_intel[base] = self.rdap.domain_age(base)
+            a.domain_intel[base] = rdap.domain_age(base)
