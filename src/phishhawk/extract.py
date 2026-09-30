@@ -552,8 +552,36 @@ def parse_html(html: str) -> HtmlFindings:
 
 _PDF_URI_RE = re.compile(rb"/URI\s*\(((?:\\.|[^\\)]){4,2048})\)")
 _PDF_URI_HEX_RE = re.compile(rb"/URI\s*<([0-9A-Fa-f\s]{8,4096})>")
-_PDF_STREAM_RE = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.S)
 PDF_MAX_STREAMS = 300
+
+
+def pdf_streams(data: bytes, limit: int = PDF_MAX_STREAMS):
+    """(offset, raw bytes) of each stream, found with plain searches: a
+    regular expression that looks for 'endstream' after every 'stream' goes
+    quadratic on a file full of the one and missing the other."""
+    position = 0
+    for _ in range(limit):
+        start = data.find(b"stream", position)
+        if start < 0:
+            return
+        body = start + 6
+        if data[body:body + 2] == b"\r\n":
+            body += 2
+        elif data[body:body + 1] in (b"\n", b"\r"):
+            body += 1
+        else:  # "endstream", or "stream" inside a word
+            position = body
+            continue
+        end = data.find(b"endstream", body)
+        if end < 0:
+            return
+        content = data[body:end]
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
+        elif content.endswith((b"\n", b"\r")):
+            content = content[:-1]
+        yield start, content
+        position = end + 9
 PDF_MAX_INFLATED = 20 * 1024 * 1024  # total, across all streams
 
 
@@ -581,11 +609,11 @@ def urls_from_pdf(data: bytes) -> list[str]:
     data = data or b""
     _pdf_uris(data, found)
     budget = PDF_MAX_INFLATED
-    for index, match in enumerate(_PDF_STREAM_RE.finditer(data)):
-        if index >= PDF_MAX_STREAMS or budget <= 0:
+    for _, stream in pdf_streams(data):
+        if budget <= 0:
             break
         try:
-            inflated = zlib.decompressobj().decompress(match.group(1), budget)
+            inflated = zlib.decompressobj().decompress(stream, budget)
         except zlib.error:
             continue
         budget -= len(inflated)
@@ -615,6 +643,20 @@ def sniff_type(data: bytes) -> str:
         return "7z"
     if head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
         return "ole"
+    if head.startswith(b"\x4c\x00\x00\x00\x01\x14\x02\x00"):
+        return "lnk"
+    if head.startswith(bytes.fromhex("e4525c7b8cd8a74daeb15378d02996d3")):
+        return "onenote"
+    if head.startswith(b"{\\rt"):
+        return "rtf"
+    if head.startswith(b"\x78\x9f\x3e\x22"):
+        return "tnef"
+    if head.startswith(b"\x1f\x8b"):
+        return "gzip"
+    if head.startswith(b"MSCF\x00\x00\x00\x00"):
+        return "cab"
+    if head.startswith(b"vhdxfile") or head.startswith(b"conectix") or (data or b"")[-512:-504] == b"conectix":
+        return "vhd"
     if head.startswith(b"\x89PNG"):
         return "png"
     if head.startswith(b"\xff\xd8\xff"):
@@ -627,12 +669,19 @@ def sniff_type(data: bytes) -> str:
         return "bmp"
     if len(data or b"") > 0x8006 and data[0x8001:0x8006] == b"CD001":
         return "iso"
+    if len(head) >= 512 and head[510:512] == b"\x55\xaa" and (head[54:59] in (b"FAT12", b"FAT16")
+                                                               or head[82:87] == b"FAT32"):
+        return "fatimg"
+    if len(head) >= 262 and head[257:262] == b"ustar":
+        return "tar"
     lowered = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
     if lowered.startswith((b"<!doctype html", b"<html", b"<script", b"<head", b"<body")) \
             or b"<form" in lowered or b"<script" in lowered:
         return "html"
     if lowered.startswith(b"<svg") or (lowered.startswith(b"<?xml") and b"<svg" in lowered):
         return "svg"
+    if lowered.startswith(b"begin:vcalendar"):
+        return "calendar"
     return ""
 
 
@@ -641,6 +690,10 @@ TYPE_DESCRIPTIONS = {
     "pdf": "a PDF", "rar": "a RAR archive", "7z": "a 7-Zip archive", "ole": "an OLE/legacy Office file",
     "png": "a PNG image", "jpeg": "a JPEG image", "gif": "a GIF image", "iso": "an ISO disk image",
     "html": "an HTML document", "svg": "an SVG image", "webp": "a WebP image", "bmp": "a BMP image",
+    "lnk": "a Windows shortcut", "onenote": "a OneNote section", "rtf": "an RTF document",
+    "tnef": "an Outlook winmail.dat", "gzip": "a gzip file", "cab": "a Windows cabinet archive",
+    "vhd": "a virtual hard disk", "fatimg": "a FAT disk image", "tar": "a tar archive",
+    "calendar": "a calendar invitation",
 }
 
 # What each extension is allowed to be. Only a mismatch towards a dangerous
@@ -652,5 +705,9 @@ EXPECTED_TYPES = {
     ".exe": {"pe"}, ".dll": {"pe"}, ".scr": {"pe"}, ".png": {"png"}, ".jpg": {"jpeg"},
     ".jpeg": {"jpeg"}, ".gif": {"gif"}, ".html": {"html"}, ".htm": {"html"}, ".svg": {"svg", "html"},
     ".iso": {"iso"}, ".txt": set(), ".csv": set(), ".eml": set(),
+    ".one": {"onenote"}, ".lnk": {"lnk"}, ".img": {"fatimg", "iso"}, ".vhd": {"vhd"}, ".vhdx": {"vhd"},
+    ".rtf": {"rtf"}, ".gz": {"gzip"}, ".tgz": {"gzip"}, ".tar": {"tar"}, ".cab": {"cab"}, ".dat": {"tnef"},
+    ".ics": {"calendar"}, ".msi": {"ole"}, ".xlsb": {"zip"}, ".pptm": {"zip"}, ".dotm": {"zip"},
 }
-DANGEROUS_TYPES = {"pe", "elf", "html", "iso", "zip", "rar", "7z", "svg"}
+DANGEROUS_TYPES = {"pe", "elf", "html", "iso", "zip", "rar", "7z", "svg", "lnk", "onenote", "fatimg", "vhd", "ole",
+                   "cab"}

@@ -1,6 +1,6 @@
 """PhishHawk command-line interface.
 
-    phishhawk scan mail.eml        triage messages (the default command)
+    phishhawk scan mail.eml        triage messages: .eml, Outlook .msg or .mbox (the default command)
     phishhawk doctor               check dependencies, API keys, cache and network
     phishhawk cache stats|clear    inspect or empty the lookup cache
     phishhawk techniques           the MITRE ATT&CK techniques PhishHawk can evidence
@@ -40,7 +40,7 @@ it finds to MITRE ATT&CK, and tells you what to do next."""
 MAIN_EPILOG = """\
 quick start:
   phishhawk suspicious.eml            triage one message (same as: phishhawk scan ...)
-  phishhawk scan reported/ --quiet    every .eml in a folder, one summary each
+  phishhawk scan reported/ --quiet    every .eml, .msg and .mbox in a folder, one summary each
   phishhawk doctor                    check keys and setup before the first real run
 
 Run `phishhawk <command> -h` for everything a command can do."""
@@ -49,8 +49,9 @@ SCAN_EPILOG = """\
 examples:
   phishhawk scan suspicious.eml                  full report in the terminal
   phishhawk suspicious.eml                       the same: scan is the default command
-  phishhawk scan reported/ --quiet               every .eml in a folder, one summary each
-  cat suspicious.eml | phishhawk scan -          read the message from stdin
+  phishhawk scan reported/ --quiet               every .eml, .msg and .mbox in a folder
+  phishhawk scan "Invoice overdue.msg"           an Outlook message, as saved or reported
+  cat suspicious.eml | phishhawk scan - | phishhawk scan -          read the message from stdin
   phishhawk scan suspicious.eml --offline        nothing leaves this machine
   phishhawk scan mail.eml --html r.html --stix iocs.json --md ticket.md
   phishhawk scan mail.eml --json - | jq .verdict pure JSON on stdout, notices on stderr
@@ -119,10 +120,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = commands.add_parser(
         "scan", parents=[display], formatter_class=_Formatter, epilog=SCAN_EPILOG,
-        help="triage .eml files, folders or stdin (the default command)",
+        help="triage .eml, .msg or .mbox files, folders or stdin (the default command)",
         description="Triage one or more reported emails: extract indicators, detect, enrich, report.")
     scan.add_argument("inputs", nargs="*", metavar="PATH",
-                      help=".eml files, directories (searched recursively) or '-' for stdin")
+                      help=".eml, .msg or .mbox files, directories (searched recursively) or '-' for stdin")
 
     out = scan.add_argument_group("reports")
     out.add_argument("--json", metavar="PATH", help="full structured report ('-' for stdout)")
@@ -221,14 +222,16 @@ def normalise_argv(argv: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def expand_inputs(inputs: list[str]) -> list[str]:
-    """Files to scan. Inside a directory only regular .eml files count: a
-    planted FIFO or a symlink to /dev/zero would otherwise hang the batch."""
+    """Files to scan. Inside a directory only regular .eml, .msg and .mbox
+    files count: a planted FIFO or a symlink to /dev/zero would otherwise
+    hang the batch."""
     paths: list[str] = []
     for item in inputs:
         if item != "-" and os.path.isdir(item):
             for root, _, names in os.walk(item):  # symlinked directories are not followed
                 paths += [os.path.join(root, n) for n in sorted(names)
-                          if n.lower().endswith((".eml", ".mbox")) and os.path.isfile(os.path.join(root, n))]
+                          if n.lower().endswith((".eml", ".msg", ".mbox"))
+                          and os.path.isfile(os.path.join(root, n))]
         else:
             paths.append(item)
     return paths
@@ -322,7 +325,7 @@ def _write(path: str, content: str) -> None:
 def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     scan_parser = parser._subparsers._group_actions[0].choices["scan"]  # noqa: SLF001
     if not args.inputs:
-        scan_parser.error("no input: give .eml or .mbox files, directories or '-' for stdin")
+        scan_parser.error("no input: give .eml, .msg or .mbox files, directories or '-' for stdin")
     outputs = {"json": args.json, "html": args.html, "stix": args.stix, "md": args.md, "csv": args.csv}
     if list(outputs.values()).count("-") > 1:
         scan_parser.error("only one report can go to stdout ('-')")

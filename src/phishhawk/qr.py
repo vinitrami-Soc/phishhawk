@@ -29,6 +29,7 @@ from collections.abc import Iterator
 MAX_PIXELS = 25_000_000       # refuse larger images: decompression-bomb guard
 MAX_SIDE = 2500               # larger images are scaled down before decoding
 MAX_IMAGES_PER_PDF = 30
+MAX_PDF_STREAMS = 2000  # stream dictionaries examined per PDF, images or not
 PDF_INFLATE_BUDGET = 20 * 1024 * 1024
 MAX_GRID_CELLS = 40_000       # 200 x 200 modules is far beyond any QR code
 MIN_GRID = 21                 # the smallest QR code is 21 x 21 modules
@@ -199,6 +200,26 @@ def _int(dictionary: bytes, key: bytes, default: int = 0) -> int:
     return int(match.group(1)) if match else default
 
 
+def _png(compressed: bytes, width: int, height: int, colors: int, bpc: int):
+    """A Flate stream with PNG predictors is exactly a PNG's IDAT data, so it
+    is wrapped as a PNG and decoded by Pillow in C, not a pixel at a time."""
+    import struct  # noqa: PLC0415
+
+    _, image = _libraries()
+    color_type = {1: 0, 3: 2, 4: 6}.get(colors)
+    if color_type is None or bpc not in (1, 8):
+        raise ValueError("unsupported predictor image")
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, bpc, color_type, 0, 0, 0)
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", compressed) + chunk(b"IEND", b"")
+    img = image.open(io.BytesIO(png))
+    img.load()
+    return img
+
+
 def _undo_png_predictor(raw: bytes, columns: int, colors: int, bpc: int) -> bytes:
     stride = max(1, (columns * colors * bpc + 7) // 8)
     step = max(1, (colors * bpc + 7) // 8)
@@ -256,9 +277,11 @@ def _pdf_images(data: bytes) -> Iterator[object]:
     _, image = _libraries()
     budget = PDF_INFLATE_BUDGET
     count = 0
-    for match in _STREAM_START_RE.finditer(data):
-        if count >= MAX_IMAGES_PER_PDF or budget <= 0:
+    for examined, match in enumerate(_STREAM_START_RE.finditer(data)):
+        if count >= MAX_IMAGES_PER_PDF or budget <= 0 or examined >= MAX_PDF_STREAMS:
             return
+        if b"/Image" not in data[max(0, match.start() - 8192):match.start()]:
+            continue  # cheap test before walking back through the dictionary
         dictionary = _dictionary_before(data, match.start() + 2)
         if b"/Image" not in dictionary or b"/Subtype" not in dictionary:
             continue
@@ -275,6 +298,12 @@ def _pdf_images(data: bytes) -> Iterator[object]:
             continue
         count += 1
         try:
+            predictor = _int(dictionary, b"Predictor", 1)
+            if filters == [b"FlateDecode"] and predictor >= 10:
+                bpc = 1 if b"/ImageMask true" in dictionary else _int(dictionary, b"BitsPerComponent", 8)
+                columns, colors = _int(dictionary, b"Columns", width), _int(dictionary, b"Colors", 1)
+                yield _png(stream, columns, height, colors, bpc)
+                continue
             if b"FlateDecode" in filters:
                 inflated = zlib.decompressobj().decompress(stream, budget)
                 budget -= len(inflated)
@@ -288,7 +317,6 @@ def _pdf_images(data: bytes) -> Iterator[object]:
             if filters and b"FlateDecode" not in filters:
                 continue  # JBIG2, LZW, RunLength: not decoded here
             bpc = 1 if b"/ImageMask true" in dictionary else _int(dictionary, b"BitsPerComponent", 8)
-            predictor = _int(dictionary, b"Predictor", 1)
             colors = 1 if bpc == 1 else max(1, len(stream) // (width * height)) if predictor < 10 else \
                 _int(dictionary, b"Colors", 1)
             if predictor >= 10:

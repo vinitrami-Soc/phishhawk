@@ -69,8 +69,9 @@ class FileIoc:
     notes: list[str] = field(default_factory=list)
     flagged: bool = False
     vt: dict[str, Any] | None = None
-    archive: dict[str, Any] | None = None
+    archive: dict[str, Any] | None = None  # any container: ZIP, RAR, 7z, tar, ISO, disk image, winmail.dat
     html: dict[str, Any] | None = None
+    details: dict[str, Any] = field(default_factory=dict)  # per-format findings: office, pdf, rtf, lnk ...
 
 
 @dataclass
@@ -109,6 +110,7 @@ class Analysis:
     domains: list[str] = field(default_factory=list)
     body_emails: list[str] = field(default_factory=list)
     qr_codes: list[dict[str, str]] = field(default_factory=list)  # where, payload, url
+    calendar: list[dict[str, Any]] = field(default_factory=list)  # invitations: organizer, summary, links
     lookalikes: list[Lookalike] = field(default_factory=list)
     zero_width_chars: int = 0
     hidden_splits: int = 0  # hidden text inside visible words

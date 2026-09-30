@@ -22,18 +22,14 @@ import email
 import email.header
 import email.policy
 import email.utils
-import hashlib
 import html as html_module
-import io
-import mimetypes
-import os
 import re
-import zipfile
 from collections.abc import Iterator
 from email.message import Message
 from typing import Any
 
 from . import qr as qrcodes
+from .attachments import Inspector, file_ioc, password_candidates
 from .extract import (
     EMAIL_RE,
     IPV4_RE,
@@ -45,12 +41,11 @@ from .extract import (
     parse_html,
     refang,
     registrable_domain,
-    sniff_type,
     unwrap_link,
-    urls_from_pdf,
     urls_from_text,
     usable_url,
 )
+from .formats.msg import MsgError, is_msg, msg_to_message
 from .knowledge import FREEMAIL
 from .models import Analysis, FileIoc, UrlIoc
 
@@ -61,15 +56,10 @@ _FORWARD_SUBJECT = re.compile(r"^\s*(?:fwd?|fw|enc|rv|wg|tr|i)\s*:", re.I)
 _INLINE_FROM = re.compile(
     r"(?:^|\s)(?:From|De|Von|Da|Van|Från)\s*:\s*(?P<sender>[^:]{3,200}?)\s+"
     r"(?:Sent|Date|Enviado|Enviada|Gesendet|Envoy[ée]|Fecha|Data|Datum|Inviato|Skickat)\s*:", re.I)
-MAX_ARCHIVE_MEMBERS = 200
-MAX_MEMBER_BYTES = 25 * 1024 * 1024
-MAX_ARCHIVE_TOTAL = 100 * 1024 * 1024
-OOXML_EXTENSIONS = {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm", ".dotm", ".xlam"}
-HTML_EXTENSIONS = {".html", ".htm", ".shtml", ".xhtml", ".svg"}
 SKIP_SCHEMES = ("mailto:", "tel:", "cid:", "data:", "#", "javascript:", "blob:", "about:")
+_EVENT_HANDLER_RE = re.compile(r"<[a-z][^>]{0,500}\son(?:load|error|begin|end|click|mouseover|focus)\s*=", re.I)
 _ATOB_RE = re.compile(r"""atob\(\s*['"]([A-Za-z0-9+/=\s]{8,})['"]\s*\)""")
 _DATA_IMAGE_RE = re.compile(r"^data:image/[a-z0-9.+-]{2,20};base64,", re.I)
-IMAGE_TYPES = {"png", "jpeg", "gif", "bmp", "webp"}
 MAX_DATA_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_QR_IMAGES = 40  # images decoded per message; a newsletter can carry hundreds
 _HTML_LINE_BREAK_RE = re.compile(r"<\s*(?:br|/p|/div|/tr|/pre|/li|/h[1-6])\b[^>]{0,200}>", re.I)
@@ -81,6 +71,12 @@ _HTML_TAG_RE = re.compile(r"<[^<>]{0,2000}>")
 # ---------------------------------------------------------------------------
 
 def load_message(data: bytes) -> Message:
+    """An .eml, or an Outlook .msg rebuilt as the .eml it was sent as."""
+    if is_msg(data):
+        try:
+            return msg_to_message(data)
+        except (MsgError, ValueError, LookupError):
+            pass  # a damaged .msg: whatever the email parser makes of it
     return email.message_from_bytes(data, policy=email.policy.default)
 
 
@@ -193,10 +189,11 @@ def _attached_messages(msg: Message) -> list[Message]:
     for part in _walk_shallow(msg):
         if part is msg:
             continue
+        name = (part.get_filename() or "").lower()
         if part.get_content_type() == "message/rfc822":
             inner = _rfc822_payload(part)
-        elif (part.get_filename() or "").lower().endswith(".eml"):
-            data = _part_bytes(part)
+        elif name.endswith((".eml", ".msg")) or part.get_content_type() == "application/vnd.ms-outlook":
+            data = _part_bytes(part)  # Outlook reports phish as an attached .msg
             inner = load_message(data) if data else None
         else:
             continue
@@ -440,11 +437,12 @@ def _record(bucket: dict[str, UrlIoc], url: str, source: str, anchor: str = "") 
     return ioc
 
 
-def _collect(msg: Message) -> tuple[list[str], list[str], list[Message], list[Message]]:
+def _collect(msg: Message) -> tuple[list[str], list[str], list[Message], list[Message], list[str]]:
     text_parts: list[str] = []
     html_parts: list[str] = []
     attachments: list[Message] = []
     images: list[Message] = []  # nameless inline images: only looked at for QR codes
+    calendars: list[str] = []  # meeting invitations sent as a body part
     for part in _walk_shallow(msg):
         content_type = (part.get_content_type() or "").lower()
         if content_type == "message/rfc822":
@@ -461,9 +459,11 @@ def _collect(msg: Message) -> tuple[list[str], list[str], list[Message], list[Me
             text_parts.append(_decode_text(part))
         elif content_type == "text/html":
             html_parts.append(_decode_text(part))
+        elif content_type == "text/calendar":
+            calendars.append(_decode_text(part))
         elif part.get_content_maintype() == "image":
             images.append(part)
-    return text_parts, html_parts, attachments, images
+    return text_parts, html_parts, attachments, images, calendars
 
 
 def _harvest_html(html: str, bucket: dict[str, UrlIoc], prefix: str, analysis: Analysis | None = None) -> Any:
@@ -564,7 +564,7 @@ def _hidden_filler(visible: str, hidden: str) -> tuple[int, str]:
 
 
 def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
-    text_parts, html_parts, attachment_parts, image_parts = _collect(msg)
+    text_parts, html_parts, attachment_parts, image_parts, calendar_parts = _collect(msg)
     bucket: dict[str, UrlIoc] = {}
     scan = _QrScan(analysis, bucket, qr)
 
@@ -581,19 +581,6 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
         for url in urls_from_text(header(msg, name)):
             _add_url(bucket, url, "header:%s" % name)
 
-    for part in attachment_parts:
-        _process_attachment(part, analysis, bucket, scan)
-    for part in image_parts:
-        data = _part_bytes(part)
-        payloads = scan.image(data, "an inline image")
-        if payloads:
-            ioc = _file_ioc("(inline image)", part.get_content_type(), data)
-            ioc.inline = True
-            ioc.notes.extend("QR code: %s" % payload[:200] for payload in payloads)
-            analysis.attachments.append(ioc)
-
-    analysis.urls = list(bucket.values())
-
     all_html_text = [found.text for found in html_found]
     analysis.zero_width_chars = sum(len(ZERO_WIDTH_RE.findall(t)) for t in text_parts + all_html_text)
     # The text as the reader sees it, words put back together, then the hidden
@@ -604,6 +591,32 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
     analysis.hidden_splits = sum(found.hidden_splits for found in html_found)
     analysis.tag_splits = sum(found.tag_splits for found in html_found)
     analysis.hidden_filler, analysis.hidden_sample = _hidden_filler(visible, hidden)
+
+    inspector = Inspector(
+        analysis, lambda url, source: _add_url(bucket, url, source), scan,
+        lambda ioc, data: _inspect_html(ioc, data, bucket, scan),
+        password_candidates("%s\n%s" % (analysis.subject, analysis.body_text)))
+    for part in attachment_parts:
+        content_type = part.get_content_type() or "application/octet-stream"
+        default_name = "attached-message.eml" if content_type == "message/rfc822" else "(unnamed)"
+        disposition = (part.get_content_disposition() or "").lower()
+        inspector.attach(part.get_filename() or default_name, content_type, _part_bytes(part),
+                         inline=disposition == "inline" and part.get_content_maintype() == "image")
+    for text in calendar_parts:
+        inspector.calendar(text, "the message")
+    for part in image_parts:
+        data = _part_bytes(part)
+        payloads = scan.image(data, "an inline image")
+        if payloads:
+            ioc = file_ioc("(inline image)", part.get_content_type(), data)
+            ioc.inline = True
+            ioc.notes.extend("QR code: %s" % payload[:200] for payload in payloads)
+            analysis.attachments.append(ioc)
+    if inspector.extra_text:  # the body Outlook hid inside winmail.dat
+        extra = " ".join(" ".join(inspector.extra_text).split())
+        analysis.body_text = ("%s %s" % (analysis.body_text, extra)).strip()[:BODY_TEXT_LIMIT]
+
+    analysis.urls = list(bucket.values())
     if _FORWARD_SUBJECT.match(analysis.subject or ""):
         match = _INLINE_FROM.search(analysis.body_text[:6000])
         if match:
@@ -630,100 +643,8 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Attachments
+# HTML attachments
 # ---------------------------------------------------------------------------
-
-def _file_ioc(filename: str, content_type: str, data: bytes, parent: str = "") -> FileIoc:
-    return FileIoc(
-        filename=" ".join(str(filename).split()) or "(unnamed)",
-        content_type=content_type or "application/octet-stream",
-        size=len(data),
-        md5=hashlib.md5(data).hexdigest(),
-        sha1=hashlib.sha1(data).hexdigest(),
-        sha256=hashlib.sha256(data).hexdigest(),
-        true_type=sniff_type(data),
-        parent=parent,
-    )
-
-
-def _process_attachment(part: Message, analysis: Analysis, bucket: dict[str, UrlIoc],
-                        scan: _QrScan) -> None:
-    content_type = part.get_content_type() or "application/octet-stream"
-    data = _part_bytes(part)
-    default_name = "attached-message.eml" if content_type == "message/rfc822" else "(unnamed)"
-    ioc = _file_ioc(part.get_filename() or default_name, content_type, data)
-    disposition = (part.get_content_disposition() or "").lower()
-    ioc.inline = disposition == "inline" and part.get_content_maintype() == "image"
-    analysis.attachments.append(ioc)
-    _inspect(ioc, data, analysis, bucket, depth=0, scan=scan)
-
-
-def _inspect(ioc: FileIoc, data: bytes, analysis: Analysis, bucket: dict[str, UrlIoc],
-             depth: int, scan: _QrScan) -> None:
-    extension = os.path.splitext(ioc.filename.lower())[1]
-    if ioc.true_type == "zip" and extension in OOXML_EXTENSIONS:
-        _inspect_ooxml(ioc, data)
-    elif ioc.true_type == "zip":
-        _inspect_zip(ioc, data, analysis, bucket, depth, scan)
-    if ioc.true_type in ("html", "svg") or extension in HTML_EXTENSIONS:
-        _inspect_html(ioc, data, bucket, scan)
-    if ioc.true_type == "pdf":
-        for url in urls_from_pdf(data):
-            _add_url(bucket, url, "attachment:%s" % ioc.filename)
-        scan.pdf(data, ioc.filename, ioc)
-    if ioc.true_type in IMAGE_TYPES:
-        scan.image(data, ioc.filename, ioc)
-    if ioc.content_type == "message/rfc822" or extension == ".eml":
-        ioc.notes.append("attached email message")
-
-
-def _inspect_ooxml(ioc: FileIoc, data: bytes) -> None:
-    try:
-        names = zipfile.ZipFile(io.BytesIO(data)).namelist()
-    except (zipfile.BadZipFile, OSError, ValueError):
-        ioc.notes.append("corrupt Office container")
-        return
-    if any(name.lower().endswith("vbaproject.bin") for name in names):
-        ioc.notes.append("contains a VBA macro project")
-        ioc.flagged = True
-
-
-def _inspect_zip(ioc: FileIoc, data: bytes, analysis: Analysis, bucket: dict[str, UrlIoc],
-                 depth: int, scan: _QrScan) -> None:
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(data))
-        infos = [info for info in archive.infolist() if not info.is_dir()]
-    except (zipfile.BadZipFile, OSError, ValueError):
-        ioc.notes.append("corrupt or unreadable archive")
-        return
-    summary: dict[str, Any] = {
-        "members": len(infos),
-        "encrypted": any(info.flag_bits & 0x1 for info in infos),
-        "listing": [info.filename for info in infos[:MAX_ARCHIVE_MEMBERS]],
-        "truncated": len(infos) > MAX_ARCHIVE_MEMBERS,
-        "skipped": 0,
-    }
-    ioc.archive = summary
-    total = 0
-    for info in infos[:MAX_ARCHIVE_MEMBERS]:
-        if info.flag_bits & 0x1 or info.file_size > MAX_MEMBER_BYTES \
-                or total + info.file_size > MAX_ARCHIVE_TOTAL:
-            summary["skipped"] += 1
-            continue
-        try:
-            # ZipExtFile stops at the declared size, so a lying header
-            # cannot inflate this beyond MAX_MEMBER_BYTES.
-            content = archive.read(info)
-        except Exception:
-            summary["skipped"] += 1
-            continue
-        total += len(content)
-        guessed = mimetypes.guess_type(info.filename)[0] or "application/octet-stream"
-        member = _file_ioc(info.filename, guessed, content, parent=ioc.filename)
-        analysis.attachments.append(member)
-        if depth < 1:
-            _inspect(member, content, analysis, bucket, depth + 1, scan)
-
 
 def _inspect_html(ioc: FileIoc, data: bytes, bucket: dict[str, UrlIoc], scan: _QrScan) -> None:
     source = "attachment:%s" % ioc.filename
@@ -749,4 +670,5 @@ def _inspect_html(ioc: FileIoc, data: bytes, bucket: dict[str, UrlIoc], scan: _Q
         "smuggling": found.smuggling_markers,
         "redirects": found.redirects,
         "decoded_urls": decoded_urls,
+        "scripts": bool(found.script_text.strip()) or bool(_EVENT_HANDLER_RE.search(text[:2_000_000])),
     }

@@ -54,6 +54,7 @@ def analyse(analysis: Analysis) -> Analysis:
     _lookalikes(analysis)
     _urls(analysis)
     _attachments(analysis)
+    _calendar(analysis)
     _body(analysis)
     _language(analysis)
     _qr_codes(analysis)
@@ -483,32 +484,118 @@ def _attachments(a: Analysis) -> None:
             a.add_signal("high", "%s claims to be %s but is %s" % (f.filename, extension, description),
                          ("T1036.008",))
         if "contains a VBA macro project" in f.notes:
-            a.add_signal("high", "macro-enabled document: %s%s" % (f.filename, where), ("T1204.002",))
+            a.add_signal("high", "macro-enabled document: %s%s" % (f.filename, where), ("T1204.002", "T1059.005"))
         if f.archive:
             _archive(a, f)
         if f.html:
             _html_attachment(a, f)
+        _documents(a, f, where)
 
 
 def _archive(a: Analysis, f) -> None:
     summary = f.archive
-    f.notes.append("archive with %d file(s)" % summary["members"])
-    a.add_signal("low", "archive attachment: %s" % f.filename, ("T1566.001",))
-    if summary["encrypted"]:
+    kind = summary.get("kind", "archive")
+    f.notes.append("%s with %d file(s)" % (kind, summary["members"]))
+    if "disk image" in kind:
+        # Files inside a disk image lose the Mark of the Web, so neither
+        # SmartScreen nor Office's block on internet macros applies to them.
+        a.add_signal("high", "disk image %s delivers %d file(s) without the Mark of the Web"
+                     % (f.filename, summary["members"]), ("T1553.005", "T1566.001"))
+    elif kind != "gzip file":
+        a.add_signal("low", "archive attachment: %s" % f.filename, ("T1566.001",))
+    extracted = {m.filename for m in a.attachments if m.parent == f.filename}
+    if summary.get("password_in_body"):
+        f.flagged = True
+        a.add_signal("high", "the message gives the password for its %s %s, so no gateway could look inside"
+                     % ("archive" if "archive" in kind else "file", f.filename), ("T1027.013", "T1566.001"))
+    if summary.get("names_hidden"):
+        f.notes.append("even the file names are encrypted")
+        f.flagged = True
+        a.add_signal("high", "archive %s encrypts even its file names" % f.filename, ("T1027.013",))
+    elif summary["encrypted"]:
         f.notes.append("password-protected: contents hidden from gateway scanning")
         f.flagged = True
         a.add_signal("high", "password-protected archive: %s" % f.filename, ("T1027.013",))
-        extracted = {m.filename for m in a.attachments if m.parent == f.filename}
-        for member in summary["listing"]:
-            if member in extracted:
-                continue
-            if os.path.splitext(member.lower())[1] in RISKY_EXTENSIONS:
-                a.add_signal("high", "encrypted archive %s hides %s" % (f.filename, member),
-                             ("T1566.001", "T1204.002"))
+    for member in summary["listing"]:
+        if member in extracted:
+            continue  # extracted members are judged as attachments in their own right
+        extension = os.path.splitext(member.lower())[1]
+        if extension in RISKY_EXTENSIONS or _DOUBLE_EXT_RE.search(member.lower()):
+            f.flagged = True
+            hidden = "encrypted " if summary["encrypted"] else ""
+            a.add_signal("high", "%s%s %s holds %s" % (hidden, kind, f.filename, member[:80]),
+                         ("T1566.001", "T1204.002"))
+
+
+def _documents(a: Analysis, f, where: str) -> None:
+    """What a document, shortcut or container would do when opened."""
+    name = f.filename + where
+    shortcut = f.details.get("lnk")
+    if shortcut:
+        reasons = shortcut.get("reasons", [])
+        command = " ".join(shortcut.get(key, "") for key in ("target", "relative_path", "arguments")).lower()
+        techniques = ("T1204.002",) + (("T1059.001",) if "powershell" in command or "pwsh" in command else ()) \
+            + (("T1218.005",) if "mshta" in command else ())
+        if reasons:
+            a.add_signal("high", "shortcut %s %s" % (name, "; ".join(reasons[:3])), techniques)
+    office = f.details.get("office", {}).get("features", [])
+    checks = (
+        ("xlm-macro", "high", "Excel 4.0 (XLM) macros in %s", ("T1204.002",)),
+        ("dde", "high", "a DDE field in %s runs a command on opening", ("T1559.002", "T1204.002")),
+        ("protocol-handler", "high", "%s opens an external link through a Windows protocol handler "
+                                     "(Follina family)", ("T1203", "T1221")),
+        ("remote-attachedtemplate", "high", "%s loads a remote template when opened", ("T1221",)),
+        ("remote-oleobject", "high", "%s loads a remote OLE object when opened", ("T1221",)),
+        ("remote-frame", "high", "%s loads a remote frame when opened", ("T1221",)),
+        ("remote-subdocument", "high", "%s loads a remote subdocument when opened", ("T1221",)),
+        ("embedded-package", "high", "%s carries an embedded file (OLE Package)", ("T1204.002",)),
+        ("activex", "medium", "ActiveX controls in %s", ("T1204.002",)),
+        ("encrypted", "medium", "%s is password-protected, so no gateway could read it", ("T1027.013",)),
+    )
+    for feature, severity, label, techniques in checks:
+        if feature in office:
+            a.add_signal(severity, label % name, techniques)
+    if "vba-macro" in office and "contains a VBA macro project" not in f.notes:
+        a.add_signal("high", "macro-enabled document: %s" % name, ("T1204.002", "T1059.005"))
+    pdf = set(f.details.get("pdf", {}).get("features", []))
+    if "launch" in pdf:
+        a.add_signal("high", "PDF %s has a launch action that starts a program" % name, ("T1204.002",))
+    if "javascript" in pdf:
+        automatic = pdf & {"open-action", "auto-action"}
+        a.add_signal("high" if automatic else "medium", "PDF %s runs JavaScript%s"
+                     % (name, " as soon as it opens" if automatic else ""), ("T1059.007", "T1204.002"))
+    if "embedded-file" in pdf:
+        a.add_signal("medium", "PDF %s carries an embedded file" % name, ("T1027", "T1204.002"))
+    if "submit-form" in pdf:
+        a.add_signal("medium", "PDF %s has a form that submits what is typed into it" % name, ("T1598.002",))
+    rtf = set(f.details.get("rtf", {}).get("features", []))
+    if rtf & {"class-equation.3", "class-equation"}:
+        a.add_signal("high", "RTF %s carries an Equation Editor object, the CVE-2017-11882 exploit" % name,
+                     ("T1203",))
+    if rtf & {"class-htmlfile", "class-otkloadr.wrassembly"}:
+        a.add_signal("high", "RTF %s carries an OLE object used by known exploits" % name, ("T1203",))
+    if "remote-template" in rtf:
+        a.add_signal("high", "RTF %s loads a remote template when opened" % name, ("T1221",))
+    if "class-package" in rtf:
+        a.add_signal("high", "RTF %s carries an embedded file (Package object)" % name, ("T1204.002",))
+    elif "ole-object" in rtf:
+        a.add_signal("medium", "RTF %s carries embedded OLE objects%s"
+                     % (name, " that update on opening" if "auto-update" in rtf else ""), ("T1204.002",))
+    if f.details.get("onenote", {}).get("features"):
+        risky = [m.filename for m in a.attachments if m.parent == f.filename
+                 and (m.true_type in ("pe", "lnk", "html") or os.path.splitext(m.filename.lower())[1]
+                      in RISKY_EXTENSIONS)]
+        a.add_signal("high" if risky else "medium", "OneNote file %s hides %s" % (
+            name, "a runnable file (%s)" % risky[0] if risky else "embedded files"), ("T1204.002", "T1027"))
 
 
 def _html_attachment(a: Analysis, f) -> None:
     html = f.html
+    if (f.true_type == "svg" or f.filename.lower().endswith(".svg")) and html.get("scripts"):
+        f.notes.append("SVG image that runs JavaScript")
+        f.flagged = True
+        a.add_signal("high", "SVG image %s runs JavaScript (SVG smuggling)" % f.filename,
+                     ("T1027.006", "T1059.007"))
     credential_forms = [form for form in html["forms"] if form["has_password"]]
     if credential_forms or html["password_inputs"]:
         target = ""
@@ -540,6 +627,20 @@ def _html_attachment(a: Analysis, f) -> None:
 # ---------------------------------------------------------------------------
 
 TAG_SPLIT_MIN = 8  # words broken by tags before it counts: a drop cap or a bold letter is one
+
+
+def _calendar(a: Analysis) -> None:
+    """An invitation lands in the calendar even when the message is filtered,
+    with its links one tap away on a phone."""
+    from_base = registrable_domain(a.from_domain)
+    for invite in a.calendar:
+        organizer = registrable_domain(invite.get("organizer", "").rsplit("@", 1)[-1])
+        if invite.get("links"):
+            a.add_signal("low", "calendar invitation (%s) carries %d link(s)" % (invite["where"], invite["links"]),
+                         ("T1566.002",))
+        if organizer and from_base and organizer != from_base and organizer not in a.list_domains:
+            a.add_signal("medium", "calendar organiser %s is not the sender %s"
+                         % (defang_host(invite.get("organizer", "")[:80]), defang_host(a.from_domain)), ("T1656",))
 
 
 def _body(a: Analysis) -> None:
