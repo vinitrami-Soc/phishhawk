@@ -245,6 +245,7 @@ class HtmlFindings:
     redirects: list[str] = field(default_factory=list)
     script_text: str = ""
     text: str = ""  # visible text (outside script/style)
+    cell_grids: list[list[list[int]]] = field(default_factory=list)  # tables of dark/light cells
 
     @property
     def smuggling_markers(self) -> list[str]:
@@ -253,6 +254,33 @@ class HtmlFindings:
         if _LONG_BASE64_RE.search(self.script_text):
             markers.append("large embedded base64 blob")
         return markers
+
+
+_COLOR_RE = re.compile(r"background(?:-color)?\s*:\s*([^;\"']{1,40})", re.I)
+_NAMED_DARK = {"black", "#000", "#000000", "rgb(0,0,0)", "#111", "#111111", "#222", "#222222"}
+MAX_TABLE_CELLS = 40_000  # a QR code drawn in cells is at most a few thousand
+
+
+def _dark_cell(values: dict[str, str]) -> int:
+    """1 when a table cell is painted dark: how QR codes are drawn without an image."""
+    match = _COLOR_RE.search(values.get("style", ""))
+    color = (match.group(1) if match else values.get("bgcolor", "")).strip().lower().replace(" ", "")
+    if not color:
+        return 0
+    if color in _NAMED_DARK:
+        return 1
+    hex_match = re.fullmatch(r"#?([0-9a-f]{3}|[0-9a-f]{6})", color)
+    if hex_match:
+        digits = hex_match.group(1)
+        if len(digits) == 3:
+            digits = "".join(ch * 2 for ch in digits)
+        red, green, blue = (int(digits[i:i + 2], 16) for i in (0, 2, 4))
+        return int(0.299 * red + 0.587 * green + 0.114 * blue < 96)
+    rgb = re.fullmatch(r"rgba?\((\d+),(\d+),(\d+)[^)]*\)", color)
+    if rgb:
+        red, green, blue = (int(v) for v in rgb.groups())
+        return int(0.299 * red + 0.587 * green + 0.114 * blue < 96)
+    return 0
 
 
 class _HtmlParser(HTMLParser):
@@ -266,6 +294,7 @@ class _HtmlParser(HTMLParser):
         self._in_style = False
         self._text: list[str] = []
         self._form: dict | None = None
+        self._tables: list[dict] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
@@ -287,6 +316,17 @@ class _HtmlParser(HTMLParser):
             self._in_script = True
         elif tag == "style":
             self._in_style = True
+        elif tag == "table":
+            self._tables.append({"rows": [], "cells": 0})
+        elif tag == "tr" and self._tables:
+            self._tables[-1]["rows"].append([])
+        elif tag in ("td", "th") and self._tables and self._tables[-1]["rows"]:
+            table = self._tables[-1]
+            span = values.get("colspan", "1")
+            span = min(int(span), 200) if span.isdigit() and int(span) > 0 else 1
+            if table["cells"] + span <= MAX_TABLE_CELLS:
+                table["rows"][-1].extend([_dark_cell(values)] * span)
+                table["cells"] += span
         elif tag == "meta" and "refresh" in values.get("http-equiv", "").lower():
             match = re.search(r"url\s*=\s*([^;\s]+)", values.get("content", ""), re.I)
             if match:
@@ -310,6 +350,13 @@ class _HtmlParser(HTMLParser):
             self._in_style = False
         elif tag == "form":
             self._form = None
+        elif tag == "table" and self._tables:
+            self._close_table()
+
+    def _close_table(self) -> None:
+        rows = [row for row in self._tables.pop()["rows"] if row]
+        if len(rows) >= 21 and min(len(row) for row in rows) >= 21 and any(any(row) for row in rows):
+            self.findings.cell_grids.append(rows)
 
     def handle_data(self, data: str) -> None:
         if self._in_script:
@@ -331,6 +378,8 @@ def parse_html(html: str) -> HtmlFindings:
         parser.close()
     except Exception:  # malformed HTML is the norm in phishing mail
         pass
+    while parser._tables:  # noqa: SLF001 - a table left open is still drawn
+        parser._close_table()  # noqa: SLF001
     found = parser.findings
     found.text = " ".join(parser._text)  # noqa: SLF001
     found.anchors = [(href, " ".join(text.split())) for href, text in found.anchors if href]
@@ -414,6 +463,10 @@ def sniff_type(data: bytes) -> str:
         return "jpeg"
     if head.startswith(b"GIF8"):
         return "gif"
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return "webp"
+    if head.startswith(b"BM") and len(data) >= 26 and int.from_bytes(head[2:6], "little") == len(data):
+        return "bmp"
     if len(data or b"") > 0x8006 and data[0x8001:0x8006] == b"CD001":
         return "iso"
     lowered = head.lstrip(b"\xef\xbb\xbf \t\r\n").lower()
@@ -429,7 +482,7 @@ TYPE_DESCRIPTIONS = {
     "pe": "a Windows executable", "elf": "a Linux executable", "zip": "a ZIP archive",
     "pdf": "a PDF", "rar": "a RAR archive", "7z": "a 7-Zip archive", "ole": "an OLE/legacy Office file",
     "png": "a PNG image", "jpeg": "a JPEG image", "gif": "a GIF image", "iso": "an ISO disk image",
-    "html": "an HTML document", "svg": "an SVG image",
+    "html": "an HTML document", "svg": "an SVG image", "webp": "a WebP image", "bmp": "a BMP image",
 }
 
 # What each extension is allowed to be. Only a mismatch towards a dangerous

@@ -9,3 +9,4 @@ dist/
 /*.html
 /*.csv
 /*.md.out
+.coverage

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+import re
 import time
 from dataclasses import asdict
 from typing import Any
@@ -13,6 +15,36 @@ from ..models import Analysis, FileIoc, vt_is_malicious
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 VERDICT_TONE = {"MALICIOUS": "red", "LIKELY PHISHING": "red", "SUSPICIOUS": "amber",
                 "NO STRONG INDICATORS": "green"}
+
+
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0a-\x1f\x7f-\x9f]")
+_BIDI_RE = re.compile(r"[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def printable(text: str) -> str:
+    """Attacker text made safe to show. Control characters (ESC opens the
+    terminal sequences that clear the screen, write the clipboard or hide
+    output; a newline could forge a report line) are shown escaped, and
+    bidirectional overrides are named, so "invoice<U+202E>fdp.exe" reads as
+    what it is instead of rendering as "invoiceexe.pdf"."""
+    text = _CONTROL_RE.sub(lambda m: "\\x%02x" % ord(m.group()), str(text).replace("\t", " "))
+    return _BIDI_RE.sub(lambda m: "<U+%04X>" % ord(m.group()), text)
+
+
+def display_copy(value: Any) -> Any:
+    """A copy of an analysis (or any part of one) with every string printable."""
+    if isinstance(value, str):
+        return printable(value)
+    if isinstance(value, list):
+        return [display_copy(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(display_copy(item) for item in value)
+    if isinstance(value, dict):
+        return {display_copy(key): display_copy(item) for key, item in value.items()}
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.replace(value, **{f.name: display_copy(getattr(value, f.name))
+                                             for f in dataclasses.fields(value) if f.init})
+    return value
 
 
 def utc_now() -> str:

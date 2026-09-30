@@ -33,7 +33,11 @@ class Cache:
         try:
             directory = os.path.dirname(path)
             if directory:
-                os.makedirs(directory, exist_ok=True)
+                os.makedirs(directory, mode=0o700, exist_ok=True)
+            # The cache records every URL and file hash looked up, victims'
+            # addresses inside URLs included: readable by this user only.
+            os.close(os.open(path, os.O_CREAT | os.O_WRONLY, 0o600))
+            os.chmod(path, 0o600)
             self._conn = sqlite3.connect(path)
             self._conn.execute(
                 "CREATE TABLE IF NOT EXISTS lookups ("

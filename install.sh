@@ -39,7 +39,7 @@ mkdir -p "$BIN_DIR"
 route=""
 if command -v pipx >/dev/null 2>&1; then
   say "Installing with pipx into $HOME_DIR"
-  if pipx_here install --force "$HERE" >/dev/null; then
+  if pipx_here install --force "$HERE[qr]" >/dev/null 2>&1 || pipx_here install --force "$HERE" >/dev/null; then
     route="pipx"
   else
     say "pipx could not install it; falling back to a private virtualenv"
@@ -51,7 +51,9 @@ if [[ -z "$route" ]]; then
   python3 -m venv "$HOME_DIR" || die "python3 -m venv failed (on Debian/Ubuntu: sudo apt install python3-venv)"
   "$HOME_DIR/bin/python" -m pip install --quiet --upgrade pip
   say "Installing PhishHawk"
-  "$HOME_DIR/bin/python" -m pip install --quiet "$HERE"
+  # QR decoding is optional: fall back to the core install if its wheels are missing here
+  "$HOME_DIR/bin/python" -m pip install --quiet "$HERE[qr]" 2>/dev/null \
+    || "$HOME_DIR/bin/python" -m pip install --quiet "$HERE"
   ln -sf "$HOME_DIR/bin/phishhawk" "$BIN_DIR/phishhawk"
 fi
 

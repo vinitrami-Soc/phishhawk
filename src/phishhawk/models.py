@@ -100,6 +100,7 @@ class Analysis:
     mailing_list: bool = False  # List-Post, Mailing-List, X-BeenThere or Precedence: list
     list_domains: list[str] = field(default_factory=list)  # where those list headers point
     auth: dict[str, str] = field(default_factory=dict)
+    forged_auth: list[dict[str, Any]] = field(default_factory=list)  # pass claims below the receiver's
     reported_by: dict[str, Any] | None = None
     forwarded_from: dict[str, str] | None = None  # original sender of an inline forward
     protected_domains: list[str] = field(default_factory=list)
@@ -107,6 +108,7 @@ class Analysis:
     attachments: list[FileIoc] = field(default_factory=list)
     domains: list[str] = field(default_factory=list)
     body_emails: list[str] = field(default_factory=list)
+    qr_codes: list[dict[str, str]] = field(default_factory=list)  # where, payload, url
     lookalikes: list[Lookalike] = field(default_factory=list)
     zero_width_chars: int = 0
     body_text: str = field(default="", repr=False)  # visible text, capped; not exported

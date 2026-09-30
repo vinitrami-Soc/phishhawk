@@ -32,6 +32,7 @@ from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, vt_is_malicious
 from .common import (
     children_of,
+    display_copy,
     human_size,
     recommendations,
     sorted_signals,
@@ -905,6 +906,7 @@ def _theme_switch() -> str:
 
 
 def render(analyses: list[Analysis]) -> str:
+    analyses = display_copy(analyses)  # escaped anyway; this also names bidi overrides
     title = "Phishing triage" if len(analyses) != 1 else "Phishing triage: %s" % analyses[0].verdict
     body = ['<div class="wrap"><header class="topbar"><div class="brand">%s<span>PhishHawk</span></div>'
             '<span class="version">v%s</span><span class="pill">Generated <span class="mono">%s</span></span>%s'

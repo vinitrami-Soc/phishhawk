@@ -52,6 +52,7 @@ def analyse(analysis: Analysis) -> Analysis:
     _attachments(analysis)
     _body(analysis)
     _language(analysis)
+    _qr_codes(analysis)
     return analysis
 
 
@@ -68,6 +69,21 @@ def _authentication(a: Analysis) -> None:
             a.add_signal("high" if value == "fail" else "medium", "%s=%s" % (mechanism.upper(), value))
     # No Authentication-Results header is not scored: it is missing from mail
     # exported by many clients and from all older mail, phishing or not.
+
+    # A pass claimed below the receiving server's own results was written
+    # before delivery. Reusing the receiver's name is forgery; another
+    # server's name may be a legitimate upstream hop, so that one is low.
+    grouped: dict[tuple[str, bool], list[str]] = {}
+    for claim in a.forged_auth:
+        grouped.setdefault((claim["authserv"], claim["impersonates"]), []).append(claim["claim"])
+    for (server, impersonates), claims in grouped.items():
+        if impersonates:
+            a.add_signal("medium", "forged Authentication-Results: %s claimed in the name of %s, below "
+                                   "that server's real results (ignored)" % (", ".join(claims), server),
+                         ("T1036",))
+        else:
+            a.add_signal("low", "an earlier Authentication-Results header from %s claims %s (ignored)"
+                         % (server, ", ".join(claims)))
 
 
 def _brand_claimed(display: str, from_domain: str) -> str:
@@ -151,10 +167,19 @@ def _sender(a: Analysis) -> None:
                          % (original["display"][:40], registrable_domain(original["domain"])), ("T1656",))
 
 
+MAX_LOOKALIKE_HOSTS = 5000  # distinct link hosts checked per message
+
+
 def _lookalikes(a: Analysis) -> None:
     targets = [(a.from_domain, "sender"), (a.reply_to_domain, "reply-to"),
                (a.return_path_domain, "return-path")]
-    targets += [(ioc.host, "url") for ioc in a.urls]
+    hosts = list(dict.fromkeys(ioc.host for ioc in a.urls if ioc.host))
+    if len(hosts) > MAX_LOOKALIKE_HOSTS:
+        # Padding a message with thousands of domains to push the real one past
+        # a limit gets the message flagged instead of waved through.
+        a.add_signal("medium", "%d distinct link hosts: only the first %d were checked for lookalikes"
+                     % (len(hosts), MAX_LOOKALIKE_HOSTS))
+    targets += [(host, "url") for host in hosts[:MAX_LOOKALIKE_HOSTS]]
     seen: set[tuple[str, str]] = set()
     protected = set(a.protected_domains)
     for domain, where in targets:
@@ -499,3 +524,58 @@ def apply_enrichment(a: Analysis) -> Analysis:
             a.add_signal("medium", "originating IP %s has AbuseIPDB confidence %d%%"
                          % (defang_host(a.originating_ip), score))
     return a
+
+
+# ---------------------------------------------------------------------------
+# QR codes
+# ---------------------------------------------------------------------------
+
+def _qr_codes(a: Analysis) -> None:
+    """A QR code is scanned on a phone, away from the gateway and the desktop
+    link checks. Tickets and payment codes are legitimate, so the code alone
+    is medium; where it leads decides the rest."""
+    hits = _lure_hits(a)
+    lure = bool(hits.get("credential") or hits.get("qr-code")) or \
+        any(word in a.body_text.lower() for word in ("mfa", "multi-factor", "2fa", "authenticat"))
+    recipients = [address.lower() for address in EMAIL_RE.findall(a.to or "")]
+    seen: set[str] = set()
+    for code in a.qr_codes:
+        url, where = code.get("url", ""), code["where"]
+        if not url:
+            if code["payload"].lower().startswith(("tel:", "sms:", "smsto:")):
+                a.add_signal("medium", "QR code in %s calls or texts %s" % (where, code["payload"][:40]),
+                             ("T1566",))
+            continue
+        host = host_of(url)
+        if host in seen:
+            continue
+        seen.add(host)
+        base = registrable_domain(host)
+        reasons = []
+        if is_ip(host):
+            reasons.append("a raw IP")
+        if hosting_kind(url):
+            reasons.append(hosting_kind(url))
+        if base in SHORTENERS:
+            reasons.append("a link shortener")
+        if base.rsplit(".", 1)[-1] in SUSPICIOUS_TLDS:
+            reasons.append("a high-abuse TLD")
+        if any(hit.domain == host for hit in a.lookalikes):
+            reasons.append("a lookalike domain")
+        parts = urlsplit(url)
+        if any(word in ((parts.path or "") + "?" + (parts.query or "")).lower() for word in CREDENTIAL_WORDS):
+            reasons.append("a login path")
+        if any(r in url.lower() for r in recipients):
+            reasons.append("your address in the link")
+        own_site = base == registrable_domain(a.from_domain) and a.auth.get("dmarc") == "pass"
+        if own_site and not reasons:
+            severity = "low"
+        elif reasons or lure:
+            severity = "high"
+        else:
+            severity = "medium"
+        label = "QR code in %s links to %s" % (where, defang_host(host))
+        if reasons:
+            label += " (%s)" % ", ".join(reasons)
+        a.add_signal(severity, label, ("T1566.002",))
+

@@ -18,13 +18,14 @@ import textwrap
 from collections.abc import Callable
 
 from . import __version__, banner
+from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
 from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
-from .pipeline import Options, triage_bytes, triage_file
+from .pipeline import Options, triage_bytes
 from .report import console, csvout, html, markdown, stix
-from .report.common import to_dict
+from .report.common import printable, to_dict
 
 COMMANDS = ("scan", "doctor", "cache", "techniques", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
@@ -139,6 +140,14 @@ def build_parser() -> argparse.ArgumentParser:
                      help="do not treat recipient domains as protected")
     det.add_argument("--no-unwrap", action="store_true",
                      help="analyse the covering note instead of the attached, reported original")
+    det.add_argument("--trusted-authserv", action="append", default=[], metavar="ID",
+                     help="your mail server's authserv-id, e.g. mx.google.com (repeatable; default "
+                          "$PHISHHAWK_TRUSTED_AUTHSERV): only its Authentication-Results are believed")
+    det.add_argument("--max-size", type=int, default=50, metavar="MB",
+                     help="skip messages larger than this (default 50 MB)")
+    det.add_argument("--no-qr", action="store_true",
+                     help="do not decode QR codes in images, PDFs and drawn tables "
+                          "(decoding needs: pip install 'phishhawk[qr]')")
 
     enr = scan.add_argument_group("enrichment")
     enr.add_argument("-o", "--offline", action="store_true", help="no network access at all")
@@ -211,14 +220,35 @@ def normalise_argv(argv: list[str]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def expand_inputs(inputs: list[str]) -> list[str]:
+    """Files to scan. Inside a directory only regular .eml files count: a
+    planted FIFO or a symlink to /dev/zero would otherwise hang the batch."""
     paths: list[str] = []
     for item in inputs:
         if item != "-" and os.path.isdir(item):
-            for root, _, names in os.walk(item):
-                paths += [os.path.join(root, n) for n in sorted(names) if n.lower().endswith(".eml")]
+            for root, _, names in os.walk(item):  # symlinked directories are not followed
+                paths += [os.path.join(root, n) for n in sorted(names)
+                          if n.lower().endswith(".eml") and os.path.isfile(os.path.join(root, n))]
         else:
             paths.append(item)
     return paths
+
+
+class InputTooLarge(Exception):
+    pass
+
+
+def read_input(path: str, limit: int) -> bytes:
+    """One message, refusing what is not a regular file or is over the limit."""
+    if path == "-":
+        data = sys.stdin.buffer.read(limit + 1)
+    else:
+        if os.path.exists(path) and not os.path.isdir(path) and not os.path.isfile(path):
+            raise InputTooLarge("not a regular file")
+        with open(path, "rb") as handle:
+            data = handle.read(limit + 1)
+    if len(data) > limit:
+        raise InputTooLarge("larger than %d MB" % (limit // (1024 * 1024)))
+    return data
 
 
 def build_enricher(args: argparse.Namespace, cache: Cache | None, notices: list[str]) -> Enricher | None:
@@ -280,7 +310,10 @@ def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     cache = None if (args.no_cache or args.offline) else Cache(args.cache_path, args.cache_ttl)
     protected = list(args.protect)
     protected += [d.strip() for d in os.environ.get("PHISHHAWK_PROTECT", "").split(",") if d.strip()]
-    options = Options(unwrap=not args.no_unwrap, protected=protected, auto_protect=not args.no_auto_protect)
+    options = Options(unwrap=not args.no_unwrap, protected=protected, auto_protect=not args.no_auto_protect,
+                      qr=not args.no_qr, trusted_authserv=args.trusted_authserv or [
+                          item.strip() for item in os.environ.get("PHISHHAWK_TRUSTED_AUTHSERV", "").split(",")
+                          if item.strip()])
 
     notices: list[str] = []
     enricher = build_enricher(args, cache, notices)
@@ -290,28 +323,30 @@ def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     progress: Callable[[str], None] | None = None
     if sys.stderr.isatty() and not args.quiet:
         def progress(message: str) -> None:
-            sys.stderr.write("\r  ... %-60s" % message[:60])
+            sys.stderr.write("\r  ... %-60s" % printable(message)[:60])
             sys.stderr.flush()
 
     analyses: list[Analysis] = []
     worst = 0
     for path in expand_inputs(args.inputs):
         try:
-            if path == "-":
-                analysis = triage_bytes(sys.stdin.buffer.read(), "<stdin>", options, enricher, progress)
-            else:
-                analysis = triage_file(path, options, enricher, progress)
+            data = read_input(path, args.max_size * 1024 * 1024)
+            analysis = triage_bytes(data, "<stdin>" if path == "-" else path, options, enricher, progress)
         except FileNotFoundError:
-            print(err("[!] %s: file not found" % path, "red"), file=sys.stderr)
+            print(err("[!] %s: file not found" % printable(path), "red"), file=sys.stderr)
             worst = EXIT_ERROR
             continue
         except IsADirectoryError:
-            print(err("[!] %s: is a directory" % path, "red"), file=sys.stderr)
+            print(err("[!] %s: is a directory" % printable(path), "red"), file=sys.stderr)
+            worst = EXIT_ERROR
+            continue
+        except InputTooLarge as exc:
+            print(err("[!] %s: skipped, %s" % (printable(path), exc), "red"), file=sys.stderr)
             worst = EXIT_ERROR
             continue
         except Exception as exc:  # one malformed mail must not kill a batch run
-            print(err("[!] %s: could not analyse (%s: %s)" % (path, type(exc).__name__, exc), "red"),
-                  file=sys.stderr)
+            print(err("[!] %s: could not analyse (%s: %s)" % (printable(path), type(exc).__name__,
+                                                              printable(str(exc))), "red"), file=sys.stderr)
             worst = EXIT_ERROR
             continue
         finally:
@@ -388,6 +423,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     except ImportError:
         requests = None
         rows.append(("requests", "not installed", "fail", "pip install requests  (or always use --offline)"))
+    qr_versions = qrcodes.versions()
+    if qr_versions:
+        rows.append(("QR decoding", ", ".join("%s %s" % item for item in qr_versions.items()), "ok",
+                     "codes in images, PDFs and drawn tables are decoded"))
+    else:
+        rows.append(("QR decoding", "not installed", "info",
+                     "optional: pip install 'phishhawk[qr]'  (QR lure wording is still flagged)"))
 
     for name, envs, level, hint in (
         ("VirusTotal key", ("VT_API_KEY", "VIRUSTOTAL_API_KEY"), "warn",

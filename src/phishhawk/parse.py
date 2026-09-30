@@ -22,6 +22,7 @@ import email
 import email.policy
 import email.utils
 import hashlib
+import html as html_module
 import io
 import mimetypes
 import os
@@ -31,6 +32,7 @@ from collections.abc import Iterator
 from email.message import Message
 from typing import Any
 
+from . import qr as qrcodes
 from .extract import (
     EMAIL_RE,
     IPV4_RE,
@@ -65,6 +67,12 @@ OOXML_EXTENSIONS = {".docx", ".docm", ".xlsx", ".xlsm", ".pptx", ".pptm", ".dotm
 HTML_EXTENSIONS = {".html", ".htm", ".shtml", ".xhtml", ".svg"}
 SKIP_SCHEMES = ("mailto:", "tel:", "cid:", "data:", "#", "javascript:", "blob:", "about:")
 _ATOB_RE = re.compile(r"""atob\(\s*['"]([A-Za-z0-9+/=\s]{8,})['"]\s*\)""")
+_DATA_IMAGE_RE = re.compile(r"^data:image/[a-z0-9.+-]{2,20};base64,", re.I)
+IMAGE_TYPES = {"png", "jpeg", "gif", "bmp", "webp"}
+MAX_DATA_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_QR_IMAGES = 40  # images decoded per message; a newsletter can carry hundreds
+_HTML_LINE_BREAK_RE = re.compile(r"<\s*(?:br|/p|/div|/tr|/pre|/li|/h[1-6])\b[^>]{0,200}>", re.I)
+_HTML_TAG_RE = re.compile(r"<[^<>]{0,2000}>")
 
 
 # ---------------------------------------------------------------------------
@@ -76,22 +84,31 @@ def load_message(data: bytes) -> Message:
 
 
 def parse_file(path: str, unwrap: bool = True, protected: list[str] | tuple = (),
-               auto_protect: bool = True) -> Analysis:
+               auto_protect: bool = True, qr: bool = True, trusted_authserv: tuple[str, ...] = ()) -> Analysis:
     with open(path, "rb") as handle:
         data = handle.read()
     return parse_bytes(data, path=path, unwrap=unwrap, protected=protected,
-                       auto_protect=auto_protect)
+                       auto_protect=auto_protect, qr=qr, trusted_authserv=trusted_authserv)
 
 
 def parse_bytes(data: bytes, path: str = "<memory>", unwrap: bool = True,
-                protected: list[str] | tuple = (), auto_protect: bool = True) -> Analysis:
+                protected: list[str] | tuple = (), auto_protect: bool = True,
+                qr: bool = True, trusted_authserv: tuple[str, ...] = ()) -> Analysis:
+    return parse_message(load_message(data), path=path, unwrap=unwrap, protected=protected,
+                         auto_protect=auto_protect, qr=qr, trusted_authserv=trusted_authserv)
+
+
+def parse_message(message: Message, path: str = "<memory>", unwrap: bool = True,
+                  protected: list[str] | tuple = (), auto_protect: bool = True,
+                  qr: bool = True, trusted_authserv: tuple[str, ...] = ()) -> Analysis:
     analysis = Analysis(path=path)
-    message = load_message(data)
+    carriers: list[Message] = []
     if unwrap:
-        message = _unwrap(message, analysis)
-    _read_headers(message, analysis)
-    _read_content(message, analysis)
+        message, carriers = _unwrap(message, analysis)
+    _read_headers(message, analysis, tuple(t.lower() for t in trusted_authserv))
+    _read_content(message, analysis, qr)
     analysis.protected_domains = _protected_domains(message, analysis, protected, auto_protect)
+    analysis._carriers = carriers  # noqa: SLF001 - the unwrapped layers, re-checked by the pipeline
     return analysis
 
 
@@ -187,8 +204,9 @@ def _attached_messages(msg: Message) -> list[Message]:
     return found
 
 
-def _unwrap(msg: Message, analysis: Analysis) -> Message:
+def _unwrap(msg: Message, analysis: Analysis) -> tuple[Message, list[Message]]:
     layers: list[dict[str, Any]] = []
+    carriers: list[Message] = []
     while len(layers) < MAX_UNWRAP_DEPTH:
         attached = _attached_messages(msg)
         if not attached:
@@ -197,34 +215,75 @@ def _unwrap(msg: Message, analysis: Analysis) -> Message:
         layers.append({"from": address.lower(), "display": display,
                        "subject": header(msg, "Subject"), "date": header(msg, "Date"),
                        "attached_messages": len(attached)})
+        carriers.append(msg)
         msg = attached[0]
     if layers:
         analysis.reported_by = dict(layers[0], layers=len(layers))
-    return msg
+    return msg, carriers
 
 
 # ---------------------------------------------------------------------------
 # Headers
 # ---------------------------------------------------------------------------
 
-def _auth_results(msg: Message) -> dict[str, str]:
-    results: dict[str, str] = {}
+_AUTH_MECHANISMS = ("spf", "dkim", "dmarc", "compauth")
+
+
+def _authserv_id(value: str) -> str:
+    return value.split(";", 1)[0].strip().lower()
+
+
+def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str, str], list[str]]:
+    """SPF/DKIM/DMARC results from the receiving server, and any claims that
+    were forged below them.
+
+    Only the block of Authentication-Results headers at the top is trusted:
+    the receiving server writes it, one header or (ProtonMail) one per check,
+    all under its own authserv-id. A header further down was written by the
+    sender, and "dmarc=pass" is what an attacker writes there. With
+    ``trusted`` authserv-ids, only headers from those servers count at all.
+    """
     try:
-        headers = msg.get_all("Authentication-Results", []) or []
+        items = [(str(name).lower(), " ".join(str(value).split())) for name, value in msg.items()]
     except Exception:
-        headers = []
-    for value in headers:
-        text = str(value)
-        for mechanism in ("spf", "dkim", "dmarc", "compauth"):
+        items = []
+    positions = [i for i, (name, _) in enumerate(items) if name == "authentication-results"]
+    trusted_block: list[int] = []
+    if trusted:
+        trusted_block = [i for i in positions if _authserv_id(items[i][1]) in trusted]
+    elif positions:
+        first = positions[0]
+        trusted_block = [first]
+        for i in positions[1:]:
+            if i == trusted_block[-1] + 1 and _authserv_id(items[i][1]) == _authserv_id(items[first][1]):
+                trusted_block.append(i)
+    results: dict[str, str] = {}
+    for i in trusted_block:
+        for mechanism in _AUTH_MECHANISMS:
             if mechanism not in results:
-                match = re.search(r"\b%s\s*=\s*([a-z]+)" % mechanism, text, re.I)
+                match = re.search(r"\b%s\s*=\s*([a-z]+)" % mechanism, items[i][1], re.I)
                 if match:
                     results[mechanism] = match.group(1).lower()
+    receiver = _authserv_id(items[trusted_block[0]][1]) if trusted_block else ""
+    forged: list[dict[str, Any]] = []
+    for i in positions:
+        if i in trusted_block:
+            continue
+        for mechanism in _AUTH_MECHANISMS[:3]:
+            if re.search(r"\b%s\s*=\s*pass\b" % mechanism, items[i][1], re.I) and \
+                    results.get(mechanism) != "pass":
+                server = _authserv_id(items[i][1])
+                forged.append({"claim": "%s=pass" % mechanism, "authserv": server[:80],
+                               "impersonates": bool(receiver) and server == receiver})
     if "spf" not in results:
-        received_spf = header(msg, "Received-SPF")
-        if received_spf:
-            results["spf"] = received_spf.split()[0].lower().strip(";")
-    return results
+        # Only the topmost Received-SPF, and only if it sits by the trusted block.
+        near = trusted_block[0] if trusted_block else None
+        for i, (name, value) in enumerate(items):
+            if name == "received-spf" and value:
+                if near is None or abs(i - near) <= 3:
+                    results["spf"] = value.split()[0].lower().strip(";")
+                break
+    return results, forged
 
 
 def _originating_ip(msg: Message) -> str:
@@ -264,7 +323,7 @@ def _mailing_list(msg: Message) -> tuple[bool, list[str]]:
     return True, sorted(d for d in domains if d)
 
 
-def _read_headers(msg: Message, analysis: Analysis) -> None:
+def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str, ...] = ()) -> None:
     analysis.subject = header(msg, "Subject")
     analysis.date = header(msg, "Date")
     analysis.message_id = header(msg, "Message-ID")
@@ -284,7 +343,7 @@ def _read_headers(msg: Message, analysis: Analysis) -> None:
     analysis.return_path_domain = domain_of_address(return_path)
 
     analysis.mailing_list, analysis.list_domains = _mailing_list(msg)
-    analysis.auth = _auth_results(msg)
+    analysis.auth, analysis.forged_auth = _auth_results(msg, trusted_authserv)
     analysis.originating_ip = _originating_ip(msg)
     try:
         analysis.received_hops = len(msg.get_all("Received", []) or [])
@@ -354,10 +413,11 @@ def _record(bucket: dict[str, UrlIoc], url: str, source: str, anchor: str = "") 
     return ioc
 
 
-def _collect(msg: Message) -> tuple[list[str], list[str], list[Message]]:
+def _collect(msg: Message) -> tuple[list[str], list[str], list[Message], list[Message]]:
     text_parts: list[str] = []
     html_parts: list[str] = []
     attachments: list[Message] = []
+    images: list[Message] = []  # nameless inline images: only looked at for QR codes
     for part in _walk_shallow(msg):
         content_type = (part.get_content_type() or "").lower()
         if content_type == "message/rfc822":
@@ -374,7 +434,9 @@ def _collect(msg: Message) -> tuple[list[str], list[str], list[Message]]:
             text_parts.append(_decode_text(part))
         elif content_type == "text/html":
             html_parts.append(_decode_text(part))
-    return text_parts, html_parts, attachments
+        elif part.get_content_maintype() == "image":
+            images.append(part)
+    return text_parts, html_parts, attachments, images
 
 
 def _harvest_html(html: str, bucket: dict[str, UrlIoc], prefix: str) -> Any:
@@ -392,21 +454,95 @@ def _harvest_html(html: str, bucket: dict[str, UrlIoc], prefix: str) -> Any:
     return found
 
 
-def _read_content(msg: Message, analysis: Analysis) -> None:
-    text_parts, html_parts, attachment_parts = _collect(msg)
+class _QrScan:
+    """Finds QR codes for one message and turns their links into URL IOCs."""
+
+    def __init__(self, analysis: Analysis, bucket: dict[str, UrlIoc], enabled: bool) -> None:
+        self.analysis, self.bucket = analysis, bucket
+        self.enabled = enabled and qrcodes.available()
+        self.images_left = MAX_QR_IMAGES
+
+    def _record(self, payloads: list[str], where: str, ioc: FileIoc | None = None) -> list[str]:
+        for payload in payloads:
+            url = _qr_url(payload)
+            self.analysis.qr_codes.append({"where": where, "payload": payload[:500], "url": url})
+            if url:
+                _add_url(self.bucket, url, "qr-code in %s" % where)
+            if ioc is not None:
+                ioc.notes.append("QR code: %s" % payload[:200])
+        return payloads
+
+    def image(self, data: bytes, where: str, ioc: FileIoc | None = None) -> list[str]:
+        if not self.enabled or self.images_left <= 0:
+            return []
+        self.images_left -= 1
+        return self._record(qrcodes.decode_image(data), where, ioc)
+
+    def pdf(self, data: bytes, where: str, ioc: FileIoc) -> None:
+        if self.enabled and self.images_left > 0:
+            self.images_left -= 1
+            self._record(qrcodes.decode_pdf(data), where, ioc)
+
+    def html(self, found: Any, html: str, where: str) -> None:
+        if not self.enabled:
+            return
+        for resource in found.resources:
+            if _DATA_IMAGE_RE.match(resource) and len(resource) < MAX_DATA_IMAGE_BYTES * 4 // 3:
+                try:
+                    data = base64.b64decode("".join(resource.split(",", 1)[1].split()), validate=False)
+                except (binascii.Error, ValueError):
+                    continue
+                self.image(data, "an image embedded in %s" % where)
+        for grid in found.cell_grids[:5]:
+            self._record(qrcodes.decode_grid(grid), "a table drawn in %s" % where)
+        if "\u2580" in html or "\u2584" in html or "\u2588" in html:
+            lines = _HTML_TAG_RE.sub("", _HTML_LINE_BREAK_RE.sub("\n", html[:500_000]))
+            self.text(html_module.unescape(lines), where)
+
+    def text(self, text: str, where: str = "the message text") -> None:
+        if self.enabled:
+            self._record(qrcodes.decode_text_blocks(text[:500_000]), "block characters in %s" % where)
+
+
+def _qr_url(payload: str) -> str:
+    """The link a QR payload leads to. Codes often use upper case, which the
+    compact alphanumeric QR mode requires: HTTPS://EVIL.TOP/X."""
+    text = payload.strip()
+    match = re.match(r"(?i)^(https?://|www\.)([^/?#\s]+)(\S*)$", text)
+    if match:
+        scheme = match.group(1).lower()
+        if scheme == "www.":
+            return "https://www." + match.group(2).lower() + match.group(3)
+        return scheme + match.group(2).lower() + match.group(3)
+    found = urls_from_text(text)
+    return found[0] if found else ""
+
+
+def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
+    text_parts, html_parts, attachment_parts, image_parts = _collect(msg)
     bucket: dict[str, UrlIoc] = {}
+    scan = _QrScan(analysis, bucket, qr)
 
     for body in text_parts:
         for url in urls_from_text(body):
             _add_url(bucket, url, "body-text")
+        scan.text(body)
     for body in html_parts:
-        _harvest_html(body, bucket, "html-")
+        scan.html(_harvest_html(body, bucket, "html-"), body, "the HTML body")
     for name in ("List-Unsubscribe", "X-Originating-URL"):
         for url in urls_from_text(header(msg, name)):
             _add_url(bucket, url, "header:%s" % name)
 
     for part in attachment_parts:
-        _process_attachment(part, analysis, bucket)
+        _process_attachment(part, analysis, bucket, scan)
+    for part in image_parts:
+        data = _part_bytes(part)
+        payloads = scan.image(data, "an inline image")
+        if payloads:
+            ioc = _file_ioc("(inline image)", part.get_content_type(), data)
+            ioc.inline = True
+            ioc.notes.extend("QR code: %s" % payload[:200] for payload in payloads)
+            analysis.attachments.append(ioc)
 
     analysis.urls = list(bucket.values())
 
@@ -421,21 +557,21 @@ def _read_content(msg: Message, analysis: Analysis) -> None:
                 analysis.forwarded_from = {"display": display, "address": address.lower(),
                                            "domain": domain_of_address(address)}
 
-    seen: list[str] = []
+    seen: dict[str, None] = {}
     for address in EMAIL_RE.findall(refang("\n".join(text_parts + html_parts))):
-        address = address.lower()
-        if address not in seen:
-            seen.append(address)
-    analysis.body_emails = seen[:25]
+        seen.setdefault(address.lower())
+        if len(seen) >= 25:
+            break
+    analysis.body_emails = list(seen)
 
-    domains: list[str] = []
+    domains: dict[str, None] = {}  # ordered and O(1): a message can carry 50,000 links
     for candidate in [analysis.from_domain, analysis.reply_to_domain, analysis.return_path_domain]:
-        if candidate and candidate not in domains:
-            domains.append(candidate)
+        if candidate:
+            domains.setdefault(candidate)
     for ioc in analysis.urls:
-        if ioc.host and ioc.host not in domains:
-            domains.append(ioc.host)
-    analysis.domains = domains
+        if ioc.host:
+            domains.setdefault(ioc.host)
+    analysis.domains = list(domains)
 
 
 # ---------------------------------------------------------------------------
@@ -455,7 +591,8 @@ def _file_ioc(filename: str, content_type: str, data: bytes, parent: str = "") -
     )
 
 
-def _process_attachment(part: Message, analysis: Analysis, bucket: dict[str, UrlIoc]) -> None:
+def _process_attachment(part: Message, analysis: Analysis, bucket: dict[str, UrlIoc],
+                        scan: _QrScan) -> None:
     content_type = part.get_content_type() or "application/octet-stream"
     data = _part_bytes(part)
     default_name = "attached-message.eml" if content_type == "message/rfc822" else "(unnamed)"
@@ -463,21 +600,24 @@ def _process_attachment(part: Message, analysis: Analysis, bucket: dict[str, Url
     disposition = (part.get_content_disposition() or "").lower()
     ioc.inline = disposition == "inline" and part.get_content_maintype() == "image"
     analysis.attachments.append(ioc)
-    _inspect(ioc, data, analysis, bucket, depth=0)
+    _inspect(ioc, data, analysis, bucket, depth=0, scan=scan)
 
 
 def _inspect(ioc: FileIoc, data: bytes, analysis: Analysis, bucket: dict[str, UrlIoc],
-             depth: int) -> None:
+             depth: int, scan: _QrScan) -> None:
     extension = os.path.splitext(ioc.filename.lower())[1]
     if ioc.true_type == "zip" and extension in OOXML_EXTENSIONS:
         _inspect_ooxml(ioc, data)
     elif ioc.true_type == "zip":
-        _inspect_zip(ioc, data, analysis, bucket, depth)
+        _inspect_zip(ioc, data, analysis, bucket, depth, scan)
     if ioc.true_type in ("html", "svg") or extension in HTML_EXTENSIONS:
-        _inspect_html(ioc, data, bucket)
+        _inspect_html(ioc, data, bucket, scan)
     if ioc.true_type == "pdf":
         for url in urls_from_pdf(data):
             _add_url(bucket, url, "attachment:%s" % ioc.filename)
+        scan.pdf(data, ioc.filename, ioc)
+    if ioc.true_type in IMAGE_TYPES:
+        scan.image(data, ioc.filename, ioc)
     if ioc.content_type == "message/rfc822" or extension == ".eml":
         ioc.notes.append("attached email message")
 
@@ -494,7 +634,7 @@ def _inspect_ooxml(ioc: FileIoc, data: bytes) -> None:
 
 
 def _inspect_zip(ioc: FileIoc, data: bytes, analysis: Analysis, bucket: dict[str, UrlIoc],
-                 depth: int) -> None:
+                 depth: int, scan: _QrScan) -> None:
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
         infos = [info for info in archive.infolist() if not info.is_dir()]
@@ -527,13 +667,14 @@ def _inspect_zip(ioc: FileIoc, data: bytes, analysis: Analysis, bucket: dict[str
         member = _file_ioc(info.filename, guessed, content, parent=ioc.filename)
         analysis.attachments.append(member)
         if depth < 1:
-            _inspect(member, content, analysis, bucket, depth + 1)
+            _inspect(member, content, analysis, bucket, depth + 1, scan)
 
 
-def _inspect_html(ioc: FileIoc, data: bytes, bucket: dict[str, UrlIoc]) -> None:
+def _inspect_html(ioc: FileIoc, data: bytes, bucket: dict[str, UrlIoc], scan: _QrScan) -> None:
     source = "attachment:%s" % ioc.filename
     text = data.decode("utf-8", errors="replace")
     found = _harvest_html(text, bucket, source + " ")
+    scan.html(found, text, ioc.filename)
     for url in urls_from_text(found.script_text):
         _add_url(bucket, url, source + " script")
 

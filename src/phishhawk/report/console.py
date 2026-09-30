@@ -6,6 +6,7 @@ from ..extract import defang_host
 from ..models import Analysis, vt_is_malicious
 from .common import (
     children_of,
+    display_copy,
     human_size,
     recommendations,
     sorted_signals,
@@ -41,6 +42,7 @@ def _verdict_tone(verdict: str) -> str:
 
 
 def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
+    a = display_copy(a)  # attacker text must not drive the terminal
     out: list[str] = []
     rule = "=" * WIDTH
     out += [colour(rule, "cyan"), colour("  PHISHHAWK  ·  TRIAGE REPORT", "cyan"), colour(rule, "cyan")]
@@ -185,6 +187,7 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
 
 
 def render_quiet(a: Analysis, colour: Palette) -> str:
+    a = display_copy(a)
     lines = [colour("== %s" % a.path, "cyan")]
     lines += ["  " + line for line in summary_sentences(a)]
     lines.append("  Verdict: %s (risk score %d)" % (colour(a.verdict, _verdict_tone(a.verdict)), a.score))
@@ -192,6 +195,7 @@ def render_quiet(a: Analysis, colour: Palette) -> str:
 
 
 def render_batch_table(analyses: list[Analysis], colour: Palette) -> str:
+    analyses = display_copy(analyses)
     lines = [colour(_section("BATCH SUMMARY (%d messages)" % len(analyses)), "bold")]
     lines.append("  %-38s %-21s %5s %5s %5s" % ("file", "verdict", "score", "urls", "files"))
     for a in analyses:

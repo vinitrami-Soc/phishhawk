@@ -100,8 +100,9 @@ def one_edit_apart(a: str, b: str) -> bool:
                                       and a[i + 2:] == b[i + 2:])
 
 
-def _tokens(text: str) -> set[str]:
-    return {token for token in re.split(r"[-_.]", text) if token}
+@lru_cache(maxsize=65536)
+def _tokens(text: str) -> frozenset[str]:
+    return frozenset(token for token in re.split(r"[-_.]", text) if token)
 
 
 @lru_cache(maxsize=4096)
@@ -145,6 +146,7 @@ def strong_subdomain(domain: str, target: str) -> bool:
     return any(word in label if len(word) >= 5 else word in _tokens(label) for word in CREDENTIAL_WORDS)
 
 
+@lru_cache(maxsize=256)
 def _canonical(brand: str) -> str:
     domains = sorted(BRANDS[brand])
     if brand + ".com" in domains:
@@ -161,6 +163,8 @@ def _canonical(brand: str) -> str:
 def _compare_protected(raw: str, variants: set[str], target: str) -> str:
     if raw == target:
         return "tld-swap"
+    if raw.replace("-", "") == target.replace("-", ""):  # example-corp vs examplecorp, exam-ple-corp
+        return "typosquat"
     if any(target in variant for variant in variants) and target not in raw:
         return "homoglyph"
     threshold = 1 if len(target) < 8 else 2
@@ -182,6 +186,11 @@ def _compare_brand(raw: str, variants: set[str], brand: str, suffix: str) -> str
         return ""
     if brand in raw:
         return "combosquat" if _combo(raw, brand) else ""
+    squashed = raw.replace("-", "")
+    if squashed == brand:  # micros-oft: a hyphen dropped into the name
+        return "typosquat"
+    if brand in squashed and _combo(squashed, brand):
+        return "combosquat"
     if any(brand in variant for variant in variants):
         return "homoglyph"
     if len(brand) >= 6:
