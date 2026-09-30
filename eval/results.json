@@ -1,7 +1,7 @@
 {
-  "about": "Offline evaluation of PhishHawk after 1.2.0, with QR-code decoding, the security fixes and the crypto and gambling lures (unreleased). Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py and eval/fetch_spamassassin.py.",
+  "about": "Offline evaluation of PhishHawk 2.0.0: parser and heuristics only, no reputation lookups. Held-out sets were scored once, after all tuning. Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail sets come from eval/fetch_phishing_pot.py, eval/fetch_spamassassin.py and eval/fetch_fresh.py.",
   "generated": "2026-09-30",
-  "tool_version": "1.2.0+unreleased",
+  "tool_version": "2.0.0",
   "sets": {
     "pot_holdout": {
       "title": "Real phishing, held out, 2022 to 2026",
@@ -10,63 +10,63 @@
         "emails": 5714,
         "verdicts": {
           "phish": {
-            "LIKELY PHISHING": 1608,
-            "SUSPICIOUS": 2875,
-            "NO STRONG INDICATORS": 1231
+            "SUSPICIOUS": 2823,
+            "LIKELY PHISHING": 1740,
+            "NO STRONG INDICATORS": 1151
           }
         },
         "phish": 5714,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 4483,
-          "fn": 1231,
+          "tp": 4563,
+          "fn": 1151,
           "fp": 0,
           "tn": 0,
-          "recall": 0.7846,
+          "recall": 0.7986,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 1608,
-          "fn": 4106,
+          "tp": 1740,
+          "fn": 3974,
           "fp": 0,
           "tn": 0,
-          "recall": 0.2814,
+          "recall": 0.3045,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 11.0,
-          "p95": 53.0,
-          "max": 1124.0
+          "median": 9.0,
+          "p95": 51.0,
+          "max": 1102.0
         }
       },
       "by_year": {
         "2022": {
           "n": 146,
           "flagged_1_2_0": 95,
-          "flagged": 99
+          "flagged": 101
         },
         "2023": {
           "n": 1425,
           "flagged_1_2_0": 1034,
-          "flagged": 1057
+          "flagged": 1081
         },
         "2024": {
           "n": 1431,
           "flagged_1_2_0": 1192,
-          "flagged": 1228
+          "flagged": 1241
         },
         "2025": {
           "n": 1338,
           "flagged_1_2_0": 1002,
-          "flagged": 1064
+          "flagged": 1080
         },
         "2026": {
           "n": 1307,
           "flagged_1_2_0": 928,
-          "flagged": 975
+          "flagged": 1000
         }
       }
     },
@@ -77,36 +77,36 @@
         "emails": 2500,
         "verdicts": {
           "phish": {
-            "LIKELY PHISHING": 668,
-            "SUSPICIOUS": 1295,
-            "NO STRONG INDICATORS": 537
+            "LIKELY PHISHING": 732,
+            "SUSPICIOUS": 1278,
+            "NO STRONG INDICATORS": 490
           }
         },
         "phish": 2500,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 1963,
-          "fn": 537,
+          "tp": 2010,
+          "fn": 490,
           "fp": 0,
           "tn": 0,
-          "recall": 0.7852,
+          "recall": 0.804,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 668,
-          "fn": 1832,
+          "tp": 732,
+          "fn": 1768,
           "fp": 0,
           "tn": 0,
-          "recall": 0.2672,
+          "recall": 0.2928,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 12.0,
-          "p95": 54.0,
-          "max": 1368.0
+          "median": 9.0,
+          "p95": 47.0,
+          "max": 594.0
         }
       }
     },
@@ -117,20 +117,60 @@
         "emails": 200,
         "verdicts": {
           "phish": {
-            "NO STRONG INDICATORS": 55,
-            "SUSPICIOUS": 95,
-            "LIKELY PHISHING": 50
+            "NO STRONG INDICATORS": 48,
+            "SUSPICIOUS": 96,
+            "LIKELY PHISHING": 56
           }
         },
         "phish": 200,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 145,
-          "fn": 55,
+          "tp": 152,
+          "fn": 48,
           "fp": 0,
           "tn": 0,
-          "recall": 0.725,
+          "recall": 0.76,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "strict": {
+          "tp": 56,
+          "fn": 144,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.28,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "timing_ms": {
+          "median": 9.0,
+          "p95": 64.0,
+          "max": 160.0
+        }
+      }
+    },
+    "tune": {
+      "title": "Real phishing, tuning sample",
+      "source": "phishing_pot, seed 42, 200 messages",
+      "result": {
+        "emails": 200,
+        "verdicts": {
+          "phish": {
+            "LIKELY PHISHING": 50,
+            "NO STRONG INDICATORS": 37,
+            "SUSPICIOUS": 113
+          }
+        },
+        "phish": 200,
+        "benign": 0,
+        "errors": 0,
+        "flagged": {
+          "tp": 163,
+          "fn": 37,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.815,
           "false_positive_rate": null,
           "precision": 1.0
         },
@@ -144,49 +184,49 @@
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 11.5,
-          "p95": 63.0,
-          "max": 323.0
+          "median": 8.0,
+          "p95": 48.0,
+          "max": 149.0
         }
       }
     },
-    "tune": {
-      "title": "Real phishing, tuning sample",
-      "source": "phishing_pot, seed 42, 200 messages",
+    "nazario": {
+      "title": "Real phishing, held out, 2005 to 2007",
+      "source": "Jose Nazario's phishing corpus as mirrored in diegoocampoh/MachineLearningPhishing at 2ac0fa5, eval/fetch_fresh.py",
       "result": {
-        "emails": 200,
+        "emails": 2279,
         "verdicts": {
           "phish": {
-            "LIKELY PHISHING": 48,
-            "NO STRONG INDICATORS": 36,
-            "SUSPICIOUS": 116
+            "NO STRONG INDICATORS": 963,
+            "SUSPICIOUS": 708,
+            "LIKELY PHISHING": 608
           }
         },
-        "phish": 200,
+        "phish": 2279,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 164,
-          "fn": 36,
+          "tp": 1316,
+          "fn": 963,
           "fp": 0,
           "tn": 0,
-          "recall": 0.82,
+          "recall": 0.5774,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 48,
-          "fn": 152,
+          "tp": 608,
+          "fn": 1671,
           "fp": 0,
           "tn": 0,
-          "recall": 0.24,
+          "recall": 0.2668,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 11.0,
-          "p95": 76.0,
-          "max": 384.0
+          "median": 8.0,
+          "p95": 20.0,
+          "max": 64.0
         }
       }
     },
@@ -197,8 +237,8 @@
         "emails": 1525,
         "verdicts": {
           "benign": {
-            "NO STRONG INDICATORS": 1486,
-            "SUSPICIOUS": 37,
+            "NO STRONG INDICATORS": 1496,
+            "SUSPICIOUS": 27,
             "LIKELY PHISHING": 2
           }
         },
@@ -208,10 +248,10 @@
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 39,
-          "tn": 1486,
+          "fp": 29,
+          "tn": 1496,
           "recall": null,
-          "false_positive_rate": 0.0256,
+          "false_positive_rate": 0.019,
           "precision": 0.0
         },
         "strict": {
@@ -224,9 +264,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 6.0,
-          "p95": 18.0,
-          "max": 64.0
+          "median": 4.0,
+          "p95": 23.0,
+          "max": 132.0
         }
       }
     },
@@ -237,8 +277,8 @@
         "emails": 1400,
         "verdicts": {
           "benign": {
-            "NO STRONG INDICATORS": 1390,
-            "SUSPICIOUS": 10
+            "NO STRONG INDICATORS": 1393,
+            "SUSPICIOUS": 7
           }
         },
         "phish": 0,
@@ -247,10 +287,10 @@
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 10,
-          "tn": 1390,
+          "fp": 7,
+          "tn": 1393,
           "recall": null,
-          "false_positive_rate": 0.0071,
+          "false_positive_rate": 0.005,
           "precision": 0.0
         },
         "strict": {
@@ -263,9 +303,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 6.0,
+          "median": 4.0,
           "p95": 10.0,
-          "max": 41.0
+          "max": 132.0
         }
       }
     },
@@ -276,8 +316,8 @@
         "emails": 125,
         "verdicts": {
           "benign": {
-            "SUSPICIOUS": 27,
-            "NO STRONG INDICATORS": 96,
+            "SUSPICIOUS": 20,
+            "NO STRONG INDICATORS": 103,
             "LIKELY PHISHING": 2
           }
         },
@@ -287,10 +327,10 @@
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 29,
-          "tn": 96,
+          "fp": 22,
+          "tn": 103,
           "recall": null,
-          "false_positive_rate": 0.232,
+          "false_positive_rate": 0.176,
           "precision": 0.0
         },
         "strict": {
@@ -303,9 +343,126 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 19.0,
-          "p95": 33.0,
-          "max": 64.0
+          "median": 23.0,
+          "p95": 45.0,
+          "max": 67.0
+        }
+      }
+    },
+    "enron": {
+      "title": "Real legitimate business mail, held out, 2000 to 2002",
+      "source": "Enron mail as mirrored in diegoocampoh/MachineLearningPhishing at 2ac0fa5, eval/fetch_fresh.py",
+      "result": {
+        "emails": 4279,
+        "verdicts": {
+          "benign": {
+            "NO STRONG INDICATORS": 4269,
+            "SUSPICIOUS": 10
+          }
+        },
+        "phish": 0,
+        "benign": 4279,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 10,
+          "tn": 4269,
+          "recall": null,
+          "false_positive_rate": 0.0023,
+          "precision": 0.0
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "tn": 4279,
+          "recall": null,
+          "false_positive_rate": 0.0,
+          "precision": null
+        },
+        "timing_ms": {
+          "median": 4.0,
+          "p95": 11.0,
+          "max": 66.0
+        }
+      }
+    },
+    "fixtures": {
+      "title": "Legitimate edge-case mail, held out",
+      "source": "Test messages of mikel/mail, mailgun/talon, nodemailer/mailparser and domainaware/parsedmarc, eval/fetch_fresh.py",
+      "result": {
+        "emails": 136,
+        "verdicts": {
+          "benign": {
+            "LIKELY PHISHING": 3,
+            "NO STRONG INDICATORS": 121,
+            "SUSPICIOUS": 12
+          }
+        },
+        "phish": 0,
+        "benign": 136,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 15,
+          "tn": 121,
+          "recall": null,
+          "false_positive_rate": 0.1103,
+          "precision": 0.0
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 3,
+          "tn": 133,
+          "recall": null,
+          "false_positive_rate": 0.0221,
+          "precision": 0.0
+        },
+        "timing_ms": {
+          "median": 3.0,
+          "p95": 13.0,
+          "max": 337.0
+        }
+      }
+    },
+    "msg": {
+      "title": "Outlook .msg files, held out",
+      "source": "TeamMsgExtractor/msg-extractor example-msg-files, eval/fetch_fresh.py",
+      "result": {
+        "emails": 5,
+        "verdicts": {
+          "benign": {
+            "NO STRONG INDICATORS": 5
+          }
+        },
+        "phish": 0,
+        "benign": 5,
+        "errors": 0,
+        "flagged": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "tn": 5,
+          "recall": null,
+          "false_positive_rate": 0.0,
+          "precision": null
+        },
+        "strict": {
+          "tp": 0,
+          "fn": 0,
+          "fp": 0,
+          "tn": 5,
+          "recall": null,
+          "false_positive_rate": 0.0,
+          "precision": null
+        },
+        "timing_ms": {
+          "median": 7.0,
+          "p95": 9.0,
+          "max": 180.0
         }
       }
     },
@@ -316,8 +473,8 @@
         "emails": 2625,
         "verdicts": {
           "benign": {
-            "NO STRONG INDICATORS": 2589,
-            "SUSPICIOUS": 32,
+            "NO STRONG INDICATORS": 2595,
+            "SUSPICIOUS": 26,
             "LIKELY PHISHING": 4
           }
         },
@@ -327,10 +484,10 @@
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 36,
-          "tn": 2589,
+          "fp": 30,
+          "tn": 2595,
           "recall": null,
-          "false_positive_rate": 0.0137,
+          "false_positive_rate": 0.0114,
           "precision": 0.0
         },
         "strict": {
@@ -343,9 +500,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 5.0,
-          "p95": 12.0,
-          "max": 470.0
+          "median": 4.0,
+          "p95": 13.0,
+          "max": 473.0
         }
       }
     },
@@ -381,9 +538,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 4.5,
-          "p95": 10.0,
-          "max": 31.0
+          "median": 3.0,
+          "p95": 7.0,
+          "max": 9.0
         }
       }
     },
@@ -394,8 +551,8 @@
         "emails": 167,
         "verdicts": {
           "phish": {
-            "SUSPICIOUS": 41,
-            "LIKELY PHISHING": 61
+            "SUSPICIOUS": 36,
+            "LIKELY PHISHING": 66
           },
           "benign": {
             "NO STRONG INDICATORS": 65
@@ -414,11 +571,11 @@
           "precision": 1.0
         },
         "strict": {
-          "tp": 61,
-          "fn": 41,
+          "tp": 66,
+          "fn": 36,
           "fp": 0,
           "tn": 65,
-          "recall": 0.598,
+          "recall": 0.6471,
           "false_positive_rate": 0.0,
           "precision": 1.0
         },
@@ -580,9 +737,9 @@
           }
         },
         "timing_ms": {
-          "median": 4.3,
-          "p95": 6.9,
-          "max": 19.8
+          "median": 2.6,
+          "p95": 6.0,
+          "max": 33.3
         }
       }
     }
@@ -599,12 +756,28 @@
     "ham_holdout_hard_false_positive_rate": 0.552,
     "ham_tune_false_positive_rate": 0.2453,
     "holdout_strict_recall_1_1": 0.305,
-    "about_1_2_0": "The phishing_pot sets scored with the released PhishHawk 1.2.0, before this round.",
+    "about_1_2_0": "The same sets scored with the released PhishHawk 1.2.0.",
     "pot_holdout_flagged_recall_1_2_0": 0.7545,
     "pot_holdout_strict_recall_1_2_0": 0.2585,
     "pot_tune_flagged_recall_1_2_0": 0.7524,
     "holdout_flagged_recall_1_2_0": 0.705,
-    "tune_flagged_recall_1_2_0": 0.8
+    "tune_flagged_recall_1_2_0": 0.8,
+    "pot_tune_strict_recall_1_2_0": 0.2516,
+    "holdout_strict_recall_1_2_0": 0.24,
+    "tune_strict_recall_1_2_0": 0.215,
+    "nazario_flagged_recall_1_2_0": 0.5472,
+    "nazario_strict_recall_1_2_0": 0.2154,
+    "ham_holdout_easy_false_positive_rate_1_2_0": 0.0071,
+    "ham_holdout_hard_false_positive_rate_1_2_0": 0.232,
+    "ham_holdout_false_positive_rate_1_2_0": 0.0256,
+    "enron_false_positive_rate_1_2_0": 0.0023,
+    "fixtures_false_positive_rate_1_2_0": 0.0956,
+    "ham_tune_false_positive_rate_1_2_0": 0.0137,
+    "cpython_false_positive_rate_1_2_0": 0.0,
+    "worst_case_parse_seconds_1_2_0": 1.015,
+    "emails_1_2_0": 19506,
+    "median_parse_ms_1_2_0": 7.0,
+    "median_parse_ms": 6.0
   },
-  "tests": 239
+  "tests": 403
 }

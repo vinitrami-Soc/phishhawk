@@ -92,7 +92,10 @@ def parse_ansi(text: str) -> list[list[tuple[str, str, bool, bool]]]:
     colours plus xterm-256 foregrounds (38;5;N)."""
     lines: list[list[tuple[str, str, bool, bool]]] = []
     colour, bold, dim = FG, False, False
-    for raw_line in text.replace("\r\n", "\n").replace("\r", "").split("\n"):
+    for raw_line in text.replace("\r\n", "\n").split("\n"):
+        # A carriage return starts the line again, as a terminal would: the
+        # progress line is cleared with "\r" + spaces + "\r" before the report.
+        raw_line = raw_line.rsplit("\r", 1)[-1]
         spans: list[tuple[str, str, bool, bool]] = []
         position = 0
         for match in SGR_RE.finditer(raw_line):

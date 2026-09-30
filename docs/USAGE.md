@@ -11,6 +11,9 @@ installation, see the [README](../README.md#installation).
   - [Detection options](#detection-options)
   - [Enrichment options](#enrichment-options)
   - [Cache options](#cache-options)
+- [imap: triage a mailbox folder](#imap-triage-a-mailbox-folder)
+- [The config file](#the-config-file)
+- [YARA rules](#yara-rules)
 - [doctor: check your setup](#doctor-check-your-setup)
 - [cache: manage the lookup cache](#cache-manage-the-lookup-cache)
 - [techniques: the ATT&CK catalogue](#techniques-the-attck-catalogue)
@@ -25,7 +28,8 @@ installation, see the [README](../README.md#installation).
 ```text
 phishhawk [-h] [-V] <command> ...
 
-  scan         triage .eml files, folders or stdin (the default command)
+  scan         triage .eml, .msg or .mbox files, folders or stdin (the default command)
+  imap         triage messages straight from an IMAP folder, read-only
   doctor       check dependencies, API keys, cache and network
   cache        show or clear the lookup cache
   techniques   list the MITRE ATT&CK techniques PhishHawk can evidence
@@ -47,8 +51,9 @@ phishhawk scan [options] PATH [PATH ...]
 | Input | Meaning |
 |---|---|
 | `mail.eml` | One message |
+| `Invoice overdue.msg` | An Outlook message, as saved from Outlook or reported with its "Report phishing" button. It is rebuilt as the email that was sent, with its original transport headers when Outlook kept them |
 | `Inbox.mbox` | Every message in an mbox export (Google Takeout, Thunderbird), labelled `Inbox.mbox#1`, `#2`, ... |
-| `reported/` | Every regular file ending in `.eml` or `.mbox` under that folder, searched recursively and in name order |
+| `reported/` | Every regular file ending in `.eml`, `.msg` or `.mbox` under that folder, searched recursively and in name order |
 | `-` | One message read from stdin |
 
 Several inputs can be mixed: `phishhawk scan a.eml b.eml reported/`. One
@@ -104,6 +109,7 @@ stdout; only one report can go to stdout at a time.
 | `--stix PATH` | STIX 2.1 bundle: an indicator per IOC, the ATT&CK attack patterns and a report object per message | One bundle, duplicate indicators merged |
 | `--md PATH` | Markdown ticket note | Notes separated by `---` |
 | `--csv PATH` | One row per indicator: `type, value, defanged, context, verdict, subject, source_file` | All rows in one file |
+| `--misp PATH` | A MISP event: every indicator as an attribute (with `ip-src` for the sending IP, `btc`/`xmr` for wallets), an `email` object, the ATT&CK techniques as galaxy tags and a TLP tag (`--tlp`, default `amber`). Ready for *Add Event → Populate from JSON* or the `/events/add` API | A list of events |
 
 The terminal, HTML and Markdown reports show indicators **defanged**
 (`hxxps://evil[.]top`), so they cannot be clicked by accident. CSV has both a raw
@@ -121,6 +127,11 @@ free-mail providers are never exported as domain-level blocks.
 | `--trusted-authserv ID` | Your mail server's authserv-id, the first word of the `Authentication-Results` headers it writes (for example `mx.google.com`). Repeat for several; also read from `PHISHHAWK_TRUSTED_AUTHSERV`. Without it, only the block of headers at the top (the receiving server's) is believed, and a pass claimed further down is ignored and flagged as forged. |
 | `--no-qr` | Do not decode QR codes. Decoding needs the optional extra, `pip install 'phishhawk[qr]'` (included by `install.sh` and the Docker image); `phishhawk doctor` shows whether it is available. |
 | `--max-size MB` | Skip messages larger than this (default 50) |
+| `--allow DOMAIN` | A partner's domain: never reported as a lookalike, never exported as an indicator. Repeat for several. |
+| `--block DOMAIN` | A domain your organisation has already judged hostile: a message that uses it as sender, Reply-To, Return-Path or link host raises a high signal. Repeat for several. |
+| `--yara PATH` | Your [YARA rules](#yara-rules), a file or a folder of them |
+| `--config PATH` | The [config file](#the-config-file) to use |
+| `--fail-on LEVEL` | For pipelines: exit `0` unless a message reaches `suspicious`, `likely` (phishing) or `malicious`, then `1`. `never` always exits `0`. Errors still exit `3`. |
 
 ### Enrichment options
 
@@ -153,14 +164,107 @@ up in your shell history and is visible to other users in `ps`.
 Only definitive answers are cached: a result, or "not found". Errors, timeouts,
 rejected keys and rate-limit responses are not, so they are retried on the next run.
 
+## imap: triage a mailbox folder
+
+```text
+phishhawk imap --host HOST --user USER [--folder FOLDER] [options]
+```
+
+Reads messages straight from an IMAP folder, such as a shared "report
+phishing" mailbox, and triages each one as `scan` would. The folder is opened
+**read-only** (`EXAMINE`) and messages are fetched with `BODY.PEEK[]`, so
+nothing is marked read, moved or deleted. TLS certificates are always verified.
+
+| Option | Meaning |
+|---|---|
+| `--host HOST` | The IMAP server, e.g. `outlook.office365.com`, `imap.gmail.com` |
+| `--user USER` | The login (or `$PHISHHAWK_IMAP_USER`) |
+| `--folder FOLDER` | The folder to read (default `INBOX`) |
+| `--port PORT`, `--starttls` | Port 993 with TLS by default; `--starttls` upgrades a plain connection on port 143 |
+| `--since YYYY-MM-DD` | Only messages received on or after this date |
+| `--unseen` | Only messages nobody has read yet |
+| `--limit N` | The newest N messages (default 50) |
+| `--out DIR` | Also write a JSON and an HTML report per message, named after its UID |
+| `--watch SECONDS` | Keep running: every SECONDS, triage the messages that arrived since the last round. A connection that drops is reported and retried on the next round. |
+
+Every `scan` option for reports, detection and enrichment works here too.
+
+The password is never taken on the command line, where other users could read
+it in the process list: set `PHISHHAWK_IMAP_PASSWORD`, or answer the prompt. For
+Microsoft 365 and Gmail, which want OAuth, put an access token in
+`PHISHHAWK_IMAP_TOKEN` and it is sent with `XOAUTH2`.
+
+```bash
+export PHISHHAWK_IMAP_PASSWORD='...'
+phishhawk imap --host mail.example.com --user soc --folder "Phish reports" --unseen --out reports/
+phishhawk imap --host mail.example.com --user soc --folder "Phish reports" --watch 300 --quiet
+```
+
+## The config file
+
+Settings a SOC sets once live in a TOML (Python 3.11+) or JSON file. It is read
+from `--config`, else `$PHISHHAWK_CONFIG`, else
+`~/.config/phishhawk/config.toml` (or `config.json`). It is **never** read from
+the current folder, so a file dropped into a folder of reported mail cannot
+allowlist an attacker's domain. Command-line options win over the file.
+
+```toml
+protect = ["example.com", "example.co.uk"]       # your domains (as --protect)
+trusted_authserv = ["mx.example.com"]            # your mail servers (as --trusted-authserv)
+allow_domains = ["partner-payroll.com"]          # partners: never lookalikes, never indicators
+block_domains = ["known-bad.top"]                # always flagged
+yara = "~/soc/rules/"                            # as --yara
+fail_on = "likely"                               # as --fail-on
+tlp = "amber"                                    # MISP events
+offline = false
+max_size = 50                                    # MB
+vt_rate = 4                                      # VirusTotal lookups per minute
+vt_budget = 20                                   # VirusTotal lookups per message
+
+[brands]                                         # your own brands, for lookalike checks
+examplebank = ["examplebank.com", "examplebank.co.uk"]
+
+[lures]                                          # extra lure phrases, by category
+credential = ["verify your examplebank card"]
+```
+
+An unknown setting, a domain with a space in it, or a lure shorter than four
+letters is refused with a message that says which line is wrong.
+`phishhawk doctor` shows which config file is in use.
+
+## YARA rules
+
+With `pip install 'phishhawk[yara]'`, `--yara PATH` runs your rules (a `.yar`
+file, or a folder of `.yar` and `.yara` files) on the raw message and on every
+file PhishHawk opens, including files inside archives, disk images and
+documents. A match raises a signal; a rule's `meta` can set how:
+
+```yara
+rule Invoice_HTML_Smuggling
+{
+    meta:
+        description = "HTML attachment that assembles a file in the browser"
+        severity = "high"              // high (default), medium or low
+        mitre = "T1027.006"            // ATT&CK techniques, comma-separated
+    strings:
+        $a = "createObjectURL" ascii
+        $b = "atob(" ascii
+    condition:
+        all of them
+}
+```
+
+Each buffer gets at most 10 seconds; a rule that times out counts as no match.
+
 ## doctor: check your setup
 
 ```text
 phishhawk doctor [--network]
 ```
 
-Checks the Python version, the `requests` library, each API key (shown masked),
-the protected domains and the cache. `--network` also calls each reputation
+Checks the Python version, the `requests` library, QR decoding, YARA, the
+config file in use, each API key (shown masked), the protected domains and the
+cache. `--network` also calls each reputation
 service once to show it can be reached from this machine, which is useful behind
 a corporate proxy. Run it after installing and whenever enrichment seems not to work.
 
@@ -179,7 +283,7 @@ re-check a URL that VirusTotal did not know about yesterday.
 ## techniques: the ATT&CK catalogue
 
 ```bash
-phishhawk techniques           # the 18 techniques and what PhishHawk looks for
+phishhawk techniques           # the 29 techniques and what PhishHawk looks for
 phishhawk techniques --json    # the same, machine-readable
 ```
 
@@ -192,6 +296,10 @@ phishhawk techniques --json    # the same, machine-readable
 | `URLSCAN_API_KEY` | urlscan.io key, only needed for `--urlscan-submit` |
 | `PHISHHAWK_PROTECT` | Comma-separated domains to treat as your own, e.g. `example.com,example.co.uk` |
 | `PHISHHAWK_TRUSTED_AUTHSERV` | Comma-separated authserv-ids of your own mail servers, e.g. `mx.google.com` |
+| `PHISHHAWK_CONFIG` | The [config file](#the-config-file) to use |
+| `PHISHHAWK_IMAP_USER` | The IMAP login for `phishhawk imap` |
+| `PHISHHAWK_IMAP_PASSWORD` | The IMAP password (never pass it on the command line) |
+| `PHISHHAWK_IMAP_TOKEN` | An OAuth access token for IMAP (`XOAUTH2`), instead of a password |
 | `PHISHHAWK_NO_BANNER` | Any value turns the banner off |
 | `NO_COLOR` | Any value turns colour off ([no-color.org](https://no-color.org)) |
 | `XDG_CACHE_HOME` | Where the cache folder goes (default `~/.cache`) |
@@ -216,7 +324,9 @@ export PHISHHAWK_PROTECT="example.com,example.co.uk"
 | `130` | Interrupted with Ctrl+C |
 | `141` | Output pipe closed early (for example, piped into `head`); exits quietly |
 
-In a batch, the exit code reflects the worst message.
+In a batch, the exit code reflects the worst message. With `--fail-on LEVEL`
+the verdict codes become `1` when a message reaches that level and `0`
+otherwise; `3` still means an error.
 
 ## stdout, stderr and piping
 
@@ -231,7 +341,10 @@ So `phishhawk scan mail.eml --json - | jq .` always receives clean JSON.
 ## The JSON report
 
 For one message, `--json` writes a single object; for several, `{"reports": [...]}`.
-In `jq`, `(.reports // [.])[]` handles both shapes. The main fields:
+In `jq`, `(.reports // [.])[]` handles both shapes. Every report carries
+`report_version` (`"2.0"`), which changes only when a field is renamed or
+removed; new fields can appear at any time. The full format is a JSON Schema,
+[`docs/report.schema.json`](report.schema.json). The main fields:
 
 | Field | Contents |
 |---|---|
@@ -239,21 +352,28 @@ In `jq`, `(.reports // [.])[]` handles both shapes. The main fields:
 | `summary` | The plain-language summary lines, e.g. `"6 URLs found."` |
 | `signals[]` | `severity`, `label` and `techniques` for every finding |
 | `techniques[]` | `id`, `name`, ATT&CK `url` and the `evidence` behind it |
-| `iocs[]` | `type` (url, domain, ipv4, email, sha256 …), `value`, `context`. Only indicators worth blocking. |
+| `iocs[]` | `type` (url, domain, ipv4, ipv6, email, sha256, crypto-wallet, phone), `value`, `context`. Only indicators worth blocking. |
 | `recommendations[]` | The actions to take, in order |
 | `subject`, `date`, `message_id`, `to` | Message metadata |
 | `from_display`, `from_address`, `from_domain`, `reply_to`, `return_path`, `originating_ip`, `auth` | Sender and SPF/DKIM/DMARC details |
 | `forged_auth[]` | Pass results claimed below the receiving server's own: `claim`, `authserv`, and `impersonates` when the forged header uses the receiving server's name |
 | `qr_codes[]` | Every QR code found: `where` it was (an image, a PDF, an embedded image, a drawn table or block characters), its `payload`, and the `url` it leads to |
 | `reported_by`, `forwarded_from` | Set when the message was reported as an attachment or forwarded inline |
+| `hops[]` | The mail path, oldest hop first: `from`, `by`, `with`, `ip`, `time` and `delay_seconds` |
+| `calendar[]` | Meeting invitations: organiser, summary, links and attachments |
+| `wallets[]`, `phones[]` | Crypto-wallet addresses (with their currency) and callback numbers |
+| `yara[]` | YARA matches: `rule`, `where`, `severity` |
+| `allowed_domains`, `blocked_domains` | Your lists, as applied to this message |
+| `urls_dropped`, `mime_depth` | Links past the 1,000 kept, and the deepest MIME nesting |
 | `urls[]` | Every URL with its sources, anchor texts, notes, unwrap/redirect details, and `vt` and `urlscan` results |
-| `attachments[]` | Name, declared and true type, size, MD5/SHA-1/SHA-256, archive listing, HTML-attachment findings, `vt` result |
+| `attachments[]` | Name, declared and true type, size, MD5/SHA-1/SHA-256, the `parent` it came out of, archive listing, HTML-attachment findings, per-format `details` (Office, PDF, RTF, shortcut, OneNote), `vt` result |
 | `lookalikes[]` | `domain`, the `target` it imitates, the `method` (homoglyph, typosquat, combosquat, tld-swap …) and `where` it appeared |
 | `domain_intel`, `ip_intel` | RDAP domain ages and AbuseIPDB results |
 | `errors[]` | Anything that could not be parsed or looked up |
 | `generated_at`, `tool_version` | Provenance |
 
-Message bodies are never included.
+Message bodies are never included. The only body text a report quotes is short evidence: up
+to 80 characters of hidden filler text when that trick is found (`hidden_sample`).
 
 ## Recipes
 
@@ -297,6 +417,12 @@ done
 phishhawk scan reported/ --offline --json - \
   | jq -r '(.reports // [.])[] | select(.verdict!="NO STRONG INDICATORS") | .path' \
   | xargs -r phishhawk scan --html flagged.html
+```
+
+**Fail a CI or SOAR step only on likely phishing, and hand the event to MISP:**
+
+```bash
+phishhawk scan reported/ --quiet --fail-on likely --misp events.json
 ```
 
 **Check your own legitimate mail for false positives before a roll-out:**

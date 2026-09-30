@@ -7,8 +7,8 @@ matter. Thank you for reporting them responsibly.
 
 | Version | Supported |
 |---|---|
-| 1.3.x | Yes |
-| 1.2.x and earlier | No: upgrade, 1.3.0 fixes the issues in [the security review](docs/SECURITY-REVIEW.md) |
+| 2.x | Yes |
+| 1.x | No: upgrade, 2.0.0 fixes the issues in [the security review](docs/SECURITY-REVIEW.md) |
 | Earlier prototypes (`phishtriage`, the single-file extractor) | No |
 
 ## Reporting a vulnerability

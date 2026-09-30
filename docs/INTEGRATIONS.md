@@ -28,9 +28,11 @@ flowchart LR
     PH --> C["--csv"]
     PH --> M["--md"]
     PH --> H["--html"]
+    PH --> MI["--misp"]
+    MI --> MISP["MISP"]
     J --> SOAR["SOAR playbooks<br/>XSOAR, Splunk SOAR,<br/>Shuffle, Tines"]
     J --> SIEM["SIEM events<br/>Splunk HEC, Elastic"]
-    X --> TIP["Threat intel<br/>MISP, OpenCTI,<br/>Sentinel TI"]
+    X --> TIP["Threat intel<br/>OpenCTI, Sentinel TI,<br/>MISP"]
     C --> BL["Block lists and<br/>SIEM lookups"]
     M --> CASE["Tickets<br/>TheHive, Jira,<br/>ServiceNow"]
     H --> PEOPLE["People<br/>L2, managers,<br/>the reporter"]
@@ -40,6 +42,7 @@ flowchart LR
 |---|---|---|
 | `--json` | One object per message (or `{"reports": [...]}`) with verdict, signals, techniques, indicators and actions | Anything that makes decisions |
 | `--stix` | STIX 2.1 bundle: an `identity`, one `indicator` per IOC, `attack-pattern` objects for the ATT&CK techniques and a `report` per message | Sharing intelligence |
+| `--misp` | A MISP event per message: attributes for every indicator, an `email` object, ATT&CK galaxy tags and a TLP tag | MISP |
 | `--csv` | `type, value, defanged, context, verdict, subject, source_file` | Block lists, lookups, spreadsheets |
 | `--md` | Ticket note: headers, key findings, defanged indicator table, ATT&CK, action checklist | Case notes |
 | `--html` | Self-contained page with a strict Content-Security-Policy | Attaching to a ticket or email |
@@ -54,15 +57,31 @@ one object instead of creating two.
 
 ### MISP
 
-In the web interface, open or create an event and use *Import from… → STIX 2.x*
-with the file from `--stix`. Or with [PyMISP](https://github.com/MISP/PyMISP):
+`--misp event.json` writes a native MISP event: every indicator as an
+attribute (URLs, domains, `ip-src` for the sending IP, `email-src` and
+`email-reply-to`, `sha256` and `filename|sha256`, `btc`/`xmr` wallets, phone
+numbers), an `email` object with the subject, sender and Message-ID, the ATT&CK
+techniques as `misp-galaxy:mitre-attack-pattern` tags, `rsit:fraud="phishing"`,
+and a TLP tag (`--tlp`, default `amber`). The event's distribution is "your
+organisation only" until someone decides otherwise. UUIDs are derived from the
+content, so importing the same message twice updates one event.
+
+In the web interface use *Add Event → Populate from JSON*, or with
+[PyMISP](https://github.com/MISP/PyMISP):
 
 ```python
-from pymisp import PyMISP
+import json
+from pymisp import MISPEvent, PyMISP
 
 misp = PyMISP("https://misp.example.com", "YOUR_API_KEY")
-misp.upload_stix("bundle.json", version="2")
+data = json.load(open("event.json"))
+for item in data if isinstance(data, list) else [data]:  # a batch writes a list of events
+    event = MISPEvent()
+    event.load(item)
+    misp.add_event(event)
 ```
+
+A STIX bundle from `--stix` can also be imported, with *Import from… → STIX 2.x*.
 
 ### OpenCTI
 
@@ -190,29 +209,39 @@ esac
 
 ## Polling a phishing-report mailbox
 
-Many organisations route "Report phishing" clicks to a shared mailbox. This
-sketch reads new reports over IMAP and triages each one. It runs offline;
-add an enricher as shown in [the library section](#using-phishhawk-as-a-python-library)
-for reputation lookups.
+Many organisations route "Report phishing" clicks to a shared mailbox.
+`phishhawk imap` reads it directly, read-only, so nothing is marked read,
+moved or deleted:
 
-```python
-import imaplib, os
-from phishhawk.pipeline import Options, triage_bytes
-
-imap = imaplib.IMAP4_SSL("imap.example.com")
-imap.login(os.environ["REPORT_USER"], os.environ["REPORT_PASSWORD"])
-imap.select("INBOX")
-_, found = imap.search(None, "UNSEEN")
-for number in found[0].split():
-    _, parts = imap.fetch(number, "(RFC822)")
-    analysis = triage_bytes(parts[0][1], path="imap:%s" % number.decode(),
-                            options=Options(protected=["example.com"]))
-    print(analysis.verdict, analysis.score, analysis.subject)
-imap.logout()
+```bash
+export PHISHHAWK_IMAP_PASSWORD='...'      # or PHISHHAWK_IMAP_TOKEN for OAuth (Microsoft 365, Gmail)
+phishhawk imap --host outlook.office365.com --user soc@example.com \
+  --folder "Phish reports" --watch 300 --quiet --out /srv/phishing/reports --misp /srv/phishing/latest.json
 ```
 
-Because users usually report the phish **as an attachment**, PhishHawk analyses
-the attached original and records who reported it in `reported_by`.
+Every five minutes it triages what arrived since the last round, writes a JSON
+and an HTML report per message, and keeps going if the server drops the
+connection. See [the usage guide](USAGE.md#imap-triage-a-mailbox-folder).
+
+To do the same from Python, `phishhawk.imapfetch.fetch()` yields each message's
+raw bytes:
+
+```python
+from phishhawk.imapfetch import ImapSource, fetch
+from phishhawk.pipeline import Options, triage_bytes
+
+source = ImapSource(host="imap.example.com", user="soc", password="...", folder="Phish reports", unseen=True)
+for label, uid, data in fetch(source, max_bytes=50 * 1024 * 1024):
+    if isinstance(data, Exception):
+        print(label, "skipped:", data)
+        continue
+    analysis = triage_bytes(data, path=label, options=Options(protected=["example.com"]))
+    print(analysis.verdict, analysis.score, analysis.subject)
+```
+
+Because users usually report the phish **as an attachment** (an `.eml`, or an
+`.msg` from Outlook's button), PhishHawk analyses the attached original and
+records who reported it in `reported_by`.
 
 ## Scheduled runs
 
@@ -233,7 +262,8 @@ done
 ```
 
 The cache makes repeated runs cheap: an indicator already looked up in the last
-24 hours costs nothing.
+24 hours costs nothing. For a mailbox rather than a folder, `phishhawk imap
+--watch` does the same without cron.
 
 ## Using PhishHawk as a Python library
 

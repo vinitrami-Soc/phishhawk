@@ -10,9 +10,18 @@ from the code in `src/phishhawk/heuristics.py`, `lookalike.py` and `models.py`.
   - [Sender and impersonation](#sender-and-impersonation)
   - [Lookalike domains](#lookalike-domains)
   - [Links](#links)
+  - [QR codes](#qr-codes)
   - [Attachments](#attachments)
-  - [HTML attachments](#html-attachments)
+  - [Archives and disk images](#archives-and-disk-images)
+  - [Documents, shortcuts and OneNote](#documents-shortcuts-and-onenote)
+  - [HTML and SVG attachments](#html-and-svg-attachments)
+  - [Calendar invitations](#calendar-invitations)
+  - [Hidden text and filter evasion](#hidden-text-and-filter-evasion)
   - [Body and language](#body-and-language)
+  - [Money: wallets and business email compromise](#money-wallets-and-business-email-compromise)
+  - [Message structure](#message-structure)
+  - [Your own lists and rules](#your-own-lists-and-rules)
+  - [Carrier emails](#carrier-emails)
   - [Reputation (enrichment)](#reputation-enrichment)
 - [Protected domains](#protected-domains)
 - [What gets exported as an indicator](#what-gets-exported-as-an-indicator)
@@ -27,12 +36,14 @@ the ATT&CK techniques it is evidence of. Signals are weighted:
 |---|---|---|
 | High | 3 | `SPF=fail`, a homoglyph of your domain, a double extension, HTML smuggling |
 | Medium | 2 | `DKIM=none`, a shortened link, credential lure wording |
-| Low | 1 | a Return-Path at a bulk-mail provider, a high-abuse TLD, an archive attachment |
+| Low | 1 | a high-abuse TLD, a link to free hosting, an archive attachment |
 
 The **risk score** is the sum of the weights, except that low signals add
-**at most 3 points between them**. Missing authentication headers, bounce
-addresses at email service providers and messages with no links are common in
-legitimate mail, and they must not add up to a verdict on their own.
+**at most 3 points between them**. Each low signal is common in legitimate mail
+too, and several of them must not add up to a verdict on their own. Two checks
+1.x scored as low (a Return-Path that differs from the sender, and a message
+with no links) were removed in 2.0: on real mail they fired more often on
+legitimate messages than on phishing.
 
 ```mermaid
 flowchart TD
@@ -51,7 +62,7 @@ the usual SOC threshold for calling something malicious. One engine, or
 "suspicious" votes only, raises a medium signal instead.
 
 **A worked example.** The bundled `samples/sample_phish.eml` raises 9 high signals
-(27 points), 3 medium (6 points) and 4 low, of which only 3 count. Its score is
+(27 points), 3 medium (6 points) and 3 low (3 points). Its score is
 therefore 36, and with at least two high signals the verdict is `LIKELY PHISHING`.
 
 ## Signal catalogue
@@ -89,7 +100,13 @@ attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 | Subject poses as a brand's notice, but neither the sender nor any link belongs to that brand | *varies*: High with a credential ask and links, else Medium | T1656 |
 | Forwarded original: display name claims a brand the address does not back up | High | T1656 |
 | Forwarded original: an organisation writes from free-mail | Medium | T1656 |
-| Return-Path domain differs from the From domain | Low | none |
+| The From address uses a brand's domain, but DKIM does not pass and DMARC fails or is missing: the From line is probably forged | High | T1656, T1036 |
+| Display name imitates a brand with look-alike characters (`PayPaI`, `Amaz0n`, `Iedger`) and the domain is not the brand's | High | T1656, T1036 |
+| The subject or display name spells a brand with look-alike characters | High | T1036, T1656 |
+| Display name mixes alphabets inside a word (Latin with Cyrillic or Greek look-alikes) | High | T1036 |
+| Subject mixes alphabets inside a word | Medium | T1036 |
+| Subject written in styled Unicode letters (`𝐔𝐫𝐠𝐞𝐧𝐭`, `Ｖｅｒｉｆｙ`), which keyword filters do not read as text | Medium | T1027 |
+| Two or more invisible characters inside the subject | Medium | T1027 |
 
 Brand matching ignores punctuation, spaces and case, so `Trust-Wallet`,
 `Trust Wallet` and `TRUSTWALLET` all match `trustwallet`.
@@ -104,7 +121,7 @@ including the ones phishers rent.
 ### Lookalike domains
 
 Every domain in the From, Reply-To and Return-Path addresses and every URL host
-is compared with 66 well-known brands and with your
+is compared with 134 well-known brands and with your
 [protected domains](#protected-domains).
 
 | Method | Example (target) | How it is found | Severity |
@@ -134,8 +151,11 @@ email address in the link text names a mailbox, not a website, and is ignored.
 
 | Signal | Severity | ATT&CK |
 |---|---|---|
+| Link downloads a runnable file (`.exe`, `.js`, `.hta`, `.iso`, `.lnk`, `.msi`, `.ps1`, `.one` … 22 types) | High | T1204.001, T1566.002 |
+| Link downloads an archive (`.zip`, `.rar`, `.7z`, `.gz` …) | Medium | T1204.001, T1566.002 |
 | Link text shows one domain, the `href` goes to another | High when the text shows a brand, government, free-mail or your own domain, or the destination is itself suspect (raw IP, lookalike, shortener, high-abuse TLD, free hosting); otherwise Medium, counted once per destination | T1036, T1566.002 |
-| URL host is a raw IP address | High | T1608.005 |
+| URL host is a raw IP address, IPv4 or IPv6 | High | T1608.005 |
+| URL writes an IP address as one number, in hex or in octal (`http://3232235777/` is `192.168.1.1`), read the way browsers read it | High | T1027, T1608.005 |
 | Punycode (`xn--`) URL host | High | T1583.001 |
 | `@` in the URL hides the real host (`https://microsoft.com@evil.top/`) | High | T1036 |
 | URL shortener | Medium | T1608.005 |
@@ -144,8 +164,11 @@ email address in the link text names a mailbox, not a website, and is ignored.
 | Link to free hosting, a form builder or file sharing | Low | T1583.006 |
 | High-abuse TLD (`.top`, `.xyz`, `.zip`, `.click` …) | Low | T1583.001 |
 | Credential-harvesting path (`/login`, `/verify`, `/owa` …) on an untrusted host | Low | T1598.003 |
-| More than 5,000 distinct link hosts: only the first 5,000 are checked for lookalikes | Medium | none |
+| A link that runs JavaScript (`javascript:`) instead of opening a website | Medium | T1027.006 |
+| A link that opens a page built into the link itself (`data:text/html`, `data:image/svg+xml`) | High | T1027.006, T1566.002 |
 
+Tabs and line breaks inside an `href` are dropped the way browsers drop them,
+so `https://ev&#10;il.top` is read as `evil.top`.
 ### QR codes
 
 A QR code is scanned on a phone, away from the mail gateway and the desktop's
@@ -173,23 +196,94 @@ bytes**, not by its name or declared content type.
 | Double extension (`invoice.pdf.js`) | High | T1036.007 |
 | Right-to-left override character (U+202E) in the name, so `invoice_[RLO]fdp.exe` displays as `invoice_exe.pdf` | High | T1036.002 |
 | Content contradicts the extension (`Scan.pdf` that is really HTML) | High | T1036.008 |
-| Office document that contains a VBA macro project | High | T1204.002 |
-| Password-protected archive | High | T1027.013 |
-| Encrypted archive hides a risky file | High | T1566.001, T1204.002 |
-| Any archive attachment (ZIP, RAR, 7z, CAB …) | Low | T1566.001 |
+| Macro-enabled document (`.docm`, `.xlsm` …, or any Office file holding a VBA project) | High | T1204.002, T1059.005 |
 
-ZIP archives are opened **in memory**: the listing, hashes and types of the
-files inside are reported, and the same checks run on them. Caps protect
-against zip bombs: 200 members, 25 MB per member, 100 MB in total.
+Files inside archives, disk images, documents, OneNote sections, `winmail.dat`
+and attached emails are extracted **in memory** and checked like attachments of
+their own, down to three levels (`zip → iso → lnk`). Nothing is written to disk
+or run. Caps keep hostile files cheap: 400 files and 200 MB per message, 200
+members and 100 MB per archive, 25 MB per file, and read budgets on every
+reader so that entries pointing at the same bytes cannot multiply them.
 
-### HTML attachments
+### Archives and disk images
+
+ZIP, gzip and tar are opened. RAR (4 and 5) and 7z are listed from their
+headers, including 7z headers packed with LZMA or LZMA2. ISO 9660 (with Joliet
+names) and FAT disk images are listed and their files extracted. A ZIP locked
+with ZipCrypto is opened when the message itself gives the password.
 
 | Signal | Severity | ATT&CK |
 |---|---|---|
+| Disk image (`.iso`, `.img`) delivers files without the Mark of the Web, so SmartScreen and Office's block on internet macros never see them. Virtual hard disks (`.vhd`, `.vhdx`) are flagged as risky types; their contents are not listed | High | T1553.005, T1566.001 |
+| The message gives the password for its archive or file, so no gateway could look inside | High | T1027.013, T1566.001 |
+| Archive encrypts even its file names (RAR `-hp`, 7z with an encrypted header) | High | T1027.013 |
+| Password-protected archive | High | T1027.013 |
+| Archive or disk image holds a risky file or a double extension (named even when encrypted) | High | T1566.001, T1204.002 |
+| Any other archive attachment | Low | T1566.001 |
+
+### Documents, shortcuts and OneNote
+
+Office files (OOXML and legacy OLE2), PDFs, RTF, Windows shortcuts (`.lnk`) and
+OneNote sections are read for what they would do when opened.
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| Shortcut starts a command interpreter or script host (`cmd`, `powershell`, `mshta`, `wscript` …), runs an encoded PowerShell command, downloads from the internet, hides a long command line behind padding, or opens minimised with arguments | High | T1204.002; T1059.001 for PowerShell, T1218.005 for mshta |
+| Excel 4.0 (XLM) macro sheets | High | T1204.002 |
+| A DDE field runs a command on opening | High | T1559.002, T1204.002 |
+| External link through a Windows protocol handler (`ms-msdt:`, `search-ms:` …: the Follina family) | High | T1203, T1221 |
+| Remote template, OLE object, frame or subdocument loaded on opening | High | T1221 |
+| Embedded file in an OLE Package object | High | T1204.002 |
+| ActiveX controls | Medium | T1204.002 |
+| Password-protected Office document | Medium | T1027.013 |
+| PDF launch action that starts a program | High | T1204.002 |
+| PDF JavaScript | High when it runs on opening, else Medium | T1059.007, T1204.002 |
+| PDF carries an embedded file | Medium | T1027, T1204.002 |
+| PDF form that submits what is typed into it | Medium | T1598.002 |
+| RTF Equation Editor object (CVE-2017-11882) | High | T1203 |
+| RTF OLE object of a class used by known exploits (`htmlfile`, `OTKLOADR`) | High | T1203 |
+| RTF remote template | High | T1221 |
+| RTF embedded file (Package object) | High | T1204.002 |
+| Other embedded OLE objects in an RTF, noting any that update on opening | Medium | T1204.002 |
+| OneNote section hides a runnable file (the 2023 "double-click to view" wave) | High; Medium for other embedded files | T1204.002, T1027 |
+
+### HTML and SVG attachments
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| SVG image runs JavaScript (SVG smuggling) | High | T1027.006, T1059.007 |
 | Credential form: a password field, reported with the host the form posts to | High | T1598.002 |
 | HTML smuggling: two or more of `atob`, `new Blob`, `createObjectURL`, `msSaveOrOpenBlob`, `Uint8Array`, `unescape`, `eval`, `document.write`, `fromCharCode` | High | T1027.006 |
 | A base64 string decodes to a URL | High | T1027 |
 | The attachment redirects the browser (`meta refresh`, `location.href =`, `location.replace()`) | Medium | T1608.005 |
+
+### Calendar invitations
+
+Invitations (`.ics` attachments, `text/calendar` parts and invitations inside
+`winmail.dat`) are read for their organiser, links and attachments; the links
+are analysed like any other.
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| The invitation's organiser is not the sender | Medium | T1656 |
+| The invitation carries links | Low | T1566.002 |
+
+### Hidden text and filter evasion
+
+The HTML is read the way a mail client shows it. Text hidden with CSS
+(`display:none`, `visibility:hidden`, `mso-hide:all`, zero opacity, a zero or
+one-pixel font, zero height or width with `overflow:hidden`, inline or through
+a style-sheet class) is separated from the visible text, and both are kept:
+lures hide in preheaders.
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| Hidden text breaks up visible words (`Pay<span style="display:none">xq</span>Pal`) so filters read something else than the reader | High at two or more places, Medium for one | T1027 |
+| Words broken up with HTML tags one piece at a time | Medium | T1027 |
+| Hidden filler: text the reader never sees, unrelated to the visible text | Medium | T1027 |
+| Three or more zero-width characters in the body | Medium | T1027 |
+| Text split into single letters (`v e r i f y`) | Medium | T1027 |
+| Random mixed-case token in the subject (hash-busting) | Low | T1027 |
 
 ### Body and language
 
@@ -200,15 +294,46 @@ also with whitespace squeezed out so `v e r i f y` still matches.
 |---|---|---|
 | Advance-fee or extortion wording | High with 2+ phrases, else Medium | T1566 |
 | Credential, delivery, payment or prize wording, or Portuguese, Spanish, German or French lure wording | Medium with 2+ phrases, else Low | T1566 |
-| Callback phishing: a fake renewal or order plus a phone number | High with no links or from free-mail, else Medium | T1566, T1656 |
+| Callback phishing: a fake renewal or order plus a phone number | High with no links or from free-mail, else Medium | T1566.004, T1656 |
 | QR-code lure: "scan the code" plus an image | High with no links and an MFA or credential ask, else Medium | T1566.002 |
-| Free-mail sender asks for money or gift cards, with no links (BEC) | Medium | T1656 |
-| Text split into single letters to dodge keyword filters | Medium | T1027 |
-| Three or more zero-width characters hidden in the body | Medium | T1027 |
 | Greets the recipient by email address instead of by name | Low | T1566 |
-| Random mixed-case token in the subject (hash-busting) | Low | T1027 |
 | Recipient's address pasted into the subject | Low | T1566 |
-| No URLs or attachments at all (possible BEC or reply-chain lure) | Low | T1656 |
+
+The lure categories are credentials, delivery, payment, prizes, advance fee,
+extortion, callback, QR code, crypto-wallet recovery, casino bonuses, and a
+foreign-language set.
+
+### Money: wallets and business email compromise
+
+Bitcoin, Litecoin and TRON addresses are reported only when their checksum
+holds, so a random token is never taken for a wallet; Ethereum and Monero
+addresses are matched by shape. Wallets and callback numbers are exported as
+indicators.
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| Asks for payment to a crypto wallet (extortion, fake investment) | High | T1657 |
+| A wallet address appears in the message | Low | T1657 |
+| A lookalike of **your** domain asks for money (invoice, wire, gift cards) | High | T1656, T1657 |
+| A free-mail sender asks for money | Medium | T1656, T1657 |
+
+### Message structure
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| MIME parts nested deeper than 15 levels; 19,458 real messages never went past 4 | Medium | T1027 |
+| MIME nested deeper than a mail parser can follow: the body is read as plain text | High | T1027 |
+| More than 1,000 distinct links: the rest are counted, not checked, so a flood cannot bury the real link unnoticed | Medium | T1027 |
+
+### Your own lists and rules
+
+| Signal | Severity | ATT&CK |
+|---|---|---|
+| The sender, Reply-To, Return-Path or a link is on your block list (`--block`, or `block_domains` in the config file) | High | T1566 |
+| One of your YARA rules matches the raw message or any file PhishHawk opened (`--yara`) | Set by the rule's `severity` meta, High by default | Set by the rule's `mitre` meta |
+
+Allowed domains (`--allow`, `allow_domains`) are your partners: they are never
+reported as lookalikes and never exported as indicators.
 
 ### Carrier emails
 
@@ -257,9 +382,11 @@ Markdown table) is built for blocking. It is empty when the verdict is
 |---|---|
 | URL | Its host is not a well-known brand or a protected domain. Links on hosting and file-sharing platforms (Google Drive, Dropbox …) **are** exported, so the specific link can be blocked without blocking the platform. |
 | Domain | The sender, Reply-To, Return-Path or URL host, unless it is a well-known brand, a protected domain, a URL shortener, a free-mail provider, or a free-hosting or file-sharing platform |
-| IPv4 | A URL host that is an IP address, and the originating IP |
+| IPv4, IPv6 | A URL host that is an IP address, and the originating IP (exported to MISP as `ip-src`) |
 | Email address | The sender and Reply-To addresses, unless on a well-known brand or protected domain |
-| SHA-256 | Every attachment that is not an inline image, including files inside archives |
+| SHA-256 | Every attachment that is not an inline image, including files inside archives, disk images and documents |
+| Crypto wallet | Every wallet address found (exported to MISP as `btc` or `xmr`) |
+| Phone number | A number a callback phish asks the reader to ring |
 
 ## Knowledge base
 
@@ -268,12 +395,13 @@ The lists behind the checks live in `src/phishhawk/knowledge.py` and
 
 | List | Size | Used for |
 |---|---|---|
-| Brands | 66 | Lookalike and display-name checks |
-| Lure phrases | 9 categories in 5 languages | Language signals |
+| Brands | 134, plus any in your config file | Lookalike and display-name checks |
+| Lure phrases | 216 in 11 categories, 5 languages, plus any in your config file | Language signals |
 | High-abuse TLDs | 30 | TLD signal |
 | URL shorteners | 32 | Shortener signal, export policy |
 | Free-mail providers | 22 | BEC and organisation-name checks, export policy |
 | Risky extensions | 37 | Attachment signal |
+| Runnable and archive downloads | 22, 10 | Download-link signals |
 | Free hosting, tunnels, IPFS gateways, file sharing | 27, 8, 5, 15 | Hosting signals, export policy |
 
 To add to them, or to add a new check, see [CONTRIBUTING.md](../CONTRIBUTING.md).
