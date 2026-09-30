@@ -127,7 +127,7 @@ def _combo(raw: str, name: str) -> bool:
     return all(len(part) <= 2 or _made_of_words(part) for part in re.split(r"[^a-z]+", rest) if part)
 
 
-def _country_site(suffix: str) -> bool:
+def country_site(suffix: str) -> bool:
     """"co.uk", "com.br", "de": a brand's own country site, not a TLD swap."""
     last = suffix.rsplit(".", 1)[-1]
     return len(last) == 2 and last not in GENERIC_CCTLDS
@@ -178,7 +178,7 @@ def _compare_protected(raw: str, variants: set[str], target: str) -> str:
 
 def _compare_brand(raw: str, variants: set[str], brand: str, suffix: str) -> str:
     if raw == brand:  # "yahoo.co.uk" is Yahoo's; "slack.net" is somebody else's
-        return "" if _country_site(suffix) else "tld-swap"
+        return "" if country_site(suffix) else "tld-swap"
     if brand in TOKEN_ONLY_BRANDS:
         if brand in _tokens(raw):
             return "combosquat" if _combo(raw, brand) else ""

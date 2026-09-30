@@ -58,7 +58,11 @@
         "properties": {
           "severity": {"enum": ["high", "medium", "low"]},
           "label": {"type": "string"},
-          "techniques": {"type": "array", "items": {"type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"}}
+          "techniques": {"type": "array", "items": {"type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"}},
+          "family": {
+            "description": "The part of the message the signal is about. Signals from different families are independent evidence; empty for signals added outside PhishHawk's checks.",
+            "enum": ["", "auth", "sender", "link", "attachment", "content", "evasion", "intel", "policy"]
+          }
         }
       }
     },

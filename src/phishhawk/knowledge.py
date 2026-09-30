@@ -40,6 +40,20 @@ FREEMAIL = {
     "yandex.com", "zoho.com", "mail.ru", "rediffmail.com", "tutanota.com",
 }
 
+# The part of each free-mail domain people recognise: yahoo.com.tw and
+# hotmail.fr are free mail too, never a recipient's own organisation.
+FREEMAIL_LABELS = {domain.split(".", 1)[0] for domain in FREEMAIL}
+# The documentation domains of RFC 2606: nobody's mail comes from them, so no
+# domain is a lookalike of one. (PhishHawk's own tests use the .example TLD to
+# stand in for real organisations, so that stays an ordinary name.)
+RESERVED_DOMAINS = {"example.com", "example.net", "example.org"}
+
+
+def is_reserved_domain(domain: str) -> bool:
+    domain = (domain or "").lower().rstrip(".")
+    return domain in RESERVED_DOMAINS or domain.endswith(tuple("." + d for d in RESERVED_DOMAINS))
+
+
 # Brand keyword -> the registrable domains that brand genuinely sends from or
 # hosts login pages on. Used for display-name spoofing and lookalike checks.
 BRANDS: dict[str, set[str]] = {
@@ -181,6 +195,61 @@ BRANDS: dict[str, set[str]] = {
     "airtel": {"airtel.in", "airtel.com"},
     "unitedhealthcare": {"uhc.com", "unitedhealthcare.com"},
     "medicare": {"medicare.gov", "cms.gov"},
+    # 2.1: brands seen in phishing from 2022 to 2026. A brand's name on a
+    # country domain (lidl.de, ikea.fr) counts as its own; see heuristics.
+    "temu": {"temu.com"},
+    "shein": {"shein.com"},
+    "starbucks": {"starbucks.com"},
+    "aarp": {"aarp.org"},
+    "statefarm": {"statefarm.com"},
+    "geico": {"geico.com"},
+    "allstate": {"allstate.com"},
+    "carshield": {"carshield.com"},
+    "lowes": {"lowes.com"},
+    "homedepot": {"homedepot.com"},
+    "harborfreight": {"harborfreight.com"},
+    "samsclub": {"samsclub.com"},
+    "kohls": {"kohls.com"},
+    "bestbuy": {"bestbuy.com"},
+    "verizon": {"verizon.com", "verizonwireless.com", "vzw.com"},
+    "tmobile": {"t-mobile.com"},
+    "xfinity": {"xfinity.com", "comcast.com", "comcast.net"},
+    "ikea": {"ikea.com"},
+    "lidl": {"lidl.com"},
+    "rossmann": {"rossmann.de"},
+    "fressnapf": {"fressnapf.de"},
+    "deutschebahn": {"bahn.de", "deutschebahn.com", "db.de"},
+    "bancodobrasil": {"bb.com.br"},
+    "receitafederal": {"fazenda.gov.br"},
+    "mercadopago": {"mercadopago.com", "mercadopago.com.br", "mercadolivre.com.br", "mercadolibre.com"},
+    "livelo": {"livelo.com.br"},
+    "cryptocom": {"crypto.com"},
+    "exodus": {"exodus.com", "exodus.io"},
+    "electrum": {"electrum.org"},
+    "tether": {"tether.to"},
+    "socialsecurity": {"ssa.gov"},
+    "okx": {"okx.com"},
+    "bitget": {"bitget.com"},
+    "bitpanda": {"bitpanda.com"},
+    "n26": {"n26.com"},
+    "monzo": {"monzo.com"},
+    "klarna": {"klarna.com"},
+    "epicgames": {"epicgames.com"},
+    "playstation": {"playstation.com", "sony.com"},
+    "xbox": {"xbox.com", "microsoft.com"},
+    "bpost": {"bpost.be"},
+    "postnord": {"postnord.com"},
+    "anpost": {"anpost.ie", "anpost.com"},
+    "purolator": {"purolator.com"},
+    "indiapost": {"indiapost.gov.in"},
+    "australiapost": {"auspost.com.au"},
+    "dvla": {"dvla.gov.uk"},
+    "totalav": {"totalav.com"},
+    "avast": {"avast.com"},
+    "kaspersky": {"kaspersky.com"},
+    "bitdefender": {"bitdefender.com"},
+    "expedia": {"expedia.com", "expediamail.com"},
+    "ryanair": {"ryanair.com", "ryanairemail.com"},
 }
 
 # Brands whose name is a common word or a substring of unrelated words: these
@@ -188,7 +257,9 @@ BRANDS: dict[str, set[str]] = {
 TOKEN_ONLY_BRANDS = {"dhl", "ups", "nhs", "hsbc", "meta", "apple", "zoom", "slack", "chase", "amex",
                      "usps", "evri", "irs", "steam", "ripple", "sbi", "hdfc", "caixa", "itau", "telegram",
                      "ledger", "okta", "canva", "xero", "stripe", "venmo", "zelle", "kraken", "dpd", "adac",
-                     "ameli", "kotak", "airtel", "correos", "booking", "costco", "webex", "serasa", "roblox"}
+                     "ameli", "kotak", "airtel", "correos", "booking", "costco", "webex", "serasa", "roblox",
+                     "temu", "shein", "aarp", "geico", "lowes", "kohls", "ikea", "lidl", "exodus", "electrum",
+                     "tether", "okx", "n26", "monzo", "klarna", "xbox", "bpost", "dvla", "avast", "livelo"}
 
 # What a combosquat bolts onto a name: "outlooksecure", "paypal-billing-update",
 # "example-corp-payroll", "taxascorreios". A domain that merely contains a name
@@ -318,6 +389,24 @@ LURES: dict[str, tuple[str, ...]] = {
         "you are a winner", "you're a winner", "reward is waiting", "exclusive reward",
         "gutschein im wert von", "cartão presente", "tarjeta de regalo", "carte cadeau",
         "cadeaukaart", "wij verloten", "je hebt gewonnen", "hai vinto", "wir gratulieren",
+        "herzlichen glückwunsch",
+        "gewinnen sie",
+        "im wert von",
+        "gewinndaten",
+        "parabéns",
+        "você foi selecionado",
+        "você foi selecionada",
+        "félicitations",
+        "vous avez été sélectionné",
+        "gefeliciteerd",
+        "je bent geselecteerd",
+        "enhorabuena",
+        "has sido seleccionado",
+        "congratulazioni",
+        "sei stato selezionato",
+        "geef jouw mening",
+        "ihre meinung zählt",
+        "votre avis compte",
     ),
     # Wallet drainers: the seed phrase is the account, and nothing legitimate
     # asks for it. Measured on the tuning sets: 0 of 2,625 legitimate emails.
@@ -330,6 +419,13 @@ LURES: dict[str, tuple[str, ...]] = {
     "gambling": (
         "free spins", "freispiele", "giros gratis", "rodadas grátis", "tiradas gratis",
         "tours gratuits", "welcome bonus", "deposit bonus", "no deposit", "jackpot",
+        "keine einzahlung",
+        "willkommensbonus",
+        "bono de bienvenida",
+        "bônus de boas-vindas",
+        "bonus de bienvenue",
+        "gratis spins",
+        "free bet",
     ),
     "advance-fee": (
         "inheritance", "next of kin", "beneficiary", "dying bed", "million dollars", "million usd",
@@ -344,6 +440,21 @@ LURES: dict[str, tuple[str, ...]] = {
         "package is pending", "parcel is pending", "delivery failed", "unable to deliver",
         "customs fee", "redelivery", "reschedule delivery", "shipment on hold", "delivery attempt",
         "we tried to reach you", "we were unable to deliver", "wir haben versucht, sie zu erreichen",
+        "seu pedido está retido",
+        "encomenda retida",
+        "taxa de entrega",
+        "taxa alfandegária",
+        "zustellung fehlgeschlagen",
+        "zustellproblem",
+        "paket konnte nicht",
+        "zollgebühren",
+        "frais de livraison",
+        "frais de douane",
+        "gastos de envío",
+        "tasa de aduana",
+        "spese di spedizione",
+        "pakket kon niet",
+        "douanekosten",
     ),
     "payment": (
         "overdue invoice", "payment failed", "payment declined", "bank details have changed",
@@ -365,6 +476,18 @@ LURES: dict[str, tuple[str, ...]] = {
         "verifieer uw", "bevestig uw", "uw account", "uw pakket", "uw rekening",
         "il tuo account", "verifica il tuo", "il tuo pacco", "aggiorna i tuoi dati",
         "necesitamos su confirmación", "su paquete", "verifique su identidad",
+        "ist abgelaufen",
+        "bestätigen sie ihre",
+        "ihr konto wurde",
+        "sua conta será",
+        "seus pontos",
+        "pontos expiram",
+        "vos points",
+        "uw account wordt",
+        "su cuenta será",
+        "il tuo account è",
+        "regularize seu cpf",
+        "cpf irregular",
     ),
     "qr-code": (
         "scan the qr code", "scan the qr", "scan this qr", "scan the code below", "qr code below",
