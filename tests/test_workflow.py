@@ -281,6 +281,19 @@ def test_imap_login_failure_is_an_error_not_a_crash(monkeypatch, capsys):
     assert code == 3 and "login to h.example refused" in err
 
 
+def test_imap_server_hanging_up_is_an_error_not_a_crash(monkeypatch, capsys):
+    """A dropped connection during SEARCH raised imaplib's abort out of the
+    command, and would have ended a --watch run."""
+    class HangsUp(FakeImap):
+        def uid(self, command, *args):
+            raise imaplib.IMAP4.abort("socket error: EOF")
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", HangsUp)
+    monkeypatch.setenv("PHISHHAWK_IMAP_PASSWORD", "s3cret")
+    code, _, err = run(["imap", "--host", "h.example", "--user", "soc", "--offline", "-q", "--no-color"], capsys)
+    assert code == 3 and "socket error: EOF" in err
+
+
 def test_imap_folder_names_cannot_smuggle_commands(monkeypatch, capsys):
     """A CR/LF in --folder would end SELECT early and start a command of its
     own (DELETE, say). It is refused before anything reaches the server."""

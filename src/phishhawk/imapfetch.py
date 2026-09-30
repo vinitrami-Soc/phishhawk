@@ -91,10 +91,13 @@ def fetch(source: ImapSource, max_bytes: int, after_uid: int = 0) -> Iterator[tu
     folder = _quote(source.folder)  # checked before anything is sent
     connection = _connect(source)
     try:
-        status, _ = connection.select(folder, readonly=True)
-        if status != "OK":
-            raise ImapError("no folder %r on %s" % (source.folder, source.host))
-        status, data = connection.uid("SEARCH", *_criteria(source, after_uid))
+        try:
+            status, _ = connection.select(folder, readonly=True)
+            if status != "OK":
+                raise ImapError("no folder %r on %s" % (source.folder, source.host))
+            status, data = connection.uid("SEARCH", *_criteria(source, after_uid))
+        except (imaplib.IMAP4.error, OSError) as exc:  # the server hung up or refused: not a crash
+            raise ImapError("%s: %s" % (source.host, exc)) from exc
         if status != "OK":
             raise ImapError("search failed in %r" % source.folder)
         uids = [int(u) for u in (data[0] or b"").split() if u.isdigit()][-MAX_UIDS:]

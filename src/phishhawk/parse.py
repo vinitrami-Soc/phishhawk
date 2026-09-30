@@ -181,6 +181,32 @@ def mime_depth(msg: Message) -> int:
     return max((depth for _, depth in _walk_with_depth(msg)), default=0)
 
 
+MAX_ADDRESS_COLONS = 100  # email.utils recurses once per ':'; real address headers hold a handful
+
+
+def _parseaddr(value: str) -> tuple[str, str]:
+    """email.utils.parseaddr, which recursed once per ':' in the value: a
+    From: header with a few thousand colons raised RecursionError."""
+    if (value or "").count(":") <= MAX_ADDRESS_COLONS:
+        try:
+            return email.utils.parseaddr(value)
+        except (RecursionError, ValueError):
+            pass
+    match = EMAIL_RE.search(value or "")
+    if not match:
+        return "", ""
+    return " ".join(value[:match.start()].replace("<", " ").replace('"', " ").split())[:200], match.group(0)
+
+
+def _getaddresses(value: str) -> list[tuple[str, str]]:
+    if (value or "").count(":") <= MAX_ADDRESS_COLONS:
+        try:
+            return email.utils.getaddresses([value])
+        except (RecursionError, ValueError):
+            pass
+    return [("", address) for address in EMAIL_RE.findall(value or "")[:500]]
+
+
 def _decode_text(part: Message) -> str:
     getter = getattr(part, "get_content", None)  # EmailMessage; compat32 parts lack it
     if getter is not None:
@@ -260,7 +286,7 @@ def _unwrap(msg: Message, analysis: Analysis) -> tuple[Message, list[Message]]:
         attached = _attached_messages(msg)
         if not attached:
             break
-        display, address = email.utils.parseaddr(header(msg, "From"))
+        display, address = _parseaddr(header(msg, "From"))
         layers.append({"from": address.lower(), "display": display,
                        "subject": header(msg, "Subject"), "date": header(msg, "Date"),
                        "attached_messages": len(attached)})
@@ -444,16 +470,16 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
     analysis.message_id = header(msg, "Message-ID")
     analysis.to = header(msg, "To")
 
-    display, address = email.utils.parseaddr(header(msg, "From"))
+    display, address = _parseaddr(header(msg, "From"))
     analysis.from_display = display
     analysis.from_address = address.strip("\"' ").lower()
     analysis.from_domain = domain_of_address(address)
 
-    _, reply_to = email.utils.parseaddr(header(msg, "Reply-To"))
+    _, reply_to = _parseaddr(header(msg, "Reply-To"))
     analysis.reply_to = reply_to.lower()
     analysis.reply_to_domain = domain_of_address(reply_to)
 
-    _, return_path = email.utils.parseaddr(header(msg, "Return-Path"))
+    _, return_path = _parseaddr(header(msg, "Return-Path"))
     analysis.return_path = return_path.lower()
     analysis.return_path_domain = domain_of_address(return_path)
 
@@ -479,7 +505,7 @@ def _protected_domains(msg: Message, analysis: Analysis, explicit, auto: bool) -
         add(domain.strip().lower())
     if auto:
         for name in ("To", "Cc", "Delivered-To"):
-            for _, address in email.utils.getaddresses([header(msg, name)]):
+            for _, address in _getaddresses(header(msg, name)):
                 add(domain_of_address(address))
         if analysis.reported_by:
             add(domain_of_address(analysis.reported_by.get("from", "")))
@@ -751,7 +777,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
     if _FORWARD_SUBJECT.match(analysis.subject or ""):
         match = _INLINE_FROM.search(analysis.body_text[:6000])
         if match:
-            display, address = email.utils.parseaddr(match.group("sender"))
+            display, address = _parseaddr(match.group("sender"))
             if "@" in address:
                 analysis.forwarded_from = {"display": display, "address": address.lower(),
                                            "domain": domain_of_address(address)}

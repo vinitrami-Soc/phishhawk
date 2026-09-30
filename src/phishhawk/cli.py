@@ -55,12 +55,11 @@ examples:
   phishhawk suspicious.eml                       the same: scan is the default command
   phishhawk scan reported/ --quiet               every .eml, .msg and .mbox in a folder
   phishhawk scan "Invoice overdue.msg"           an Outlook message, as saved or reported
-  cat suspicious.eml | phishhawk scan - | phishhawk scan -          read the message from stdin
+  cat suspicious.eml | phishhawk scan -          read the message from stdin
   phishhawk scan suspicious.eml --offline        nothing leaves this machine
   phishhawk scan mail.eml --html r.html --stix iocs.json --md ticket.md
   phishhawk scan mail.eml --json - | jq .verdict pure JSON on stdout, notices on stderr
   phishhawk scan mail.eml --protect example.com  flag lookalikes of your own domain
-
   phishhawk scan mail.eml --misp event.json      a MISP event with ATT&CK galaxy tags
   phishhawk scan reported/ --fail-on likely      exit 1 only for likely phishing or worse
 

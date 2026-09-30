@@ -532,3 +532,14 @@ def test_thousands_of_headers_are_cheap():
     a = triage_bytes(received + results + b"From: a@b.top\n\nhi")
     assert time.time() - started < 3
     assert a.received_hops == 5000 and len(a.hops) == 30 and len(a.forged_auth) <= 20
+
+
+def test_address_headers_full_of_colons():
+    """email.utils.parseaddr recursed once per ':' (group syntax), so a From:
+    header with thousands of them raised RecursionError. The address is
+    still recovered, and still checked."""
+    raw = (b'From: "Pay' + b":x" * 5000 + b'" <billing@paypa1-secure.top>\nTo: a' + b":b" * 5000
+           + b" <me@corp.example>\nSubject: hi\n\nhttps://paypa1-secure.top/login\n")
+    a = triage_bytes(raw)
+    assert a.from_address == "billing@paypa1-secure.top"
+    assert any("lookalike" in s.label for s in a.signals)
