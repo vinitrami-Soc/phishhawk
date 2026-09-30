@@ -191,3 +191,22 @@ def test_urlscan_submissions_carry_no_recipient_addresses():
     assert b64 not in redact_recipients("https://kit.top/#" + b64, a)
     assert redact_recipients("https://kit.top/l?cc=boss@acme-labs.example", a).endswith("user@example.com")
     assert redact_recipients("https://kit.top/l?x=crook@evil.top", a).endswith("crook@evil.top")
+
+
+def test_a_malformed_header_cannot_erase_the_authentication_results():
+    # Seen in real phishing: an unfilled kit template in Message-Id made the
+    # header parser fail, and with it every SPF/DKIM/DMARC result.
+    raw = (b"Received: from x.example by mx.acme-labs.example; Tue, 29 Sep 2026 10:00:00 +0000\r\n"
+           b"Authentication-Results: spf=permerror smtp.mailfrom=x.example; dkim=none; dmarc=fail\r\n"
+           b"Message-Id: < [an10]. [an6].[anl12] [an11]@x.example>\r\n"
+           b"From: a@x.example\r\nSubject: hi\r\n\r\nbody\r\n")
+    a = triage_bytes(raw)
+    assert a.auth["dmarc"] == "fail" and a.verdict != "NO STRONG INDICATORS"
+
+
+def test_base64_encoded_authentication_results_are_read():
+    # Microsoft 365 writes them as RFC 2047 encoded words.
+    encoded = base64.b64encode(b"spf=temperror smtp.mailfrom=x.example; dkim=fail; dmarc=fail").decode()
+    raw = ("Received: from x.example by mx.acme-labs.example; Tue, 29 Sep 2026 10:00:00 +0000\r\n"
+           "Authentication-Results: =?utf-8?B?%s?=\r\nFrom: a@x.example\r\nSubject: hi\r\n\r\nbody\r\n" % encoded)
+    assert triage_bytes(raw.encode()).auth == {"spf": "temperror", "dkim": "fail", "dmarc": "fail"}

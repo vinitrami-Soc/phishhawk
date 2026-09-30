@@ -89,13 +89,14 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 
 | Area | What PhishHawk checks |
 |---|---|
-| **Reported mail** | A phish forwarded as an attachment is unwrapped, up to three layers deep. For an ordinary inline forward, the original `From:` is recovered from the quoted header block in English, Portuguese, Spanish, German, French and Italian. |
-| **Sender** | Reply-To and Return-Path diversion; a brand in the display name that the domain does not back up, even when written as `Trust-Wallet`; organisation-style names on free-mail addresses; SPF, DKIM and DMARC results. |
+| **Reported mail** | A phish forwarded as an attachment is unwrapped, up to three layers deep, and every layer is analysed too, so a phish cannot hide behind a harmless attached message. For an ordinary inline forward, the original `From:` is recovered from the quoted header block in English, Portuguese, Spanish, German, French and Italian. Reads `.eml` files, folders and `.mbox` exports. |
+| **Sender** | Reply-To and Return-Path diversion; a brand in the display name that the domain does not back up, even when written as `Trust-Wallet`; organisation-style names on free-mail addresses; SPF, DKIM and DMARC results, believed only from your own mail server, with a pass forged further down flagged. |
 | **Lookalike domains** | Homoglyphs (`micros0ft`, Cyrillic `а`, `rn` for `m`), punycode, typosquats, combosquats, TLD swaps and brands used as subdomains. Checked against 66 brands and **your own domains**, which are read from the recipients automatically. |
 | **Links** | Taken from text, HTML `href`/`src`, form actions, `meta refresh`, JavaScript redirects, headers and PDF annotations, including compressed streams. Microsoft Safe Links, Proofpoint and Barracuda rewrites are unwrapped, and Google, Bing, Facebook, YouTube and LinkedIn redirectors are decoded. Also flagged: link text that shows a different domain from the real target, raw IPs, `@` tricks, shorteners, free hosting, tunnels, IPFS, file-sharing drops and credential-harvesting paths. |
 | **Attachments** | Every file is typed by its magic bytes, so a `.pdf` that is really HTML is caught as masquerading. Also flagged: double extensions, right-to-left-override names and risky types. ZIPs are opened in memory with zip-bomb caps; encrypted archives and VBA macro projects are flagged. |
 | **HTML attachments** | Credential forms and where they post, smuggling code (`atob`, `Blob`, `createObjectURL`), redirects, and base64 strings that decode to URLs. |
-| **Language** | Lure phrases in five languages (credentials, delivery, payment, prizes, advance fee, extortion); callback phishing (a fake renewal plus a phone number); QR-code lures; payment requests from free-mail accounts (BEC); letter-spaced text (`v e r i f y`); zero-width characters; hash-busting tokens; the recipient's address pasted into the subject or greeting. |
+| **QR codes** *(optional extra)* | Decoded in image attachments, inline images, images embedded in the HTML, images inside PDFs, and codes drawn with table cells or block characters. The link inside is analysed like any other; a code leading somewhere suspect, or sent with a credential or MFA ask, is high. |
+| **Language** | Lure phrases in five languages (credentials, delivery, payment, prizes, advance fee, extortion); callback phishing (a fake renewal plus a phone number); QR-code lure wording; payment requests from free-mail accounts (BEC); letter-spaced text (`v e r i f y`); zero-width characters; hash-busting tokens; the recipient's address pasted into the subject or greeting. |
 | **Reputation** *(optional)* | VirusTotal for URLs and file hashes, urlscan.io for hosts, RDAP for domain age, AbuseIPDB for the sending IP. All cached, rate-limited and switched off by `--offline`. |
 
 The full list of signals, their severities and the ATT&CK techniques behind
@@ -167,10 +168,14 @@ those. `./install.sh --uninstall` removes it again.
 ### Option 2: pipx or pip
 
 ```bash
-pipx install git+https://github.com/vinitrami-Soc/phishhawk.git
+pipx install "phishhawk[qr] @ git+https://github.com/vinitrami-Soc/phishhawk.git"
 # or, inside a virtualenv:
-pip install git+https://github.com/vinitrami-Soc/phishhawk.git
+pip install "phishhawk[qr] @ git+https://github.com/vinitrami-Soc/phishhawk.git"
 ```
+
+The `[qr]` extra adds QR-code decoding (zxing-cpp and Pillow, both with ready-made
+wheels for Linux, macOS and Windows). Leave it out for the smallest install:
+everything else works, and QR-code lure wording is still flagged.
 
 ### Option 3: Docker
 
@@ -486,10 +491,11 @@ lists only the techniques seen in that message, each linked to the signals behin
 | AbuseIPDB | `ABUSEIPDB_API_KEY` | The IP address that sent the mail | On when a key is set |
 
 - **Never sent anywhere:** message bodies, attachments, recipient addresses,
-  your protected domains and well-known brand domains.
+  your protected domains and well-known brand domains. A URL submitted with
+  `--urlscan-submit` has your recipients' addresses replaced first.
 - `--offline` sends nothing at all. `--no-<provider>` switches off one service.
-- Answers are cached in SQLite for 24 hours; errors are never cached.
-  `phishhawk cache clear` empties the cache.
+- Answers are cached in SQLite for 24 hours, in a file only you can read;
+  errors are never cached. `phishhawk cache clear` empties the cache.
 - VirusTotal is paced to the free tier's 4 requests a minute and capped at 20 per
   message, with the most suspicious indicators looked up first.
 
@@ -565,8 +571,8 @@ use the Docker image with `--network none` and a read-only mount.
 ## Limitations
 
 - Outlook `.msg` files are not read; convert them to `.eml` first.
-- QR codes are recognised from the lure wording, not decoded, so the URL inside
-  one is not extracted.
+- QR codes are decoded only with the `[qr]` extra, and only from images carried
+  in the message: an image on a remote server is never fetched.
 - Only ZIP archives are opened. RAR, 7z and ISO files are typed and flagged but not unpacked.
 - The registered-domain logic approximates the public suffix list rather than
   shipping it.
@@ -625,7 +631,7 @@ explains how to add a detection.
 ## Roadmap
 
 - [ ] Read Outlook `.msg` files directly
-- [ ] Decode QR codes in images and PDFs
+- [x] Decode QR codes in images, PDFs and drawn tables (1.3.0)
 - [ ] Open RAR, 7z and ISO containers
 - [ ] Pull reported mail straight from Microsoft 365 or Gmail through their APIs
 - [ ] Optional full public suffix list

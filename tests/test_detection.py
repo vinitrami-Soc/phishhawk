@@ -280,3 +280,24 @@ def test_tld_swap_is_medium_not_high():
     a = triage_bytes(build_eml(sender="<ceo@example-corp.com>", to="me@example-corp.co.uk"))
     swap = next(s for s in a.signals if "tld-swap" in s.label)
     assert swap.severity == "medium"
+
+
+# ------------------------------------------------ measured on phishing_pot --
+
+def test_a_seed_phrase_ask_is_crypto_phishing():
+    one = triage_bytes(build_eml(text="Keep your recovery phrase safe."))
+    assert [s.severity for s in one.signals if s.label.startswith("crypto lure")] == ["medium"]
+    two = triage_bytes(build_eml(text="Verify your wallet: enter your 12-word recovery phrase today."))
+    assert [s.severity for s in two.signals if s.label.startswith("crypto lure")] == ["high"]
+
+
+def test_casino_lures_count_like_prize_lures():
+    a = triage_bytes(build_eml(text="200 Freispiele und ein welcome bonus warten auf Sie."))
+    assert [s.severity for s in a.signals if s.label.startswith("gambling lure")] == ["medium"]
+    plain = triage_bytes(build_eml(text="Our conference dinner is at the casino hotel."))
+    assert not any(s.label.startswith("gambling lure") for s in plain.signals)
+
+
+def test_ledger_in_the_display_name_needs_ledger_com():
+    a = triage_bytes(build_eml(sender='"Ledger Support" <support@ledger-secure-update.example>'))
+    assert has(a, "display name claims 'ledger'")

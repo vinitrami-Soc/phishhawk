@@ -70,6 +70,7 @@ BRANDS: dict[str, set[str]] = {
     "barclays": {"barclays.co.uk", "barclays.com"},
     "hsbc": {"hsbc.co.uk", "hsbc.com"},
     "lloyds": {"lloydsbank.com", "lloydsbank.co.uk"},
+    "ledger": {"ledger.com"},
     "natwest": {"natwest.com"},
     "santander": {"santander.co.uk", "santander.com"},
     "dropbox": {"dropbox.com", "dropboxmail.com"},
@@ -116,7 +117,8 @@ BRANDS: dict[str, set[str]] = {
 # Brands whose name is a common word or a substring of unrelated words: these
 # only match as a whole hyphen/dot token ("dhl-parcel.top"), never inside one.
 TOKEN_ONLY_BRANDS = {"dhl", "ups", "nhs", "hsbc", "meta", "apple", "zoom", "slack", "chase", "amex",
-                     "usps", "evri", "irs", "steam", "ripple", "sbi", "hdfc", "caixa", "itau", "telegram"}
+                     "usps", "evri", "irs", "steam", "ripple", "sbi", "hdfc", "caixa", "itau", "telegram",
+                     "ledger"}
 
 # What a combosquat bolts onto a name: "outlooksecure", "paypal-billing-update",
 # "example-corp-payroll", "taxascorreios". A domain that merely contains a name
@@ -221,9 +223,21 @@ LURES: dict[str, tuple[str, ...]] = {
     ),
     "prize": (
         "you have been selected", "you've been selected", "you have won", "you've won",
-        "claim your", "free spins", "airdrop", "giveaway", "lottery", "jackpot", "gift card",
+        "claim your", "free spins", "giveaway", "lottery", "jackpot", "gift card",
         "you are a winner", "you're a winner", "reward is waiting", "exclusive reward",
         "gutschein im wert von", "cartão presente", "tarjeta de regalo", "carte cadeau",
+    ),
+    # Wallet drainers: the seed phrase is the account, and nothing legitimate
+    # asks for it. Measured on the tuning sets: 0 of 2,625 legitimate emails.
+    "crypto": (
+        "seed phrase", "recovery phrase", "secret phrase", "secret recovery phrase", "mnemonic phrase",
+        "12-word", "24-word", "airdrop", "claim your tokens", "connect your wallet", "validate your wallet",
+        "synchronize your wallet", "sync your wallet", "verify your wallet", "wallet verification",
+        "wallet will be", "your wallet has been",
+    ),
+    "gambling": (
+        "free spins", "freispiele", "giros gratis", "rodadas grátis", "tiradas gratis",
+        "tours gratuits", "welcome bonus", "deposit bonus", "no deposit", "jackpot",
     ),
     "advance-fee": (
         "inheritance", "next of kin", "beneficiary", "dying bed", "million dollars", "million usd",

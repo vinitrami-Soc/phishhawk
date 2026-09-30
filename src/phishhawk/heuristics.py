@@ -432,7 +432,7 @@ def _language(a: Analysis) -> None:
     for category, found in hits.items():
         if category in ("callback", "qr-code"):
             continue
-        if category in SEVERE_LURES:
+        if category in SEVERE_LURES or category == "crypto":
             severity = "high" if len(found) >= 2 else "medium"
         elif category == "prize":
             severity = "medium" if len(found) >= 2 else "low"

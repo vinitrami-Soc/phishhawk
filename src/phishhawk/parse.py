@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import binascii
 import email
+import email.header
 import email.policy
 import email.utils
 import hashlib
@@ -229,6 +230,17 @@ def _unwrap(msg: Message, analysis: Analysis) -> tuple[Message, list[Message]]:
 _AUTH_MECHANISMS = ("spf", "dkim", "dmarc", "compauth")
 
 
+def _header_text(msg: Message, name: str, value: str) -> str:
+    try:
+        text = str(msg.policy.header_fetch_parse(name, value))
+    except Exception:
+        try:
+            text = str(email.header.make_header(email.header.decode_header(value)))
+        except Exception:
+            text = str(value)
+    return " ".join(text.split())
+
+
 def _authserv_id(value: str) -> str:
     return value.split(";", 1)[0].strip().lower()
 
@@ -243,8 +255,11 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str
     sender, and "dmarc=pass" is what an attacker writes there. With
     ``trusted`` authserv-ids, only headers from those servers count at all.
     """
+    # Headers are decoded one at a time: one malformed header elsewhere in the
+    # message (a phisher's trick or plain sloppiness) must not wipe out the
+    # results, and Microsoft 365 base64-encodes them (=?utf-8?B?...?=).
     try:
-        items = [(str(name).lower(), " ".join(str(value).split())) for name, value in msg.items()]
+        items = [(str(name).lower(), _header_text(msg, name, value)) for name, value in msg.raw_items()]
     except Exception:
         items = []
     positions = [i for i, (name, _) in enumerate(items) if name == "authentication-results"]
