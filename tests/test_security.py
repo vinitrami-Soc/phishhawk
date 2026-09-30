@@ -1,6 +1,7 @@
 """PhishHawk attacked the way a bug-bounty hunter would: every test here was
-an exploit against 1.2.0 that now fails. Input is attacker-controlled, and so
-is anything a report shows from it."""
+an exploit against an earlier build (1.2.0, or the 2.0 readers before release)
+that now fails. Input is attacker-controlled, and so is anything a report
+shows from it."""
 
 import base64
 import os

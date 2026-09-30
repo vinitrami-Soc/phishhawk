@@ -14,8 +14,11 @@ from urllib.parse import parse_qs, unquote, urlsplit
 IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 # Bounded quantifiers (RFC 5321: local part <= 64, labels <= 63) keep every match
 # attempt short. Unbounded, a 100 KB base64 image in an HTML body made this
-# regex quadratic: one real phishing sample took 60 seconds to parse.
-EMAIL_RE = re.compile(r"[\w.!#$%&'*+/=?^`{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,8}")
+# regex quadratic: one real phishing sample took 60 seconds to parse. The
+# lookbehind starts a match only where a run of address characters starts, so
+# a 2 MB base64 body is tried once per run, not 64 times per character (1.3 s).
+EMAIL_RE = re.compile(r"(?<![\w.!#$%&'*+/=?^`{|}~-])[\w.!#$%&'*+/=?^`{|}~-]{1,64}"
+                      r"@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,8}")
 MAX_URL_LENGTH = 8192  # a 1.4 MB "link" of NUL bytes once took seconds to show in each report
 URL_RE = re.compile(r"(?:(?:https?|ftp)://|www\.)[^\s<>\"'`\\\u00a0\x00-\x1f\x7f]{1,%d}" % MAX_URL_LENGTH, re.I)
 DOMAINISH_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,8}[a-z]{2,24}\b", re.I)

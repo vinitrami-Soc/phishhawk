@@ -171,3 +171,37 @@ def test_the_quishing_sample_is_caught_through_its_pdf():
     assert [code["where"] for code in a.qr_codes] == ["MFA_Enrolment_Notice.pdf"]
     qr_signals = [s for s in a.signals if s.label.startswith("QR code in MFA_Enrolment_Notice.pdf")]
     assert [s.severity for s in qr_signals] == ["high"]
+
+
+def test_predictor_images_described_the_way_real_writers_do_are_fast():
+    """`/Filter/FlateDecode/DecodeParms<</Predictor 15 ...>>` was read as five
+    filters, so every such image was decoded a byte at a time in Python: one
+    real phish with four scanned letterheads took 4 s. The QR code on the
+    same page is still found."""
+    described = b"<</Filter/FlateDecode/DecodeParms<</Predictor 15/Columns 9>>/Length 5>>"
+    assert qr._filters(described) == [b"FlateDecode"]
+    assert qr._filters(b"<</Filter [/FlateDecode /DCTDecode]>>") == [b"FlateDecode", b"DCTDecode"]
+    letterhead = Image.new("RGB", (2481, 390), (250, 250, 250))
+    code = Image.open(io.BytesIO(png())).convert("RGB")
+    letterhead.paste(code, (40, 40))
+    raw = letterhead.tobytes()
+    rows = b"".join(b"\x00" + raw[y * 2481 * 3:(y + 1) * 2481 * 3] for y in range(390))
+    entries = b"/Width 2481 /Height 390 /ColorSpace/DeviceRGB /BitsPerComponent 8 " \
+              b"/Filter/FlateDecode/DecodeParms<</Predictor 15/Columns 2481/Colors 3>>"
+    document = pdf(zlib.compress(rows), entries)
+    started = time.perf_counter()
+    assert qr.decode_pdf(document) == [LINK]
+    assert time.perf_counter() - started < 1.5
+
+
+def test_email_address_search_is_linear_in_base64_bodies():
+    import os
+
+    from phishhawk.extract import EMAIL_RE
+
+    blob = base64.b64encode(os.urandom(1_500_000)).decode()
+    started = time.perf_counter()
+    EMAIL_RE.findall(blob + " reply to billing@evil-pay.top")
+    assert time.perf_counter() - started < 0.5
+    found = EMAIL_RE.findall("x=foo@bar.com, 'q'@x.io; mailto:user@x.com")
+    assert found == ["x=foo@bar.com", "'q'@x.io", "user@x.com"]

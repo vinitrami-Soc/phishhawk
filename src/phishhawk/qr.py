@@ -26,6 +26,7 @@ import re
 import zlib
 from collections.abc import Iterator
 
+MAX_PYTHON_PREDICTOR = 1_000_000  # bytes; larger predictor images need the Pillow path
 MAX_PIXELS = 25_000_000       # refuse larger images: decompression-bomb guard
 MAX_SIDE = 2500               # larger images are scaled down before decoding
 MAX_IMAGES_PER_PDF = 30
@@ -175,6 +176,7 @@ def decode_text_blocks(text: str) -> list[str]:
 
 _STREAM_START_RE = re.compile(rb">>\s*stream\r?\n")
 _NAME_RE = re.compile(rb"/([A-Za-z0-9]+)")
+_FILTER_RE = re.compile(rb"/Filter\s*(\[[^\]]{0,200}\]|/[^\s/<>\[\]()]{1,40})")
 
 
 def _dictionary_before(data: bytes, end: int) -> bytes:
@@ -218,6 +220,14 @@ def _png(compressed: bytes, width: int, height: int, colors: int, bpc: int):
     img = image.open(io.BytesIO(png))
     img.load()
     return img
+
+
+def _filters(dictionary: bytes) -> list[bytes]:
+    """The names in /Filter only: /FlateDecode, or [/A /B]. Reading on past
+    it took /DecodeParms and /Predictor for filters, so ordinary predictor
+    images missed the fast path and were decoded a byte at a time (4 s)."""
+    match = _FILTER_RE.search(dictionary)
+    return _NAME_RE.findall(match.group(1)) if match else []
 
 
 def _undo_png_predictor(raw: bytes, columns: int, colors: int, bpc: int) -> bytes:
@@ -292,7 +302,7 @@ def _pdf_images(data: bytes) -> Iterator[object]:
         if end < 0:
             continue
         stream = data[start:end]
-        filters = _NAME_RE.findall(dictionary.split(b"/Filter", 1)[1][:80]) if b"/Filter" in dictionary else []
+        filters = _filters(dictionary)
         width, height = _int(dictionary, b"Width"), _int(dictionary, b"Height")
         if not width or not height or width * height > MAX_PIXELS:
             continue
@@ -320,6 +330,8 @@ def _pdf_images(data: bytes) -> Iterator[object]:
             colors = 1 if bpc == 1 else max(1, len(stream) // (width * height)) if predictor < 10 else \
                 _int(dictionary, b"Colors", 1)
             if predictor >= 10:
+                if len(stream) > MAX_PYTHON_PREDICTOR:  # a byte at a time in Python: only for small images
+                    continue
                 stream = _undo_png_predictor(stream, _int(dictionary, b"Columns", width), colors, bpc)
             if bpc == 1:
                 yield image.frombytes("1", (width, height), stream[:((width + 7) // 8) * height])
