@@ -80,10 +80,12 @@ class Inspector:
 
     def __init__(self, analysis: Analysis, add_url: Callable[[str, str], None], scan: Any,
                  inspect_html: Callable[[FileIoc, bytes], None], passwords: list[str],
-                 file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None) -> None:
+                 file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None,
+                 inspect_message: Callable[[Inspector, FileIoc, bytes, int], None] | None = None) -> None:
         self.analysis, self.add_url, self.scan = analysis, add_url, scan
         self.file_hook = file_hook
         self.inspect_html = inspect_html
+        self.inspect_message = inspect_message
         self.passwords = passwords
         self.files = 0
         self.bytes = 0
@@ -165,6 +167,8 @@ class Inspector:
             self.scan.image(data, ioc.filename, ioc)
         if ioc.content_type == "message/rfc822" or extension in (".eml", ".msg"):
             ioc.notes.append("attached email message")
+            if self.inspect_message is not None:  # its links and files count too
+                self.inspect_message(self, ioc, data, depth)
 
     # -------------------------------------------------------------- readers --
     def _office(self, ioc: FileIoc, found: documents.DocFindings, depth: int) -> None:

@@ -42,6 +42,8 @@ class ImapSource:
 
 
 def _quote(folder: str) -> str:
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in folder):  # a CR or LF would end the command early
+        raise ImapError("folder name %r has control characters" % folder)
     return '"%s"' % folder.replace("\\", "\\\\").replace('"', '\\"')
 
 
@@ -86,9 +88,10 @@ _SIZE_RE = re.compile(rb"RFC822\.SIZE (\d+)")
 
 def fetch(source: ImapSource, max_bytes: int, after_uid: int = 0) -> Iterator[tuple[str, int, bytes | Exception]]:
     """(label, uid, raw message or why it was skipped), newest last."""
+    folder = _quote(source.folder)  # checked before anything is sent
     connection = _connect(source)
     try:
-        status, _ = connection.select(_quote(source.folder), readonly=True)
+        status, _ = connection.select(folder, readonly=True)
         if status != "OK":
             raise ImapError("no folder %r on %s" % (source.folder, source.host))
         status, data = connection.uid("SEARCH", *_criteria(source, after_uid))

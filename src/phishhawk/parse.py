@@ -20,6 +20,7 @@ import base64
 import binascii
 import email
 import email.header
+import email.parser
 import email.policy
 import email.utils
 import html as html_module
@@ -49,9 +50,14 @@ from .extract import (
 from .formats.msg import MsgError, is_msg, msg_to_message
 from .indicators import find_wallets
 from .knowledge import FREEMAIL
-from .models import Analysis, FileIoc, UrlIoc
+from .mailpolicy import POLICY
+from .models import MIME_TOO_DEEP, Analysis, FileIoc, UrlIoc
 
 MAX_UNWRAP_DEPTH = 3
+MAX_URLS = 1000  # distinct links kept per message; the rest are counted
+MAX_URL_CONTEXTS = 20  # sources and anchor texts kept per link
+MAX_RECEIVED = 1000
+MAX_ATTACHED_TEXT = 2_000_000  # characters read from each body of an attached email
 BODY_TEXT_LIMIT = 30_000  # characters of visible text kept for lure matching
 _FORWARD_SUBJECT = re.compile(r"^\s*(?:fwd?|fw|enc|rv|wg|tr|i)\s*:", re.I)
 # "From: X <a@b> Sent: ..." in the forwarding languages SOC mailboxes see most.
@@ -77,9 +83,27 @@ def load_message(data: bytes) -> Message:
     if is_msg(data):
         try:
             return msg_to_message(data)
-        except (MsgError, ValueError, LookupError):
+        except (MsgError, ValueError, LookupError, RecursionError):
             pass  # a damaged .msg: whatever the email parser makes of it
-    return email.message_from_bytes(data, policy=email.policy.default)
+    try:
+        return email.message_from_bytes(data, policy=POLICY)
+    except RecursionError:
+        return _flattened(data)
+
+
+def _flattened(data: bytes) -> Message:
+    """MIME nested deeper than Python's parser can follow (about a thousand
+    levels, which no mail client writes, and which would otherwise hide the
+    whole body): the headers, with the entire body read as plain text so its
+    links still count."""
+    message = email.parser.BytesParser(policy=POLICY).parsebytes(data, headersonly=True)
+    body = message.get_payload()
+    for name in ("Content-Type", "Content-Transfer-Encoding"):
+        del message[name]
+    message["Content-Type"] = "text/plain; charset=utf-8"
+    message.set_payload(body if isinstance(body, str) else "")
+    message.__dict__["_flattened"] = True
+    return message
 
 
 def parse_file(path: str, unwrap: bool = True, protected: list[str] | tuple = (),
@@ -100,13 +124,17 @@ def parse_bytes(data: bytes, path: str = "<memory>", unwrap: bool = True,
 def parse_message(message: Message, path: str = "<memory>", unwrap: bool = True,
                   protected: list[str] | tuple = (), auto_protect: bool = True,
                   qr: bool = True, trusted_authserv: tuple[str, ...] = (),
-                  file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None) -> Analysis:
+                  file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None,
+                  open_attached: bool | None = None) -> Analysis:
+    """`open_attached`: also check the links and files of attached emails
+    that are not unwrapped (by default, whenever unwrapping is on: with it
+    off, the covering note alone is analysed)."""
     analysis = Analysis(path=path)
     carriers: list[Message] = []
     if unwrap:
         message, carriers = _unwrap(message, analysis)
     _read_headers(message, analysis, tuple(t.lower() for t in trusted_authserv))
-    _read_content(message, analysis, qr, file_hook)
+    _read_content(message, analysis, qr, file_hook, unwrap if open_attached is None else open_attached)
     analysis.protected_domains = _protected_domains(message, analysis, protected, auto_protect)
     analysis.__dict__["_carriers"] = carriers  # the unwrapped layers, re-checked by the pipeline; not exported
     return analysis
@@ -130,14 +158,27 @@ def header(msg: Message, name: str) -> str:
 
 
 def _walk_shallow(msg: Message) -> Iterator[Message]:
-    """Message.walk() that does not descend into attached messages."""
-    yield msg
-    if msg.get_content_maintype() == "multipart":
-        payload = msg.get_payload()
-        if isinstance(payload, list):
-            for part in payload:
-                if isinstance(part, Message):
-                    yield from _walk_shallow(part)
+    """Message.walk() that does not descend into attached messages, without
+    recursion: MIME can be nested hundreds of levels deep."""
+    for part, _ in _walk_with_depth(msg):
+        yield part
+
+
+def _walk_with_depth(msg: Message) -> Iterator[tuple[Message, int]]:
+    stack = [(msg, 0)]
+    while stack:
+        part, depth = stack.pop()
+        yield part, depth
+        if part.get_content_maintype() == "multipart":
+            payload = part.get_payload()
+            if isinstance(payload, list):
+                stack.extend((child, depth + 1) for child in reversed(payload) if isinstance(child, Message))
+
+
+def mime_depth(msg: Message) -> int:
+    if msg.__dict__.get("_flattened"):
+        return MIME_TOO_DEEP
+    return max((depth for _, depth in _walk_with_depth(msg)), default=0)
 
 
 def _decode_text(part: Message) -> str:
@@ -153,7 +194,7 @@ def _decode_text(part: Message) -> str:
     charset = part.get_content_charset() or "utf-8"
     try:
         return payload.decode(charset, errors="replace")
-    except LookupError:
+    except (LookupError, ValueError):  # unknown charset, or a name with a NUL in it
         return payload.decode("utf-8", errors="replace")
 
 
@@ -190,7 +231,11 @@ def _rfc822_payload(part: Message) -> Message | None:
     return load_message(raw) if isinstance(raw, bytes) and raw else None
 
 
-def _attached_messages(msg: Message) -> list[Message]:
+def _attached_messages(msg: Message) -> list[tuple[Message, Message]]:
+    """(part, message) for every email attached to `msg`."""
+    if msg.get_content_type() == "message/rfc822":  # the whole message is another message
+        inner = _rfc822_payload(msg)
+        return [(msg, inner)] if inner is not None else []
     found = []
     for part in _walk_shallow(msg):
         if part is msg:
@@ -204,7 +249,7 @@ def _attached_messages(msg: Message) -> list[Message]:
         else:
             continue
         if inner is not None and (inner.get("From") or inner.get("Subject")):
-            found.append(inner)
+            found.append((part, inner))
     return found
 
 
@@ -220,7 +265,9 @@ def _unwrap(msg: Message, analysis: Analysis) -> tuple[Message, list[Message]]:
                        "subject": header(msg, "Subject"), "date": header(msg, "Date"),
                        "attached_messages": len(attached)})
         carriers.append(msg)
-        msg = attached[0]
+        part, inner = attached[0]
+        msg.__dict__["_unwrapped_part"] = part  # the carrier's re-check leaves this one alone
+        msg = inner
     if layers:
         analysis.reported_by = dict(layers[0], layers=len(layers))
     return msg, carriers
@@ -231,6 +278,8 @@ def _unwrap(msg: Message, analysis: Analysis) -> tuple[Message, list[Message]]:
 # ---------------------------------------------------------------------------
 
 _AUTH_MECHANISMS = ("spf", "dkim", "dmarc", "compauth")
+_AUTH_HEADERS = ("authentication-results", "received-spf")
+MAX_FORGED = 20
 
 
 def _header_text(msg: Message, name: str, value: str) -> str:
@@ -261,8 +310,9 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str
     # Headers are decoded one at a time: one malformed header elsewhere in the
     # message (a phisher's trick or plain sloppiness) must not wipe out the
     # results, and Microsoft 365 base64-encodes them (=?utf-8?B?...?=).
-    try:
-        items = [(str(name).lower(), _header_text(msg, name, value)) for name, value in msg.raw_items()]
+    try:  # only the headers read below are decoded; a message can carry thousands of others
+        items = [(str(name).lower(), _header_text(msg, name, value) if str(name).lower() in _AUTH_HEADERS else "")
+                 for name, value in msg.raw_items()]
     except Exception:
         items = []
     positions = [i for i, (name, _) in enumerate(items) if name == "authentication-results"]
@@ -284,9 +334,12 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str
                     results[mechanism] = match.group(1).lower()
     receiver = _authserv_id(items[trusted_block[0]][1]) if trusted_block else ""
     forged: list[dict[str, Any]] = []
+    in_block = set(trusted_block)
     for i in positions:
-        if i in trusted_block:
+        if i in in_block:
             continue
+        if len(forged) >= MAX_FORGED:
+            break
         for mechanism in _AUTH_MECHANISMS[:3]:
             if re.search(r"\b%s\s*=\s*pass\b" % mechanism, items[i][1], re.I) and \
                     results.get(mechanism) != "pass":
@@ -304,16 +357,23 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str
     return results, forged
 
 
-def _originating_ip(msg: Message) -> str:
+def _received(msg: Message) -> list[str]:
+    """The Received headers, newest first, unfolded but not parsed: a
+    message can carry thousands, and the library parses each on every read."""
+    try:
+        items = msg.raw_items() if hasattr(msg, "raw_items") else msg.items()
+        return [" ".join(str(value).encode("utf-8", "surrogateescape").decode("utf-8", "replace").split())
+                for name, value in items if name.lower() == "received"]
+    except Exception:
+        return []
+
+
+def _originating_ip(msg: Message, received: list[str]) -> str:
     for name in ("X-Originating-IP", "X-Sender-IP", "X-Source-IP"):
         for candidate in IPV4_RE.findall(header(msg, name)):
             if not PRIVATE_IP_RE.match(candidate):
                 return candidate
-    try:
-        received = [str(h) for h in (msg.get_all("Received", []) or [])]
-    except Exception:
-        received = []
-    for value in reversed(received):  # newest-first, so the origin is last
+    for value in reversed(received[:MAX_RECEIVED]):  # newest-first, so the origin is last
         for candidate in IPV4_RE.findall(value):
             if not PRIVATE_IP_RE.match(candidate):
                 return candidate
@@ -327,13 +387,9 @@ _HOP_IP_RE = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}|(?:IPv6:)?[0-9A-Fa-f:]{2,39
 MAX_HOPS = 30
 
 
-def _hops(msg: Message) -> list[dict[str, Any]]:
+def _hops(received: list[str]) -> list[dict[str, Any]]:
     """The Received chain, oldest hop first: who handed the message to whom,
     when, and how long each step took."""
-    try:
-        received = [" ".join(str(value).split()) for value in (msg.get_all("Received", []) or [])]
-    except Exception:
-        return []
     hops: list[dict[str, Any]] = []
     previous = None
     for value in reversed(received[:MAX_HOPS]):
@@ -403,12 +459,10 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
 
     analysis.mailing_list, analysis.list_domains = _mailing_list(msg)
     analysis.auth, analysis.forged_auth = _auth_results(msg, trusted_authserv)
-    analysis.originating_ip = _originating_ip(msg)
-    analysis.hops = _hops(msg)
-    try:
-        analysis.received_hops = len(msg.get_all("Received", []) or [])
-    except Exception:
-        analysis.received_hops = 0
+    received = _received(msg)
+    analysis.originating_ip = _originating_ip(msg, received)
+    analysis.hops = _hops(received)
+    analysis.received_hops = len(received)
 
 
 def _protected_domains(msg: Message, analysis: Analysis, explicit, auto: bool) -> list[str]:
@@ -470,17 +524,30 @@ def _add_url(bucket: dict[str, UrlIoc], raw: str, source: str, anchor: str = "",
     _record(bucket, url, source, anchor)
 
 
+class UrlBucket(dict):
+    """The links of one message, by normalised URL. Past MAX_URLS new links
+    are counted, not kept: 20,000 links took 14 s to check and made a 19 MB
+    report, and a flood of links is itself worth a signal."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.dropped = 0
+
+
 def _record(bucket: dict[str, UrlIoc], url: str, source: str, anchor: str = "") -> UrlIoc:
     key = url.rstrip("/").lower()
     ioc = bucket.get(key)
     if ioc is None:
         host = host_of(url)
         ioc = UrlIoc(url=url, host=host, domain=registrable_domain(host))
+        if len(bucket) >= MAX_URLS and isinstance(bucket, UrlBucket):
+            bucket.dropped += 1
+            return ioc  # checked by nobody: not in the bucket
         bucket[key] = ioc
-    if source not in ioc.sources:
+    if source not in ioc.sources and len(ioc.sources) < MAX_URL_CONTEXTS:
         ioc.sources.append(source)
-    anchor = " ".join((anchor or "").split())
-    if anchor and anchor not in ioc.anchor_texts:
+    anchor = " ".join((anchor or "").split())[:500]
+    if anchor and anchor not in ioc.anchor_texts and len(ioc.anchor_texts) < MAX_URL_CONTEXTS:
         ioc.anchor_texts.append(anchor)
     return ioc
 
@@ -498,6 +565,8 @@ def _collect(msg: Message) -> tuple[list[str], list[str], list[Message], list[Me
                 attachments.append(part)
             continue
         if part.get_content_maintype() == "multipart":
+            if isinstance(part.get_payload(), str):  # no usable boundary: a mail client shows it as text
+                text_parts.append(_decode_text(part))
             continue
         disposition = (part.get_content_disposition() or "").lower()
         filename = part.get_filename()
@@ -612,9 +681,11 @@ def _hidden_filler(visible: str, hidden: str) -> tuple[int, str]:
 
 
 def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
-                  file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None) -> None:
+                  file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None,
+                  open_attached: bool = True) -> None:
     text_parts, html_parts, attachment_parts, image_parts, calendar_parts = _collect(msg)
-    bucket: dict[str, UrlIoc] = {}
+    analysis.mime_depth = mime_depth(msg)
+    bucket = UrlBucket()
     scan = _QrScan(analysis, bucket, qr)
 
     for body in text_parts:
@@ -641,10 +712,19 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
     analysis.tag_splits = sum(found.tag_splits for found in html_found)
     analysis.hidden_filler, analysis.hidden_sample = _hidden_filler(visible, hidden)
 
+    unwrapped = msg.__dict__.get("_unwrapped_part")
+    already_analysed = _part_bytes(unwrapped) if unwrapped is not None and unwrapped is not msg else None
+
+    def open_message(inspector: Inspector, ioc: FileIoc, data: bytes, depth: int) -> None:
+        if depth == 0 and data == already_analysed:
+            return
+        _inspect_message(inspector, ioc, data, depth, bucket)
+
     inspector = Inspector(
         analysis, lambda url, source: _add_url(bucket, url, source), scan,
         lambda ioc, data: _inspect_html(ioc, data, bucket, scan),
-        password_candidates("%s\n%s" % (analysis.subject, analysis.body_text)), file_hook)
+        password_candidates("%s\n%s" % (analysis.subject, analysis.body_text)), file_hook,
+        open_message if open_attached else None)
     for part in attachment_parts:
         content_type = part.get_content_type() or "application/octet-stream"
         default_name = "attached-message.eml" if content_type == "message/rfc822" else "(unnamed)"
@@ -666,6 +746,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
         analysis.body_text = ("%s %s" % (analysis.body_text, extra)).strip()[:BODY_TEXT_LIMIT]
 
     analysis.urls = list(bucket.values())
+    analysis.urls_dropped = bucket.dropped
     analysis.wallets = find_wallets("%s\n%s" % (analysis.subject, analysis.body_text))
     if _FORWARD_SUBJECT.match(analysis.subject or ""):
         match = _INLINE_FROM.search(analysis.body_text[:6000])
@@ -695,6 +776,30 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
 # ---------------------------------------------------------------------------
 # HTML attachments
 # ---------------------------------------------------------------------------
+
+def _inspect_message(inspector: Inspector, ioc: FileIoc, data: bytes, depth: int,
+                     bucket: dict[str, UrlIoc]) -> None:
+    """An email attached below the layers that are unwrapped (or beside the
+    one that was): its links, invitations and files are checked too, so a
+    phish cannot hide one attachment deeper than PhishHawk looks."""
+    try:
+        inner = load_message(data)
+        text_parts, html_parts, attachment_parts, _, calendar_parts = _collect(inner)
+    except Exception:
+        return
+    source = "attachment:%s " % ioc.filename
+    for text in text_parts:
+        for url in urls_from_text(text[:MAX_ATTACHED_TEXT]):
+            _add_url(bucket, url, source + "text")
+    for html in html_parts:
+        _harvest_html(html[:MAX_ATTACHED_TEXT], bucket, source)
+    for text in calendar_parts:
+        inspector.calendar(text, ioc.filename)
+    for part in attachment_parts:
+        content_type = part.get_content_type() or "application/octet-stream"
+        name = part.get_filename() or ("attached-message.eml" if content_type == "message/rfc822" else "(unnamed)")
+        inspector.child(ioc, name, _part_bytes(part), depth)
+
 
 def _inspect_html(ioc: FileIoc, data: bytes, bucket: dict[str, UrlIoc], scan: _QrScan) -> None:
     source = "attachment:%s" % ioc.filename

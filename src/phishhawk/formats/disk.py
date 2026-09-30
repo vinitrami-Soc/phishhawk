@@ -16,6 +16,11 @@ BLOCK = 2048
 MAX_FILES = 500
 MAX_DEPTH = 8
 MAX_FILE_BYTES = 25 * 1024 * 1024
+# Directory entries can all point at the same extent, so a 20 MB image could
+# otherwise hand back 500 copies of it (10 GB). Past this many bytes in all,
+# files are listed without their content.
+MAX_TOTAL_BYTES = 100 * 1024 * 1024
+MAX_DIRECTORY_BYTES = 16 * 1024 * 1024  # directory records read, all directories together
 
 
 @dataclass
@@ -43,7 +48,7 @@ def is_vhd(data: bytes) -> bool:
 
 def _iso_records(data: bytes, extent: int, size: int):
     start = extent * BLOCK
-    end = min(start + min(size, 4 * 1024 * 1024), len(data))
+    end = min(start + size, len(data))
     offset = start
     while offset < end:
         length = data[offset]
@@ -75,12 +80,15 @@ def list_iso(data: bytes) -> list[DiskFile]:
         raise ValueError("no ISO 9660 volume descriptor")
     files: list[DiskFile] = []
     seen: set[int] = set()
+    budget, directory_budget = MAX_TOTAL_BYTES, MAX_DIRECTORY_BYTES
     stack = [(struct.unpack_from("<I", root, 2)[0], struct.unpack_from("<I", root, 10)[0], "", 0)]
-    while stack and len(files) < MAX_FILES:
+    while stack and len(files) < MAX_FILES and directory_budget > 0:
         extent, size, prefix, depth = stack.pop()
         if extent in seen or depth > MAX_DEPTH:
             continue
         seen.add(extent)
+        size = min(size, directory_budget)
+        directory_budget -= max(size, BLOCK)
         for record in _iso_records(data, extent, size):
             name_length = record[32]
             raw = record[33:33 + name_length]
@@ -95,7 +103,9 @@ def list_iso(data: bytes) -> list[DiskFile]:
                 stack.append((child_extent, child_size, path + "/", depth + 1))
                 continue
             begin = child_extent * BLOCK
-            readable = child_size <= MAX_FILE_BYTES and begin + child_size <= len(data)
+            readable = child_size <= min(MAX_FILE_BYTES, budget) and begin + child_size <= len(data)
+            if readable:
+                budget -= child_size
             files.append(DiskFile(path, child_size, data[begin:begin + child_size] if readable else None))
             if len(files) >= MAX_FILES:
                 break
@@ -106,6 +116,8 @@ def list_iso(data: bytes) -> list[DiskFile]:
 
 def list_fat(data: bytes) -> list[DiskFile]:
     """Files in a FAT12/16 image: the root directory and its subdirectories."""
+    if len(data) < 512:
+        raise ValueError("not a FAT12/16 image")
     sector_size, cluster_sectors, reserved, fats, root_entries, total16, _, fat_sectors = \
         struct.unpack_from("<HBHBHHBH", data, 11)
     total = total16 or struct.unpack_from("<I", data, 32)[0]
@@ -167,19 +179,22 @@ def list_fat(data: bytes) -> list[DiskFile]:
                 struct.unpack_from("<I", entry, 28)[0]
 
     files: list[DiskFile] = []
+    budget, directory_budget = MAX_TOTAL_BYTES, MAX_DIRECTORY_BYTES
     stack = [(data[root_start:root_start + root_size], "", 0)]
     visited: set[int] = set()
     while stack and len(files) < MAX_FILES:
         raw, prefix, depth = stack.pop()
         for name, attributes, cluster, size in entries(raw):
             if attributes & 0x10:
-                if depth < MAX_DEPTH and cluster not in visited:
+                if depth < MAX_DEPTH and cluster not in visited and directory_budget > 0:
                     visited.add(cluster)
-                    listing = read_chain(cluster, 1024 * 1024)
+                    listing = read_chain(cluster, min(1024 * 1024, directory_budget))
+                    directory_budget -= max(len(listing or b""), cluster_size)
                     if listing:
                         stack.append((listing, prefix + name + "/", depth + 1))
                 continue
-            content = read_chain(cluster, size) if size <= MAX_FILE_BYTES else None
+            content = read_chain(cluster, size) if size <= min(MAX_FILE_BYTES, budget) else None
+            budget -= len(content or b"")
             files.append(DiskFile(prefix + name, size, content))
             if len(files) >= MAX_FILES:
                 break

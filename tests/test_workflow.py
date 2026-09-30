@@ -130,6 +130,7 @@ def test_config_from_json_and_toml(tmp_path):
     ('{"lures": {"x": ["ab"]}}', "at least 4"),
     ("[1, 2]", "table of settings"),
     ("{not json", "c.json"),
+    ("[" * 100_000, "nested too deeply"),
 ])
 def test_config_mistakes_are_explained(tmp_path, body, message):
     with pytest.raises(config.ConfigError, match=message):
@@ -278,6 +279,18 @@ def test_imap_login_failure_is_an_error_not_a_crash(monkeypatch, capsys):
     monkeypatch.setenv("PHISHHAWK_IMAP_PASSWORD", "wrong")
     code, _, err = run(["imap", "--host", "h.example", "--user", "soc", "--offline", "-q", "--no-color"], capsys)
     assert code == 3 and "login to h.example refused" in err
+
+
+def test_imap_folder_names_cannot_smuggle_commands(monkeypatch, capsys):
+    """A CR/LF in --folder would end SELECT early and start a command of its
+    own (DELETE, say). It is refused before anything reaches the server."""
+    FakeImap.calls = []
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", FakeImap)
+    monkeypatch.setenv("PHISHHAWK_IMAP_PASSWORD", "s3cret")
+    code, _, err = run(["imap", "--host", "h.example", "--user", "soc", "--folder", 'INBOX"\r\nA2 DELETE "INBOX',
+                        "--offline", "-q", "--no-color"], capsys)
+    assert code == 3 and "control characters" in err
+    assert FakeImap.calls == []
 
 
 def test_every_sample_report_matches_the_published_schema():

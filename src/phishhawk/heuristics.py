@@ -40,7 +40,7 @@ from .knowledge import (
     known_legit_domains,
 )
 from .lookalike import HIGH_METHODS, find_lookalikes, strong_subdomain
-from .models import Analysis, vt_is_malicious, vt_is_suspicious
+from .models import MIME_TOO_DEEP, Analysis, vt_is_malicious, vt_is_suspicious
 
 NEW_DOMAIN_DAYS = 30
 YOUNG_DOMAIN_DAYS = 90
@@ -57,6 +57,7 @@ def analyse(analysis: Analysis) -> Analysis:
     _attachments(analysis)
     _calendar(analysis)
     _body(analysis)
+    _structure(analysis)
     _language(analysis)
     _qr_codes(analysis)
     _yara(analysis)
@@ -304,19 +305,11 @@ def _sender(a: Analysis) -> None:
                          % (original["display"][:40], registrable_domain(original["domain"])), ("T1656",))
 
 
-MAX_LOOKALIKE_HOSTS = 5000  # distinct link hosts checked per message
-
-
 def _lookalikes(a: Analysis) -> None:
     targets = [(a.from_domain, "sender"), (a.reply_to_domain, "reply-to"),
                (a.return_path_domain, "return-path")]
-    hosts = list(dict.fromkeys(ioc.host for ioc in a.urls if ioc.host))
-    if len(hosts) > MAX_LOOKALIKE_HOSTS:
-        # Padding a message with thousands of domains to push the real one past
-        # a limit gets the message flagged instead of waved through.
-        a.add_signal("medium", "%d distinct link hosts: only the first %d were checked for lookalikes"
-                     % (len(hosts), MAX_LOOKALIKE_HOSTS))
-    targets += [(host, "url") for host in hosts[:MAX_LOOKALIKE_HOSTS]]
+    # At most parse.MAX_URLS links reach here; a flood past that is its own signal (_structure).
+    targets += [(host, "url") for host in dict.fromkeys(ioc.host for ioc in a.urls if ioc.host)]
     seen: set[tuple[str, str]] = set()
     protected = set(a.protected_domains)
     allowed = set(a.allowed_domains)
@@ -691,6 +684,9 @@ def _body(a: Analysis) -> None:
 # Language: lure phrases, callback phishing, hash-busting
 # ---------------------------------------------------------------------------
 
+# Anchored so that a long run of letters is tried once, not from every position
+# (quadratic: a 30,000-character To: header took 5 s).
+_LOOSE_ADDRESS_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*")
 _PHONE_RE = re.compile(r"(?<![\w.])\+?\(?\d{1,4}\)?(?:[\s.-]?\(?\d{2,4}\)?){2,4}(?![\w.])")
 _TOKEN_RE = re.compile(r"\b[A-Za-z0-9]{12,40}\b")
 SEVERE_LURES = {"advance-fee", "extortion"}
@@ -802,7 +798,7 @@ def _language(a: Analysis) -> None:
             a.add_signal("low", "random token in subject (filter evasion): %s" % token, ("T1027",))
             break
     recipients = {address.lower() for address in EMAIL_RE.findall(a.to or "")}
-    recipients |= {m.lower() for m in re.findall(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*", a.to or "")}
+    recipients |= {m.lower() for m in _LOOSE_ADDRESS_RE.findall(a.to or "")}
     if any(address and address in (a.subject or "").lower() for address in recipients):
         a.add_signal("low", "recipient's address pasted into the subject (mail-merge lure)", ("T1566",))
 
@@ -810,6 +806,23 @@ def _language(a: Analysis) -> None:
 # ---------------------------------------------------------------------------
 # Enrichment-driven signals
 # ---------------------------------------------------------------------------
+
+MAX_NORMAL_MIME_DEPTH = 15  # 19,458 real messages, phishing and legitimate, never went past 4
+
+
+def _structure(a: Analysis) -> None:
+    """Shapes no mail client writes, built to wear out a scanner before it
+    reaches the part that matters."""
+    if a.mime_depth >= MIME_TOO_DEEP:
+        a.add_signal("high", "MIME parts nested deeper than a mail parser can follow: the body was read as "
+                             "plain text (filter evasion)", ("T1027",))
+    elif a.mime_depth > MAX_NORMAL_MIME_DEPTH:
+        a.add_signal("medium", "MIME parts nested %d levels deep; real mail stays under five (filter evasion)"
+                     % a.mime_depth, ("T1027",))
+    if a.urls_dropped:
+        a.add_signal("medium", "%d more links than the %d checked: a flood of links can bury the one that "
+                               "matters" % (a.urls_dropped, len(a.urls)), ("T1027",))
+
 
 def _yara(a: Analysis) -> None:
     for match in a.yara:

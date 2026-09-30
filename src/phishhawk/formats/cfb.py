@@ -8,6 +8,7 @@ running off the end of the file, and nothing is read beyond the data given.
 from __future__ import annotations
 
 import struct
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -15,6 +16,12 @@ FREESECT, ENDOFCHAIN, FATSECT, DIFSECT = 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xF
 NOSTREAM = 0xFFFFFFFF
 MAX_ENTRIES = 20_000
 MAX_STREAM = 64 * 1024 * 1024
+# Directory entries can all point at one sector chain, so a 6 MB file could
+# otherwise be read as hundreds of 5 MB streams. A real file's streams add up
+# to about its own size (some are read twice), so every read from one file
+# counts against four times its size, plus room for small files.
+READ_ALLOWANCE = 16 * 1024 * 1024
+MAX_TOTAL_READ = 256 * 1024 * 1024
 
 
 class CfbError(ValueError):
@@ -53,6 +60,8 @@ class CompoundFile:
 
     def _load(self, data: bytes) -> None:
         self.data = data
+        self.bytes_read = 0
+        self.read_budget = min(MAX_TOTAL_READ, 4 * len(data) + READ_ALLOWANCE)
         shift = struct.unpack_from("<H", data, 0x1E)[0]
         mini_shift = struct.unpack_from("<H", data, 0x20)[0]
         if shift not in (9, 12) or mini_shift != 6:
@@ -88,26 +97,28 @@ class CompoundFile:
             raise CfbError("mini sector outside the mini stream")
         return self.mini_stream[offset:offset + self.mini_size]
 
-    def _chain(self, start: int, table: list[int]) -> list[int]:
-        chain, seen = [], set()
+    def _chain(self, start: int, table: list[int]) -> Iterator[int]:
+        seen: set[int] = set()
         current = start
         while current not in (ENDOFCHAIN, FREESECT) and current < len(table):
             if current in seen:
                 raise CfbError("sector chain loops")
             seen.add(current)
-            chain.append(current)
+            yield current
             current = table[current]
-        return chain
 
     def _chain_bytes(self, start: int, size: int, table: list[int], unit: int, reader) -> bytes:
         size = min(size, MAX_STREAM)
         if start in (ENDOFCHAIN, FREESECT) or size <= 0:
             return b""
         out = bytearray()
-        for number in self._chain(start, table):
+        for number in self._chain(start, table):  # walked only as far as `size` needs
             out += reader(number)
+            if self.bytes_read + len(out) > self.read_budget:
+                raise CfbError("streams add up to more than %d MB" % (self.read_budget >> 20))
             if len(out) >= size:
                 break
+        self.bytes_read += len(out)
         return bytes(out[:size])
 
     def _read_fat(self) -> list[int]:
@@ -127,6 +138,8 @@ class CompoundFile:
         difat = difat[: min(fat_count, self.sector_count) or len(difat)]
         fat: list[int] = []
         for number in difat:
+            if len(fat) >= self.sector_count:  # entries past the end of the file name no sector
+                break
             fat.extend(struct.unpack("<%dI" % per, self._sector(number)))
         if not fat:
             raise CfbError("empty FAT")
@@ -167,6 +180,16 @@ class CompoundFile:
                 stack.append((entry.child, entry.path))
 
     # ----------------------------------------------------------------- API --
+    def children(self, *path: str) -> list[Entry]:
+        """The streams and storages directly inside the storage at `path`."""
+        if not hasattr(self, "_children"):
+            index: dict[tuple[str, ...], list[Entry]] = {}
+            for entry in self.entries:
+                if entry.path:
+                    index.setdefault(entry.path[:-1], []).append(entry)
+            self._children = index
+        return self._children.get(tuple(path), [])
+
     def streams(self) -> list[Entry]:
         return [e for e in self.entries if e.is_stream and e.path]
 

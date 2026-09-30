@@ -22,6 +22,7 @@ from ..extract import pdf_streams
 from .cfb import CfbError, CompoundFile
 
 MAX_PART = 8 * 1024 * 1024
+MAX_OOXML_READ = 64 * 1024 * 1024  # inflated bytes read from one document, all parts together
 MAX_EMBEDDED = 20
 MAX_EMBEDDED_BYTES = 25 * 1024 * 1024
 
@@ -46,17 +47,26 @@ class DocFindings:
 # -------------------------------------------------------------------- OOXML --
 
 _REL_RE = re.compile(r"<Relationship\b([^>]{0,4000})>", re.I)
-_ATTR_RE = re.compile(r'([A-Za-z:]+)\s*=\s*"([^"]{0,4000})"')
+_ATTR_RE = re.compile(r'(?<![A-Za-z:])([A-Za-z:]+)\s*=\s*"([^"]{0,4000})"')  # anchored: linear, not quadratic
 _DDE_RE = re.compile(r"\b(DDEAUTO|DDE)\b\s", re.I)
 _URL_RE = re.compile(r"(?:https?|ftp)://[^\s\"'<>]{4,2000}", re.I)
 
 
-def _read_member(archive: zipfile.ZipFile, name: str) -> bytes:
-    info = archive.getinfo(name)
-    if info.file_size > MAX_PART or info.flag_bits & 0x1:
-        return b""
-    with archive.open(info) as handle:
-        return handle.read(MAX_PART)
+class _Parts:
+    """Reads the parts of one document against a shared budget: a zip can
+    list thousands of names that all point at the same compressed bomb."""
+
+    def __init__(self, archive: zipfile.ZipFile) -> None:
+        self.archive, self.left = archive, MAX_OOXML_READ
+
+    def read(self, name: str) -> bytes:
+        info = self.archive.getinfo(name)
+        if info.file_size > MAX_PART or info.flag_bits & 0x1 or self.left <= 0:
+            return b""
+        with self.archive.open(info) as handle:
+            data = handle.read(min(MAX_PART, self.left))
+        self.left -= max(len(data), 4096)  # every open costs something, however small the part
+        return data
 
 
 def inspect_ooxml(data: bytes) -> DocFindings:
@@ -68,6 +78,7 @@ def inspect_ooxml(data: bytes) -> DocFindings:
     except (zipfile.BadZipFile, OSError, ValueError, RuntimeError):
         found.add("corrupt", "corrupt Office container")
         return found
+    parts = _Parts(archive)
     lowered = [n.lower() for n in names]
     if "encryptioninfo" in lowered or "encryptedpackage" in lowered:
         found.add("encrypted", "password-protected Office document")
@@ -80,7 +91,7 @@ def inspect_ooxml(data: bytes) -> DocFindings:
     for name, low in zip(names, lowered, strict=True):
         if low.endswith(".rels"):
             try:
-                text = _read_member(archive, name).decode("utf-8", errors="replace")
+                text = parts.read(name).decode("utf-8", errors="replace")
             except (KeyError, zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError, zlib.error):
                 continue
             for match in _REL_RE.finditer(text):
@@ -105,7 +116,7 @@ def inspect_ooxml(data: bytes) -> DocFindings:
         elif low.endswith((".xml", ".vml")) and ("document" in low or "sheet" in low or "slide" in low
                                                   or "header" in low or "footer" in low):
             try:
-                text = _read_member(archive, name).decode("utf-8", errors="replace")
+                text = parts.read(name).decode("utf-8", errors="replace")
             except (KeyError, zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError, zlib.error):
                 continue
             instructions = " ".join(re.findall(r"<w:instrText[^>]{0,200}>([^<]{0,2000})<", text)) + " " + \
@@ -114,7 +125,7 @@ def inspect_ooxml(data: bytes) -> DocFindings:
                 found.add("dde", "a DDE field runs a command when the document opens")
         elif "/embeddings/" in low and len(found.embedded) < MAX_EMBEDDED:
             try:
-                blob = _read_member(archive, name)
+                blob = parts.read(name)
             except (KeyError, zipfile.BadZipFile, OSError, RuntimeError, ValueError, EOFError, zlib.error):
                 continue
             if blob:
@@ -140,13 +151,16 @@ def inspect_ole(data: bytes) -> DocFindings:
     if any(p in ("encryptedpackage", "encryptioninfo") for _, p in paths):
         found.add("encrypted", "password-protected Office document")
     for entry, path in paths:
-        if path.endswith("\x01ole10native") and len(found.embedded) < MAX_EMBEDDED:
-            name, blob = _ole10native(cfb.read(entry))
-            if blob:
-                found.add("embedded-package", "carries an embedded file (%s)" % name)
-                found.embedded.append((name, blob))
-        if path in ("workbook", "book") and _xlm_macro_sheets(cfb.read(entry)):
-            found.add("xlm-macro", "contains Excel 4.0 (XLM) macro sheets")
+        try:
+            if path.endswith("\x01ole10native") and len(found.embedded) < MAX_EMBEDDED:
+                name, blob = _ole10native(cfb.read(entry))
+                if blob:
+                    found.add("embedded-package", "carries an embedded file (%s)" % name)
+                    found.embedded.append((name, blob))
+            if path in ("workbook", "book") and _xlm_macro_sheets(cfb.read(entry)):
+                found.add("xlm-macro", "contains Excel 4.0 (XLM) macro sheets")
+        except CfbError:  # a stream running off the file, or past the read budget
+            found.add("corrupt", "damaged OLE stream")
     return found
 
 

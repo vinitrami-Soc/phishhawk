@@ -68,6 +68,10 @@
                 "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "url": {"type": "string"},
                                "evidence": {"type": "array", "items": {"type": "string"}}}}
     },
+    "urls_dropped": {"type": "integer", "minimum": 0,
+                     "description": "distinct links past the per-message cap of 1000: counted, not checked"},
+    "mime_depth": {"type": "integer", "minimum": 0,
+                   "description": "deepest multipart nesting; 1000 when the parser could not follow it"},
     "urls": {
       "type": "array",
       "items": {

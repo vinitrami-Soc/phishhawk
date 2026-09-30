@@ -31,7 +31,7 @@ def _carriers(analysis: Analysis, options: Options) -> None:
     for carrier in getattr(analysis, "_carriers", []):
         wrapper = parse_message(carrier, path=analysis.path, unwrap=False, protected=analysis.protected_domains,
                                 auto_protect=False, qr=options.qr,
-                                trusted_authserv=tuple(options.trusted_authserv))
+                                trusted_authserv=tuple(options.trusted_authserv), open_attached=True)
         heuristics.analyse(wrapper)
         if wrapper.verdict == "NO STRONG INDICATORS":
             continue

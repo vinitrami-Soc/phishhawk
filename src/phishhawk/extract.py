@@ -16,7 +16,8 @@ IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 # attempt short. Unbounded, a 100 KB base64 image in an HTML body made this
 # regex quadratic: one real phishing sample took 60 seconds to parse.
 EMAIL_RE = re.compile(r"[\w.!#$%&'*+/=?^`{|}~-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){1,8}")
-URL_RE = re.compile(r"(?:(?:https?|ftp)://|www\.)[^\s<>\"'`\\\u00a0]+", re.I)
+MAX_URL_LENGTH = 8192  # a 1.4 MB "link" of NUL bytes once took seconds to show in each report
+URL_RE = re.compile(r"(?:(?:https?|ftp)://|www\.)[^\s<>\"'`\\\u00a0\x00-\x1f\x7f]{1,%d}" % MAX_URL_LENGTH, re.I)
 DOMAINISH_RE = re.compile(r"\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,8}[a-z]{2,24}\b", re.I)
 ZERO_WIDTH_RE = re.compile("[\u200b\u2060]|(?<=[A-Za-z])[\u200c\u200d](?=[A-Za-z])")
 PRIVATE_IP_RE = re.compile(
@@ -171,8 +172,18 @@ def domain_of_address(address: str) -> str:
     return address.rsplit("@", 1)[1].strip().strip("<>\"' ").lower().rstrip(".")
 
 
+_URL_TAB_NEWLINE_RE = re.compile(r"[\t\n\r]")
+_URL_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_C0_AND_SPACE = "".join(map(chr, range(0x21)))
+
+
 def clean_url(raw: str) -> str:
-    url = (raw or "").strip().strip("\u200b\u200c\ufeff")
+    # As a browser reads an href: tabs and line breaks anywhere are dropped
+    # ("https://ev&#10;il.top" opens evil.top), other control characters are
+    # percent-encoded.
+    url = _URL_TAB_NEWLINE_RE.sub("", (raw or "")[:MAX_URL_LENGTH * 2])
+    url = _URL_CONTROL_RE.sub(lambda m: "%%%02X" % ord(m.group()), url.strip(_C0_AND_SPACE))[:MAX_URL_LENGTH]
+    url = url.strip().strip("\u200b\u200c\ufeff")
     url = url.rstrip(".,;:!?\"'*_")
     while url and url[-1] in ")]}":
         opener = {")": "(", "]": "[", "}": "{"}[url[-1]]

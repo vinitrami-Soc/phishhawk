@@ -82,6 +82,9 @@ class Lookalike:
     where: str   # sender, reply-to, return-path, url
 
 
+MIME_TOO_DEEP = 1000  # Analysis.mime_depth when the parser could not follow the nesting
+
+
 @dataclass
 class Analysis:
     path: str
@@ -109,6 +112,8 @@ class Analysis:
     allowed_domains: list[str] = field(default_factory=list)  # configured partners: trusted like known brands
     blocked_domains: list[str] = field(default_factory=list)  # configured: always flagged
     urls: list[UrlIoc] = field(default_factory=list)
+    urls_dropped: int = 0  # distinct links past the per-message cap: counted, not checked
+    mime_depth: int = 0  # deepest multipart nesting, MIME_TOO_DEEP if the parser gave up; real mail: under five
     attachments: list[FileIoc] = field(default_factory=list)
     domains: list[str] = field(default_factory=list)
     body_emails: list[str] = field(default_factory=list)
@@ -133,8 +138,13 @@ class Analysis:
 
     # ----------------------------------------------------------- signals --
     def add_signal(self, severity: str, label: str, techniques: tuple[str, ...] = ()) -> None:
-        if any(existing.label == label for existing in self.signals):
+        labels = self.__dict__.setdefault("_signal_labels", set())  # not a field: never exported
+        if len(labels) != len(self.signals):  # the list was edited directly
+            labels.clear()
+            labels.update(existing.label for existing in self.signals)
+        if label in labels:
             return
+        labels.add(label)
         self.signals.append(Signal(severity, label, tuple(techniques)))
 
     @property

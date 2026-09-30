@@ -349,16 +349,19 @@ def _decode_header(data: bytes, pack_pos: int, pack_sizes: list[int], coders: li
     if len(coders) != 1 or unpack_size > MAX_HEADER:
         raise ValueError("unsupported 7z header coding")
     coder_id, props = coders[0]
+    # No match distance can reach past the header itself, so a dictionary
+    # larger than the header only costs memory (a 4 GB one fails to allocate).
+    dict_limit = max(unpack_size, 4096)
     start = 32 + pack_pos
     packed = data[start:start + (pack_sizes[0] if pack_sizes else len(data))]
     if coder_id == b"\x03\x01\x01" and len(props) == 5:
         lc_lp_pb = props[0]
-        filters = [{"id": lzma.FILTER_LZMA1, "dict_size": struct.unpack_from("<I", props, 1)[0],
+        filters = [{"id": lzma.FILTER_LZMA1, "dict_size": min(struct.unpack_from("<I", props, 1)[0], dict_limit),
                     "lc": lc_lp_pb % 9, "lp": (lc_lp_pb // 9) % 5, "pb": lc_lp_pb // 45}]
     elif coder_id == b"\x21" and len(props) == 1:
         exponent = props[0]
         dict_size = 0xFFFFFFFF if exponent == 40 else (2 | (exponent & 1)) << (exponent // 2 + 11)
-        filters = [{"id": lzma.FILTER_LZMA2, "dict_size": min(dict_size, 1 << 30)}]
+        filters = [{"id": lzma.FILTER_LZMA2, "dict_size": min(dict_size, dict_limit)}]
     elif coder_id == b"\x00":
         return packed[:unpack_size]
     else:

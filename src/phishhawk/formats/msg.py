@@ -20,6 +20,7 @@ import struct
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage, Message
 
+from ..mailpolicy import POLICY
 from .cfb import SIGNATURE, CfbError, CompoundFile, Entry
 
 MAX_DEPTH = 3
@@ -56,9 +57,8 @@ class _Properties:
             tag = struct.unpack_from("<I", raw, offset)[0]
             self.fixed[tag >> 16] = raw[offset + 8:offset + 16]
         self.streams: dict[int, tuple[str, Entry]] = {}
-        depth = len(prefix) + 1
-        for entry in cfb.entries:
-            if len(entry.path) == depth and entry.path[:-1] == prefix and entry.name.startswith("__substg1.0_"):
+        for entry in cfb.children(*prefix):
+            if entry.name.startswith("__substg1.0_"):
                 code = entry.name[12:20]
                 try:
                     self.streams.setdefault(int(code[:4], 16), (code[4:].upper(), entry))
@@ -100,8 +100,8 @@ class _Properties:
         if found and found[1].is_storage:
             return found[1].path
         name = "__substg1.0_%04X000D" % prop
-        for entry in self.cfb.storages():
-            if entry.path[:-1] == self.prefix and entry.name.upper() == name:
+        for entry in self.cfb.children(*self.prefix):
+            if entry.is_storage and entry.name.upper() == name:
                 return entry.path
         return None
 
@@ -109,7 +109,7 @@ class _Properties:
 def _decode(data: bytes, codepage: str) -> str:
     try:
         return data.decode(codepage, errors="replace")
-    except LookupError:
+    except (LookupError, ValueError):
         return data.decode("cp1252", errors="replace")
 
 
@@ -283,12 +283,15 @@ def _build(cfb: CompoundFile, prefix: tuple[str, ...], depth: int, embedded: boo
     if html:
         body.add_alternative(html, subtype="html")
 
-    attachments = sorted((e for e in cfb.storages() if e.path[:-1] == prefix
+    attachments = sorted((e for e in cfb.children(*prefix) if e.kind == 1
                           and e.name.lower().startswith("__attach_version1.0_")), key=lambda e: e.name)
     for entry in attachments[:MAX_ATTACHMENTS]:
-        attach = _Properties(cfb, entry.path, 8)
-        name = attach.text(ATTACH_LONG_NAME, codepage) or attach.text(ATTACH_NAME, codepage) \
-            or attach.text(DISPLAY_NAME, codepage) or "attachment"
+        try:
+            attach = _Properties(cfb, entry.path, 8)
+            name = attach.text(ATTACH_LONG_NAME, codepage) or attach.text(ATTACH_NAME, codepage) \
+                or attach.text(DISPLAY_NAME, codepage) or "attachment"
+        except CfbError:  # past the reader's budget: the rest of the message still counts
+            continue
         name = " ".join(name.replace("\x00", "").split())[:255] or "attachment"
         inner = attach.storage(ATTACH_DATA)
         if inner is not None and depth < MAX_DEPTH:
@@ -296,10 +299,13 @@ def _build(cfb: CompoundFile, prefix: tuple[str, ...], depth: int, embedded: boo
                 data = _build(cfb, inner, depth + 1, embedded=True)
             except (CfbError, MsgError, struct.error, ValueError):
                 continue
-            part = email.message_from_bytes(data, policy=email.policy.default)
+            part = email.message_from_bytes(data, policy=POLICY)
             body.add_attachment(part, filename=name if name.lower().endswith((".msg", ".eml")) else name + ".msg")
             continue
-        blob = attach.raw(ATTACH_DATA)
+        try:
+            blob = attach.raw(ATTACH_DATA)
+        except CfbError:
+            blob = b""  # unreadable, but its name is still evidence
         if blob is None:
             continue
         mime = attach.text(ATTACH_MIME, codepage).strip().lower()
@@ -337,7 +343,7 @@ def _synthetic_headers(cfb: CompoundFile, prefix: tuple[str, ...], props: _Prope
     if sender or name:
         lines.append("From: %s" % email.utils.formataddr((" ".join(name.split()), sender)))
     groups: dict[int, list[str]] = {1: [], 2: []}
-    recipients = sorted((e for e in cfb.storages() if e.path[:-1] == prefix
+    recipients = sorted((e for e in cfb.children(*prefix) if e.kind == 1
                          and e.name.lower().startswith("__recip_version1.0_")), key=lambda e: e.name)
     for entry in recipients[:500]:
         recipient = _Properties(cfb, entry.path, 8)
@@ -375,4 +381,4 @@ def msg_to_bytes(data: bytes) -> bytes:
 
 
 def msg_to_message(data: bytes) -> Message:
-    return email.message_from_bytes(msg_to_bytes(data), policy=email.policy.default)
+    return email.message_from_bytes(msg_to_bytes(data), policy=POLICY)

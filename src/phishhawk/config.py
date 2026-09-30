@@ -140,10 +140,12 @@ def load(path: str = "") -> Config:
             data = tomllib.loads(raw.decode("utf-8"))
         else:
             data = json.loads(raw.decode("utf-8"))
+    except ConfigError:
+        raise
     except (ValueError, UnicodeDecodeError) as exc:
-        if isinstance(exc, ConfigError):
-            raise
         raise ConfigError("%s: %s" % (path, exc)) from exc
+    except RecursionError as exc:  # [[[[... nested thousands deep
+        raise ConfigError("%s is nested too deeply" % path) from exc
     if not isinstance(data, dict):
         raise ConfigError("%s must hold a table of settings" % path)
     return parse(data, path)
