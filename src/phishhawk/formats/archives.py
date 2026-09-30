@@ -295,7 +295,10 @@ def _folders(reader: _Reader) -> tuple[list[list[tuple[bytes, bytes]]], list[lis
 
 
 def _streams_info(reader: _Reader) -> tuple[int, list[int], list[list[tuple[bytes, bytes]]], list[list[int]]]:
-    pack_pos, pack_sizes, folders, sizes = 0, [], [], []
+    pack_pos = 0
+    pack_sizes: list[int] = []
+    folders: list[list[tuple[bytes, bytes]]] = []
+    sizes: list[list[int]] = []
     while True:
         marker = reader.byte()
         if marker == 0x00:

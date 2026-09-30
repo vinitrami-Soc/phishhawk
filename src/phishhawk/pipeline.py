@@ -21,7 +21,7 @@ class Options:
     trusted_authserv: list[str] = field(default_factory=list)  # your MX's authserv-id(s)
     allow_domains: list[str] = field(default_factory=list)  # partners never reported as lookalikes or IOCs
     block_domains: list[str] = field(default_factory=list)  # domains always flagged
-    yara: object | None = None  # compiled rules (see phishhawk.yara)
+    yara: yararules.Rules | None = None  # compiled rules from --yara
 
 
 def _carriers(analysis: Analysis, options: Options) -> None:
@@ -67,7 +67,7 @@ def triage_bytes(data: bytes, path: str = "<memory>", options: Options | None = 
                              trusted_authserv=tuple(options.trusted_authserv),
                              file_hook=yararules.hook(rules) if rules is not None else None)
     if rules is not None:
-        for match in rules.match(data):  # type: ignore[attr-defined]
+        for match in rules.match(data):
             match["where"] = "the raw message"
             analysis.yara.append(match)
     return _finish(analysis, options, enricher, progress)

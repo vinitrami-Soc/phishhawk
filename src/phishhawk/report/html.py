@@ -906,17 +906,17 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
                               "IP reputation", detail]))
         out.append(_panel("Infrastructure", _table(["Indicator", "Check", "Result"], [34, 18, 48], rows)))
 
-    rows = technique_rows(a)
-    if rows:
+    techniques = technique_rows(a)
+    if techniques:
         order = {t: i for i, t in enumerate(TACTIC_ORDER)}
-        rows = sorted(rows, key=lambda r: (order.get(technique_tactic(r["id"]), 99), r["id"]))
+        techniques = sorted(techniques, key=lambda r: (order.get(technique_tactic(r["id"]), 99), r["id"]))
         cells = [("", ['<span class="sub">%s</span>' % escape(technique_tactic(r["id"])),
                        _link(r["url"], r["id"], "chip"), escape(r["name"]),
                        '<span class="sub">%s</span>' % escape(
                            "; ".join(r["evidence"][:3]) + (" ..." if len(r["evidence"]) > 3 else ""))])
-                 for r in rows]
-        out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(rows) + _table(
-            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(rows)))
+                 for r in techniques]
+        out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(techniques) + _table(
+            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(techniques)))
 
     iocs = _defanged_iocs(a)
     if iocs:

@@ -91,7 +91,7 @@ def fetch(source: ImapSource, max_bytes: int, after_uid: int = 0) -> Iterator[tu
         status, _ = connection.select(_quote(source.folder), readonly=True)
         if status != "OK":
             raise ImapError("no folder %r on %s" % (source.folder, source.host))
-        status, data = connection.uid("SEARCH", None, *_criteria(source, after_uid))
+        status, data = connection.uid("SEARCH", *_criteria(source, after_uid))
         if status != "OK":
             raise ImapError("search failed in %r" % source.folder)
         uids = [int(u) for u in (data[0] or b"").split() if u.isdigit()][-MAX_UIDS:]

@@ -19,7 +19,7 @@ from . import knowledge
 try:  # Python 3.11+
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10
-    tomllib = None  # type: ignore[assignment]
+    tomllib = None
 
 FAIL_LEVELS = ("never", "suspicious", "likely", "malicious")
 MAX_CONFIG_BYTES = 1024 * 1024

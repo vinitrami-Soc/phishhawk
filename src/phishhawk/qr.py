@@ -254,7 +254,7 @@ def _ccitt_image(stream: bytes, width: int, height: int, dictionary: bytes):
 
     _, image = _libraries()
     k = re.search(rb"/K\s+(-?\d+)", dictionary)
-    group4 = bool(k) and int(k.group(1)) < 0
+    group4 = k is not None and int(k.group(1)) < 0
     black_is_one = b"/BlackIs1 true" in dictionary
     entries = [(256, 4, width), (257, 4, height), (258, 3, 1), (259, 3, 4 if group4 else 3),
                (262, 3, 0 if black_is_one else 1), (273, 4, 0), (277, 3, 1), (278, 4, height),

@@ -98,6 +98,9 @@ def _parse(data: bytes) -> dict[str, Any]:
             if not out["target"]:
                 out["target"] = target
         offset += block_size
+    arguments = out.get("arguments", "").replace("\x00", "")
+    # Whitespace in front of the command pushes it out of the Properties box.
+    out["padding"] = len(arguments) - len(arguments.lstrip())
     for key in list(out):
         if isinstance(out[key], str):
             out[key] = out[key].replace("\x00", "").strip()[:MAX_STRING]
@@ -117,7 +120,7 @@ def suspicious(details: dict[str, Any]) -> list[str]:
         reasons.append("runs an encoded PowerShell command")
     if _URL_RE.search(arguments):
         reasons.append("downloads from the internet")
-    if len(arguments) > 400 or re.search(r"\s{40,}", arguments):
+    if len(arguments) > 400 or details.get("padding", 0) >= 40 or re.search(r"\s{40,}", arguments):
         reasons.append("hides a long command line")
     if details.get("minimized") and arguments:
         reasons.append("opens minimised")

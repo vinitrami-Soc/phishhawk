@@ -57,7 +57,7 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     if a.reported_by:
         rb = a.reported_by
         out += ["", colour(_section("REPORTED BY"), "bold")]
-        out.append("Reporter     : %s%s" % (rb.get("display") + " " if rb.get("display") else "",
+        out.append("Reporter     : %s%s" % (str(rb.get("display")) + " " if rb.get("display") else "",
                                            "<%s>" % rb.get("from") if rb.get("from") else ""))
         out.append("Covering note: %s" % (rb.get("subject") or "(none)"))
         out.append(colour("The attached original was unwrapped and is analysed below.", "dim"))
@@ -87,18 +87,18 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     if a.hops:
         out += ["", colour(_section("MAIL PATH (%d hop%s, oldest first)" % (len(a.hops), "" if len(a.hops) == 1
                                                                          else "s")), "bold")]
-        shown = a.hops if verbose else a.hops[:8]
-        for index, hop in enumerate(shown, 1):
-            ip = " [%s]" % defang_host(hop["ip"]) if hop.get("ip") else ""
+        hops_shown = a.hops if verbose else a.hops[:8]
+        for index, hop in enumerate(hops_shown, 1):
+            hop_ip = " [%s]" % defang_host(hop["ip"]) if hop.get("ip") else ""
             delay = hop.get("delay_seconds")
             timing = "  +%ss" % delay if isinstance(delay, int) and delay >= 0 else \
                 ("  %ss (clock skew)" % delay if isinstance(delay, int) else "")
-            out.append("  %d. %s%s -> %s%s%s" % (index, defang_host(hop.get("from", "?")), ip,
+            out.append("  %d. %s%s -> %s%s%s" % (index, defang_host(hop.get("from", "?")), hop_ip,
                                                 defang_host(hop.get("by", "?")),
                                                 "  (%s)" % hop["with"] if hop.get("with") else "",
                                                 colour(timing, "dim")))
-        if len(shown) < len(a.hops):
-            out.append(colour("  ... %d more hops (use --verbose)" % (len(a.hops) - len(shown)), "dim"))
+        if len(hops_shown) < len(a.hops):
+            out.append(colour("  ... %d more hops (use --verbose)" % (len(a.hops) - len(hops_shown)), "dim"))
 
     if a.lookalikes:
         out += ["", colour(_section("LOOKALIKE DOMAINS (%d)" % len(a.lookalikes)), "bold")]

@@ -152,7 +152,7 @@ class CompoundFile:
         """Walk the tree of every storage (siblings form a binary tree under
         each storage's child pointer), with a visited set against loops."""
         visited = {0}
-        stack = [(self.entries[0].child, ())]
+        stack: list[tuple[int, tuple[str, ...]]] = [(self.entries[0].child, ())]
         count = len(self.entries)
         while stack:
             index, parent = stack.pop()

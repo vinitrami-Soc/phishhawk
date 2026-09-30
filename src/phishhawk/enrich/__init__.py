@@ -78,6 +78,8 @@ class Enricher:
 
     def _virustotal(self, a: Analysis, note: Callable[[str], None]) -> None:
         vt = self.virustotal
+        if vt is None:
+            return
         start = vt.calls
         # Spend the budget where it matters: already-suspicious IOCs first.
         for ioc in sorted(a.urls, key=lambda u: not u.flagged):
@@ -97,21 +99,27 @@ class Enricher:
                 f.vt = vt.lookup_file(f.sha256)
 
     def _urlscan(self, a: Analysis, note: Callable[[str], None]) -> None:
+        urlscan = self.urlscan
+        if urlscan is None:
+            return
         results: dict[str, dict] = {}
         for ioc in a.urls:
             if a.is_trusted_domain(ioc.host):
                 continue
             if ioc.host not in results:
                 note("urlscan.io %s" % ioc.host)
-                results[ioc.host] = self.urlscan.search_host(ioc.host)
+                results[ioc.host] = urlscan.search_host(ioc.host)
             ioc.urlscan = dict(results[ioc.host])
             if self.urlscan_submit:
                 redacted = redact_recipients(ioc.url, a)
-                ioc.urlscan["submission"] = self.urlscan.submit(redacted)
+                ioc.urlscan["submission"] = urlscan.submit(redacted)
                 if redacted != ioc.url:
                     ioc.urlscan["submission"]["redacted"] = True
 
     def _rdap(self, a: Analysis, note: Callable[[str], None]) -> None:
+        rdap = self.rdap
+        if rdap is None:
+            return
         candidates = [a.from_domain, a.reply_to_domain, a.return_path_domain]
         candidates += [ioc.host for ioc in a.urls]
         for host in candidates:
@@ -120,4 +128,4 @@ class Enricher:
                     or base in FREEMAIL or a.is_trusted_domain(base)):
                 continue
             note("RDAP %s" % base)
-            a.domain_intel[base] = self.rdap.domain_age(base)
+            a.domain_intel[base] = rdap.domain_age(base)

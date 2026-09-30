@@ -84,9 +84,9 @@ class Cache:
         self._conn.commit()
         return cursor.rowcount
 
-    def stats(self) -> dict[str, object]:
+    def stats(self) -> dict[str, Any]:
         """Entry counts per provider, how many are still fresh, and file size."""
-        info: dict[str, object] = {"path": self.path, "enabled": self.enabled, "entries": 0,
+        info: dict[str, Any] = {"path": self.path, "enabled": self.enabled, "entries": 0,
                                    "fresh": 0, "providers": {}, "bytes": 0}
         if self._conn is None:
             return info

@@ -726,7 +726,7 @@ def _lure_hits(a: Analysis) -> dict[str, list[str]]:
         found = [p for p in phrases if p in text or (" " in p and p.replace(" ", "") in squeezed)]
         if found:
             hits[category] = found
-    a._lure_cache = hits  # noqa: SLF001 - analysis-scoped memo, not a dataclass field
+    a.__dict__["_lure_cache"] = hits  # an analysis-scoped memo, not a dataclass field: never exported
     return hits
 
 
@@ -830,7 +830,7 @@ def apply_enrichment(a: Analysis) -> Analysis:
         if vt_is_malicious(ioc.vt):
             ioc.flagged = True
             a.add_signal("high", "VirusTotal: %s flagged by %d engines"
-                         % (defang_url(ioc.url), ioc.vt["malicious"]), ("T1566.002", "T1204.001"))
+                         % (defang_url(ioc.url), (ioc.vt or {})["malicious"]), ("T1566.002", "T1204.001"))
         elif vt_is_suspicious(ioc.vt):
             a.add_signal("medium", "VirusTotal: %s has minority detections" % defang_url(ioc.url),
                          ("T1566.002",))
@@ -840,7 +840,7 @@ def apply_enrichment(a: Analysis) -> Analysis:
     for f in a.attachments:
         if vt_is_malicious(f.vt):
             f.flagged = True
-            a.add_signal("high", "VirusTotal: %s flagged by %d engines" % (f.filename, f.vt["malicious"]),
+            a.add_signal("high", "VirusTotal: %s flagged by %d engines" % (f.filename, (f.vt or {})["malicious"]),
                          ("T1566.001", "T1204.002"))
         elif vt_is_suspicious(f.vt):
             a.add_signal("medium", "VirusTotal: %s has minority detections" % f.filename, ("T1566.001",))

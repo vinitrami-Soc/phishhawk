@@ -112,7 +112,10 @@ def _banner_ok(stream) -> bool:
 
 
 class _Parser(argparse.ArgumentParser):
-    """ArgumentParser that shows the banner above help on a terminal."""
+    """ArgumentParser that shows the banner above help on a terminal, and
+    knows its sub-commands by name."""
+
+    commands: dict[str, argparse.ArgumentParser]
 
     def print_help(self, file=None) -> None:
         stream = file or sys.stdout
@@ -121,8 +124,8 @@ class _Parser(argparse.ArgumentParser):
         super().print_help(file)
 
 
-def _display_options() -> argparse.ArgumentParser:
-    common = argparse.ArgumentParser(add_help=False)
+def _display_options() -> _Parser:
+    common = _Parser(add_help=False)
     group = common.add_argument_group("display")
     group.add_argument("--no-color", action="store_true", help="disable ANSI colours (or set NO_COLOR)")
     group.add_argument("--no-banner", action="store_true", help="do not print the PhishHawk banner")
@@ -198,7 +201,7 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
                             help="SQLite cache file (default: %(default)s)")
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> _Parser:
     parser = _Parser(prog="phishhawk", description=OVERVIEW, epilog=MAIN_EPILOG, formatter_class=_Formatter)
     parser.add_argument("-V", "--version", action="version", version="PhishHawk %s" % __version__)
     parser.add_argument("--no-color", dest="top_no_color", action="store_true", help=argparse.SUPPRESS)
@@ -261,6 +264,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     helper = commands.add_parser("help", help="show help for a command")
     helper.add_argument("topic", nargs="?", choices=COMMANDS[:-1])
+    parser.commands = dict(commands.choices)
     return parser
 
 
@@ -426,8 +430,8 @@ def _exit_code(analyses: list[Analysis], failed: bool, fail_on: str) -> int:
     return {0: 0, 1: 1, 2: 1, 3: 2}[worst]
 
 
-def cmd_scan(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    scan_parser = parser._subparsers._group_actions[0].choices["scan"]  # noqa: SLF001
+def cmd_scan(args: argparse.Namespace, parser: _Parser) -> int:
+    scan_parser = parser.commands["scan"]
     if not args.inputs:
         scan_parser.error("no input: give .eml, .msg or .mbox files, directories or '-' for stdin")
     return _triage(args, scan_parser, lambda limit: iter_messages(expand_inputs(args.inputs), limit))
@@ -539,8 +543,8 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
 # imap
 # ---------------------------------------------------------------------------
 
-def cmd_imap(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    imap_parser = parser._subparsers._group_actions[0].choices["imap"]  # noqa: SLF001
+def cmd_imap(args: argparse.Namespace, parser: _Parser) -> int:
+    imap_parser = parser.commands["imap"]
     err = console.Palette(_colour_ok(sys.stderr, args.no_color))
     if not args.user:
         imap_parser.error("--user (or $PHISHHAWK_IMAP_USER) is required")
@@ -623,10 +627,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     rows.append(("Python", version, "ok" if sys.version_info >= (3, 10) else "fail",
                  "" if sys.version_info >= (3, 10) else "PhishHawk needs Python 3.10+"))
     try:
-        import requests
-        rows.append(("requests", requests.__version__, "ok", "used for enrichment"))
+        import requests as http
+        rows.append(("requests", http.__version__, "ok", "used for enrichment"))
     except ImportError:
-        requests = None
+        http = None  # type: ignore[assignment]
         rows.append(("requests", "not installed", "fail", "pip install requests  (or always use --offline)"))
     qr_versions = qrcodes.versions()
     if qr_versions:
@@ -675,15 +679,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         rows.append(("Cache", default_cache_path(), "warn", "not writable: lookups will not be cached"))
 
     if args.network:
-        if requests is None:
+        if http is None:
             rows.append(("Network", "skipped", "fail", "needs the requests package"))
         else:
-            session = requests.Session()
+            session = http.Session()
             for name, url in ENDPOINTS.items():
                 try:
                     code = session.get(url, timeout=8).status_code
                     rows.append((name + " API", "reachable (HTTP %d)" % code, "ok", ""))
-                except requests.RequestException as exc:
+                except http.RequestException as exc:
                     rows.append((name + " API", "unreachable", "fail", type(exc).__name__))
 
     print(colour("PhishHawk %s doctor" % __version__, "bold"))
@@ -757,7 +761,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     if args.command == "help":
-        target = parser._subparsers._group_actions[0].choices.get(args.topic) if args.topic else parser  # noqa: SLF001
+        target = parser.commands.get(args.topic, parser) if args.topic else parser
         target.print_help()
         return 0
     if args.command == "scan":

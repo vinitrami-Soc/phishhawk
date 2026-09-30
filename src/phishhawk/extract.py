@@ -455,8 +455,8 @@ class _HtmlParser(HTMLParser):
             self._tables[-1]["rows"].append([])
         elif tag in ("td", "th") and self._tables and self._tables[-1]["rows"]:
             table = self._tables[-1]
-            span = values.get("colspan", "1")
-            span = min(int(span), 200) if span.isdigit() and int(span) > 0 else 1
+            colspan = values.get("colspan", "1")
+            span = min(int(colspan), 200) if colspan.isdigit() and int(colspan) > 0 else 1
             if table["cells"] + span <= MAX_TABLE_CELLS:
                 table["rows"][-1].extend([_dark_cell(values)] * span)
                 table["cells"] += span
@@ -600,10 +600,10 @@ def _pdf_uris(blob: bytes, found: list[str]) -> None:
         _keep(clean_url(raw), found)
     for match in _PDF_URI_HEX_RE.finditer(blob):
         try:
-            raw = bytes.fromhex(match.group(1).decode("ascii").replace(" ", "").replace("\n", ""))
+            decoded = bytes.fromhex(match.group(1).decode("ascii").replace(" ", "").replace("\n", ""))
         except ValueError:
             continue
-        _keep(clean_url(raw.decode("latin-1")), found)
+        _keep(clean_url(decoded.decode("latin-1")), found)
 
 
 def _keep(url: str, found: list[str]) -> None:

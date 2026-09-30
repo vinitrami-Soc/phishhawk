@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from functools import lru_cache
 
 from .extract import domain_label, is_ip, registrable_domain
@@ -217,7 +218,7 @@ def _brand_hits(base: str) -> tuple[tuple[str, str], ...]:
     return tuple((target, method) for target, method in hits if method)
 
 
-def find_lookalikes(domain: str, where: str, protected: list[str] | set[str] = ()) -> list[Lookalike]:
+def find_lookalikes(domain: str, where: str, protected: Iterable[str] = ()) -> list[Lookalike]:
     domain = (domain or "").lower().strip(".")
     if not domain or is_ip(domain):
         return []

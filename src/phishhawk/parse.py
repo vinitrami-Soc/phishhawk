@@ -108,7 +108,7 @@ def parse_message(message: Message, path: str = "<memory>", unwrap: bool = True,
     _read_headers(message, analysis, tuple(t.lower() for t in trusted_authserv))
     _read_content(message, analysis, qr, file_hook)
     analysis.protected_domains = _protected_domains(message, analysis, protected, auto_protect)
-    analysis._carriers = carriers  # noqa: SLF001 - the unwrapped layers, re-checked by the pipeline
+    analysis.__dict__["_carriers"] = carriers  # the unwrapped layers, re-checked by the pipeline; not exported
     return analysis
 
 
@@ -136,16 +136,19 @@ def _walk_shallow(msg: Message) -> Iterator[Message]:
         payload = msg.get_payload()
         if isinstance(payload, list):
             for part in payload:
-                yield from _walk_shallow(part)
+                if isinstance(part, Message):
+                    yield from _walk_shallow(part)
 
 
 def _decode_text(part: Message) -> str:
-    try:
-        content = part.get_content()
-        if isinstance(content, str):
-            return content
-    except Exception:
-        pass
+    getter = getattr(part, "get_content", None)  # EmailMessage; compat32 parts lack it
+    if getter is not None:
+        try:
+            content = getter()
+            if isinstance(content, str):
+                return content
+        except Exception:
+            pass
     payload = _part_bytes(part)
     charset = part.get_content_charset() or "utf-8"
     try:
@@ -159,7 +162,7 @@ def _part_bytes(part: Message) -> bytes:
         payload = part.get_payload(decode=True)
     except Exception:
         payload = None
-    if payload:
+    if isinstance(payload, bytes) and payload:
         return payload
     if part.get_content_type() == "message/rfc822":
         inner = _rfc822_payload(part)
@@ -176,7 +179,7 @@ def _part_bytes(part: Message) -> bytes:
 
 def _rfc822_payload(part: Message) -> Message | None:
     payload = part.get_payload()
-    if isinstance(payload, list) and payload:
+    if isinstance(payload, list) and payload and isinstance(payload[0], Message):
         return payload[0]
     if isinstance(payload, Message):
         return payload
@@ -184,7 +187,7 @@ def _rfc822_payload(part: Message) -> Message | None:
         raw = part.get_payload(decode=True)
     except Exception:
         raw = None
-    return load_message(raw) if raw else None
+    return load_message(raw) if isinstance(raw, bytes) and raw else None
 
 
 def _attached_messages(msg: Message) -> list[Message]:
@@ -245,7 +248,7 @@ def _authserv_id(value: str) -> str:
     return value.split(";", 1)[0].strip().lower()
 
 
-def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str, str], list[str]]:
+def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str, str], list[dict[str, Any]]]:
     """SPF/DKIM/DMARC results from the receiving server, and any claims that
     were forged below them.
 
@@ -683,9 +686,9 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
     for candidate in [analysis.from_domain, analysis.reply_to_domain, analysis.return_path_domain]:
         if candidate:
             domains.setdefault(candidate)
-    for ioc in analysis.urls:
-        if ioc.host:
-            domains.setdefault(ioc.host)
+    for url_ioc in analysis.urls:
+        if url_ioc.host:
+            domains.setdefault(url_ioc.host)
     analysis.domains = list(domains)
 
 

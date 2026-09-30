@@ -299,8 +299,8 @@ def _build(cfb: CompoundFile, prefix: tuple[str, ...], depth: int, embedded: boo
             part = email.message_from_bytes(data, policy=email.policy.default)
             body.add_attachment(part, filename=name if name.lower().endswith((".msg", ".eml")) else name + ".msg")
             continue
-        data = attach.raw(ATTACH_DATA)
-        if data is None:
+        blob = attach.raw(ATTACH_DATA)
+        if blob is None:
             continue
         mime = attach.text(ATTACH_MIME, codepage).strip().lower()
         maintype, _, subtype = mime.partition("/")
@@ -310,7 +310,7 @@ def _build(cfb: CompoundFile, prefix: tuple[str, ...], depth: int, embedded: boo
         if maintype == "text":  # set_content wants str for text/*; keep the bytes as they are
             maintype, subtype = "application", "octet-stream"
         cid = attach.text(ATTACH_CONTENT_ID, codepage).strip("<> \x00")
-        body.add_attachment(data, maintype=maintype, subtype=subtype, filename=name,
+        body.add_attachment(blob, maintype=maintype, subtype=subtype, filename=name,
                             disposition="inline" if cid and maintype == "image" else "attachment")
 
     headers = _unfold(props.text(TRANSPORT_HEADERS, codepage))

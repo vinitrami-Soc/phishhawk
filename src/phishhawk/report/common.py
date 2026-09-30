@@ -84,7 +84,7 @@ def human_size(size: int) -> str:
 
 
 def vt_queried(report: dict[str, Any] | None) -> bool:
-    return bool(report) and report.get("status") not in ("skipped",)
+    return bool(report) and (report or {}).get("status") != "skipped"
 
 
 def vt_text(report: dict[str, Any] | None) -> tuple[str, str]:
@@ -109,9 +109,9 @@ def vt_text(report: dict[str, Any] | None) -> tuple[str, str]:
         "not_found": "no record: never submitted to VirusTotal",
         "rate_limited": "rate limited (free tier: 4 lookups/min)",
         "auth_error": "API key rejected",
-        "skipped": report.get("detail", "skipped"),
+        "skipped": str(report.get("detail", "skipped")),
     }
-    return messages.get(status, report.get("detail") or str(status)) + cached, "dim"
+    return messages.get(str(status), str(report.get("detail") or status)) + cached, "dim"
 
 
 def urlscan_text(report: dict[str, Any] | None) -> tuple[str, str]:
