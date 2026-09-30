@@ -110,20 +110,25 @@ def _vint(value: int) -> bytes:
             return bytes(out)
 
 
-def rar5(names: list[str], encrypted_headers: bool = False) -> bytes:
-    """A RAR5 archive's headers: stored empty files named `names`."""
-    def block(kind: int, body: bytes, flags: int = 0) -> bytes:
-        header = _vint(kind) + _vint(flags) + body
+def rar5(names: list[str], encrypted_headers: bool = False, contents: dict[str, bytes] | None = None,
+         compressed: bool = False) -> bytes:
+    """A RAR5 archive: files named `names`, stored with `contents` (empty by
+    default), or marked as compressed (method 3) with those bytes as data."""
+    def block(kind: int, body: bytes, flags: int = 0, data: bytes = b"") -> bytes:
+        header = _vint(kind) + _vint(flags | (0x02 if data else 0)) + (_vint(len(data)) if data else b"") + body
         size = _vint(len(header))
-        return struct.pack("<I", binascii.crc32(size + header)) + size + header
+        return struct.pack("<I", binascii.crc32(size + header)) + size + header + data
 
     out = b"Rar!\x1a\x07\x01\x00" + block(1, _vint(0))
     if encrypted_headers:
         return out + block(4, _vint(0) + _vint(0) + _vint(15) + b"\0" * 16 + b"\0" * 16)
     for name in names:
         encoded = name.encode()
-        body = _vint(0) + _vint(0) + _vint(0x20) + _vint(0) + _vint(0) + _vint(len(encoded)) + encoded
-        out += block(2, body)
+        data = (contents or {}).get(name, b"")
+        compression = (3 << 7) if compressed else 0
+        body = _vint(0) + _vint(len(data)) + _vint(0x20) + _vint(compression) + _vint(0) + _vint(len(encoded)) \
+            + encoded
+        out += block(2, body, data=data)
     return out + block(5, _vint(0))
 
 
@@ -251,6 +256,35 @@ def _7z_number(value: int) -> bytes:
     if value < 0x200000:
         return bytes([0xC0 | (value >> 16), value & 0xFF, (value >> 8) & 0xFF])
     return bytes([0xE0 | (value >> 24)]) + (value & 0xFFFFFF).to_bytes(3, "little")
+
+
+def seven_zip_packed(files: dict[str, bytes], bcj: bool = False, header_coder: str = "") -> bytes:
+    """A 7z archive whose files are really compressed: one solid LZMA2 folder,
+    optionally behind the x86 branch filter, as 7-Zip packs executables."""
+    import lzma
+
+    data = b"".join(files.values())
+    filters = ([{"id": lzma.FILTER_X86}] if bcj else []) + [{"id": lzma.FILTER_LZMA2, "dict_size": 1 << 20}]
+    packed = lzma.compress(data, format=lzma.FORMAT_RAW, filters=filters)
+    lzma2 = bytes([0x21]) + b"\x21" + _7z_number(1) + bytes([16])  # 1 MB dictionary
+    if bcj:  # coder 0 (BCJ) reads coder 1's (LZMA2) output; the packed stream feeds LZMA2
+        coders = _7z_number(2) + bytes([0x04]) + b"\x03\x03\x01\x03" + lzma2 + _7z_number(0) + _7z_number(1)
+        unpack = _7z_number(len(data)) * 2
+    else:
+        coders = _7z_number(1) + lzma2
+        unpack = _7z_number(len(data))
+    sizes = list(files.values())
+    header = b"\x01\x04"
+    header += b"\x06" + _7z_number(0) + _7z_number(1) + b"\x09" + _7z_number(len(packed)) + b"\x00"
+    header += b"\x07\x0b" + _7z_number(1) + b"\x00" + coders + b"\x0c" + unpack + b"\x00"
+    header += b"\x08\x0d" + _7z_number(len(files)) + b"\x09" \
+        + b"".join(_7z_number(len(item)) for item in sizes[:-1]) + b"\x00"
+    header += b"\x00"
+    names_blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in files)
+    header += b"\x05" + _7z_number(len(files)) + b"\x11" + _7z_number(len(names_blob)) + names_blob + b"\x00"
+    header += b"\x00"
+    start = struct.pack("<QQI", len(packed), len(header), binascii.crc32(header))
+    return b"7z\xbc\xaf\x27\x1c\x00\x04" + struct.pack("<I", binascii.crc32(start)) + start + packed + header
 
 
 def seven_zip_encoded(names: list[str], coder: str = "lzma", encrypted_content: bool = False,

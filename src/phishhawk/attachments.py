@@ -34,6 +34,7 @@ MAX_ARCHIVE_MEMBERS = 200
 MAX_MEMBER_BYTES = 25 * 1024 * 1024
 MAX_ARCHIVE_TOTAL = 100 * 1024 * 1024
 MAX_GUNZIP = 50 * 1024 * 1024
+MAX_DECOMPRESS = 64 * 1024 * 1024  # bytes a 7z or RAR archive may decompress to
 OOXML_EXTENSIONS = {".docx", ".docm", ".dotx", ".dotm", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xlam", ".pptx",
                     ".pptm", ".potx", ".potm", ".ppsx", ".ppsm", ".sldx"}
 HTML_EXTENSIONS = {".html", ".htm", ".shtml", ".xhtml", ".svg", ".mht", ".mhtml"}
@@ -152,7 +153,7 @@ class Inspector:
             ioc.notes.append("virtual hard disk: mounts with a double-click, contents not listed")
             ioc.flagged = True
         elif kind in ("rar", "7z"):
-            self._listing(ioc, data, kind)
+            self._listing(ioc, data, kind, depth)
         elif kind == "gzip":
             self._gzip(ioc, data, depth)
         elif kind == "tar":
@@ -241,17 +242,24 @@ class Inspector:
                 continue
             self.child(ioc, item.name, item.data, depth)
 
-    def _listing(self, ioc: FileIoc, data: bytes, kind: str) -> None:
+    def _listing(self, ioc: FileIoc, data: bytes, kind: str, depth: int) -> None:
+        budget = min(MAX_DECOMPRESS, max(0, MAX_TOTAL_BYTES - self.bytes))
         try:
-            listing = archives.list_rar(data) if kind == "rar" else archives.list_7z(data)
+            listing = archives.list_rar(data, budget) if kind == "rar" else archives.list_7z(data, budget)
         except (ValueError, struct.error, IndexError) as exc:
             ioc.notes.append("unreadable %s archive (%s)" % (kind.upper(), str(exc)[:60]))
             return
         summary = self._summary(ioc, "%s archive" % kind.upper(), listing.names, listing.encrypted,
                                 listing.truncated, listing.names_hidden)
-        summary["skipped"] = len(listing.names)  # listed from the headers, not extracted
         if listing.encrypted and self.passwords:
             summary["password_in_body"] = self.passwords[0]
+        contents = listing.contents or [None] * len(listing.names)
+        for name, content in zip(listing.names[:MAX_ARCHIVE_MEMBERS], contents, strict=False):
+            if content is None or len(content) > MAX_MEMBER_BYTES:
+                summary["skipped"] += 1  # listed from the headers only
+                continue
+            self.child(ioc, name, content, depth)
+        summary["skipped"] += max(0, len(listing.names) - MAX_ARCHIVE_MEMBERS)
 
     def _zip(self, ioc: FileIoc, data: bytes, depth: int) -> None:
         try:

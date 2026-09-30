@@ -61,9 +61,13 @@ SEEDS = {
     "rar": fb.rar5(["a.lnk", "b/c.txt"]), "rar4": fb.rar4([("a.exe", 4)]),
     "7z": fb.seven_zip_encoded(["a.js"], coder="lzma"), "iso": fb.iso({"a.txt": b"x"}),
     "fat": fb.fat12({"a.exe": b"MZ"}), "lnk": fb.lnk(), "tnef": fb.tnef({"a.exe": b"MZ"}, "hi"),
+    "7z-packed": fb.seven_zip_packed({"a.js": b"x" * 300, "b.exe": b"MZ" + bytes(200)}, bcj=True),
+    "rar-stored": fb.rar5(["a.js", "b.txt"], contents={"a.js": b"alert(1)" * 20}),
 }
 READERS = {"rar": archives.list_rar, "rar4": archives.list_rar, "7z": archives.list_7z, "iso": disk.list_iso,
-           "fat": disk.list_fat, "lnk": lnk.parse_lnk, "tnef": mailparts.parse_tnef}
+           "fat": disk.list_fat, "lnk": lnk.parse_lnk, "tnef": mailparts.parse_tnef,
+           "7z-packed": lambda data: archives.list_7z(data, budget=1 << 20),
+           "rar-stored": lambda data: archives.list_rar(data, budget=1 << 20)}
 
 
 @st.composite

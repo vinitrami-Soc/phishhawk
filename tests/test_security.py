@@ -381,6 +381,45 @@ def test_7z_header_dictionary_is_sized_to_the_header(monkeypatch):
     assert seen and seen[0] <= 4 * 1024 * 1024
 
 
+def test_7z_contents_ask_for_no_more_memory_than_they_produce(monkeypatch):
+    """2.1 decompresses 7z members. A folder whose coder asks for a 4 GB
+    dictionary gets one no larger than its own output, and a folder bigger
+    than the budget is listed, never decompressed."""
+    import lzma
+
+    import filebuild as fb
+    from phishhawk.formats import archives
+
+    files = {"invoice.js": b"WScript.Shell" * 100}
+    data = fb.seven_zip_packed(files)
+    data = data.replace(b"\x21\x21\x01\x10", b"\x21\x21\x01\x28")  # LZMA2 dictionary 16 -> 40: 4 GB
+    seen = []
+    real = lzma.LZMADecompressor
+
+    def spy(**kw):
+        seen.append(kw["filters"][-1]["dict_size"])
+        return real(**kw)
+
+    monkeypatch.setattr(archives.lzma, "LZMADecompressor", spy)
+    assert archives.list_7z(data, budget=1 << 20).contents == [files["invoice.js"]]
+    assert seen == [4096]
+    seen.clear()
+    assert archives.list_7z(data, budget=100).contents == [None]
+    assert seen == []
+
+
+def test_7z_and_rar_members_count_against_the_message_budget():
+    import filebuild as fb
+    from phishhawk import attachments
+
+    member = b"MZ" + b"\0" * 1000
+    raw = build_eml(attachments=[(fb.seven_zip_packed({"a%d.exe" % i: member for i in range(20)}),
+                                  "application", "x-7z-compressed", "a.7z")])
+    a = parse_bytes(raw)
+    assert sum(1 for f in a.attachments if f.parent == "a.7z") == 20
+    assert attachments.MAX_DECOMPRESS <= attachments.MAX_ARCHIVE_TOTAL
+
+
 def test_office_parts_are_read_against_one_budget(monkeypatch):
     """A .docx is a zip, and a zip can hold thousands of parts that each
     inflate to 8 MB."""

