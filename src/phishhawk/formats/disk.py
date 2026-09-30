@@ -115,10 +115,11 @@ def list_iso(data: bytes) -> list[DiskFile]:
 
 # --------------------------------------------------------------------- FAT --
 
-def list_fat(data: bytes) -> list[DiskFile]:
+def list_fat(data: bytes, budget: int | None = None) -> list[DiskFile]:
     """Files in a FAT12, FAT16 or FAT32 image: the root directory and its
     subdirectories. `data` is anything that slices like bytes (a partition
-    of a virtual disk is read on demand)."""
+    of a virtual disk is read on demand); `budget` caps the bytes of file
+    content read (MAX_TOTAL_BYTES by default)."""
     head = bytes(data[:512])
     if len(head) < 512:
         raise ValueError("not a FAT image")
@@ -194,7 +195,7 @@ def list_fat(data: bytes) -> list[DiskFile]:
             yield name.replace("￿", ""), entry[11], cluster, struct.unpack_from("<I", entry, 28)[0]
 
     files: list[DiskFile] = []
-    budget, directory_budget = MAX_TOTAL_BYTES, MAX_DIRECTORY_BYTES
+    budget, directory_budget = MAX_TOTAL_BYTES if budget is None else budget, MAX_DIRECTORY_BYTES
     if fat32:
         root = read_chain(root_cluster, min(1024 * 1024, directory_budget)) or b""
         directory_budget -= max(len(root), cluster_size)

@@ -131,7 +131,14 @@ def top_level_files(analysis: Analysis) -> list[FileIoc]:
 
 
 def children_of(analysis: Analysis, parent: FileIoc) -> list[FileIoc]:
-    return [f for f in analysis.attachments if f.parent == parent.filename and f is not parent]
+    """The files opened out of `parent`. Names repeat (every message attached
+    to a message is "attached-message.eml"), so a file the inspector opened
+    names its parent object; for others, the name decides. A child always
+    comes after its parent, so no file can be its own descendant."""
+    files = analysis.attachments
+    start = next((index for index, f in enumerate(files) if f is parent), len(files)) + 1
+    return [f for f in files[start:]
+            if f.parent == parent.filename and f.__dict__.get("_parent_file", parent) is parent]
 
 
 def unopened_members(analysis: Analysis, parent: FileIoc) -> list[str]:

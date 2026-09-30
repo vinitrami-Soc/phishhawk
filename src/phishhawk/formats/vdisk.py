@@ -361,8 +361,9 @@ def _read_runs(volume: Volume, runs: list[tuple[int | None, int]], cluster: int,
     return bytes(out[:size])
 
 
-def list_ntfs(volume: Volume) -> list[DiskFile]:
-    """Files on an NTFS volume, found through the master file table."""
+def list_ntfs(volume: Volume, budget: int | None = None) -> list[DiskFile]:
+    """Files on an NTFS volume, found through the master file table.
+    `budget` caps the bytes of file content read (MAX_TOTAL_BYTES by default)."""
     boot = volume[0:512]
     if boot[3:11] != b"NTFS    ":
         raise ValueError("not an NTFS volume")
@@ -407,7 +408,7 @@ def list_ntfs(volume: Volume) -> list[DiskFile]:
         return "/".join(reversed(parts))
 
     files: list[DiskFile] = []
-    budget = MAX_TOTAL_BYTES
+    budget = MAX_TOTAL_BYTES if budget is None else budget
     for number in sorted(records):
         record = records[number]
         if record.directory or number < 24:  # the file system's own files
@@ -441,16 +442,29 @@ def _list_vhd(data: bytes) -> list[DiskFile]:
     view = open_disk(data)
     volumes = partitions(view)
     files: list[DiskFile] = []
+    # One budget for the whole disk: every partition entry could name the same
+    # volume, and a file's holes read as zeros without touching the disk.
+    budget = MAX_TOTAL_BYTES
+    failure: Exception | None = None
+    read_one = False
     for number, volume in enumerate(volumes, 1):
-        boot = volume[0:512]
-        if boot[3:11] == b"NTFS    ":
-            found = list_ntfs(volume)
-        elif boot[54:59] in (b"FAT12", b"FAT16") or boot[82:87] == b"FAT32":
-            found = list_fat(volume)  # type: ignore[arg-type]  # a Volume slices like bytes
-        else:
+        try:
+            boot = volume[0:512]
+            if boot[3:11] == b"NTFS    ":
+                found = list_ntfs(volume, budget)
+            elif boot[54:59] in (b"FAT12", b"FAT16") or boot[82:87] == b"FAT32":
+                found = list_fat(volume, budget)  # type: ignore[arg-type]  # a Volume slices like bytes
+            else:
+                continue
+        except (ValueError, struct.error, IndexError, OverflowError) as exc:
+            failure = exc  # a damaged volume does not hide the others
             continue
+        read_one = True
+        budget -= sum(len(item.data) for item in found if item.data is not None)
         prefix = "partition %d/" % number if len(volumes) > 1 else ""
         files += [DiskFile(prefix + item.name, item.size, item.data) for item in found]
         if len(files) >= MAX_FILES:
             break
+    if failure is not None and not read_one:
+        raise failure
     return files[:MAX_FILES]

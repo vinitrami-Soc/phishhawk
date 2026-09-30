@@ -426,7 +426,7 @@ def _hops(received: list[str]) -> list[dict[str, Any]]:
             when = email.utils.parsedate_to_datetime(stamp.strip()) if stamp.strip() else None
             if when is not None and when.tzinfo is None:
                 when = None
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError, IndexError, OverflowError):  # a year too large for C: OverflowError
             when = None
         hop: dict[str, Any] = {}
         for key, pattern in (("from", _HOP_FROM_RE), ("by", _HOP_BY_RE), ("with", _HOP_WITH_RE),

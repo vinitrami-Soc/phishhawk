@@ -100,6 +100,7 @@ class Inspector:
                 parent.notes.append("file budget for this message reached: the rest was not opened")
             return None
         ioc = file_ioc(name, content_type, data, parent=parent.filename if parent else "")
+        ioc.__dict__["_parent_file"] = parent  # not a field: never exported; see report.common.children_of
         ioc.inline = inline
         self.analysis.attachments.append(ioc)
         self.files += 1

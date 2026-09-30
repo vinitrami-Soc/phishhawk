@@ -202,19 +202,30 @@ def load_public_suffixes(path: str) -> int:
     return count
 
 
+def _ascii_label(label: str) -> str:
+    if label.isascii():
+        return label
+    try:
+        return label.encode("idna").decode("ascii")
+    except UnicodeError:
+        return label
+
+
 def _listed_registrable(labels: list[str], suffixes: PublicSuffixes) -> str:
     """eTLD+1 by the list's own algorithm: an exception rule wins, else the
-    longest matching rule, else the TLD alone."""
+    longest matching rule, else the TLD alone. Rules are kept in ASCII, so a
+    Unicode host is matched through its ASCII form but given back as it came."""
     size = len(labels)
     suffix = 1
+    encoded = [_ascii_label(label) for label in labels]
     for start in range(size):
-        name = ".".join(labels[start:])
+        name = ".".join(encoded[start:])
         if name in suffixes.exceptions:
             suffix = size - start - 1
             break
         if name in suffixes.rules:
             suffix = max(suffix, size - start)
-        if start + 1 < size and ".".join(labels[start + 1:]) in suffixes.wildcards:
+        if start + 1 < size and ".".join(encoded[start + 1:]) in suffixes.wildcards:
             suffix = max(suffix, size - start)
     return ".".join(labels[-min(size, suffix + 1):])
 

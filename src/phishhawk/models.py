@@ -27,14 +27,30 @@ def vt_is_suspicious(report: dict[str, Any] | None) -> bool:
     return report.get("malicious", 0) > 0 or report.get("suspicious", 0) > 0
 
 
+def _blank_parentheses(label: str) -> str:
+    """What re.sub(r"\\([^)]*\\)", "()", label) gives, in linear time: that
+    pattern rescans to the end from every "(" once no ")" is left."""
+    out, start = [], 0
+    while True:
+        opening = label.find("(", start)
+        closing = label.find(")", opening + 1) if opening >= 0 else -1
+        if closing < 0:
+            out.append(label[start:])
+            return "".join(out)
+        out.append(label[start:opening] + "()")
+        start = closing + 1
+
+
 def signal_kind(label: str) -> str:
     """A signal's label without the particulars: "credential-harvesting path
-    on a[.]com" and "... on b[.]net" are one kind of finding."""
-    label = re.sub(r"\([^)]*\)", "()", label)
+    on a[.]com" and "... on b[.]net" are one kind of finding. Labels quote
+    the message, so every step here is linear in the label's length."""
+    label = _blank_parentheses(label)
     label = re.sub(r"'[^']*'", "''", label)
-    label = re.sub(r"\S+\[\.\]\S+", "D", label)
+    # A defanged domain or address ("a[.]com", "x@b[.]net"): "[.]" inside a word.
+    label = re.sub(r"\S+", lambda word: "D" if "[.]" in word.group()[1:-1] else word.group(), label)
     label = re.sub(r"\d+", "N", label)
-    return re.sub(r":.*", ":", label, flags=re.S)
+    return label.split(":", 1)[0] + ":" if ":" in label else label
 
 
 # What part of a message a signal is about. Two signals from different

@@ -663,8 +663,8 @@ def _hero(a: Analysis, level: str) -> str:
                         " on %s" % escape(a.reported_by["date"]) if a.reported_by.get("date") else ""))
     side = ('<div class="hero-side"><div class="label">Risk score</div><div class="ring-row">%s%s</div>%s'
             '<p class="ring-note">Ticks on the ring mark the thresholds; it is full at %d points. Likely phishing '
-            'at %d also needs a high-severity signal, and low signals add at most %d points, one per '
-            'kind.</p></div>'
+            'at %d also needs a high-severity signal or three independent kinds of evidence, and low signals '
+            'add at most %d points, one per kind.</p></div>'
             % (_ring(a), _scale(), _legend(a), RING_FULL, THRESHOLDS[1][0], LOW_CAP))
     return ('<div class="card hero lvl-%s"><div><div class="label">Verdict</div>'
             '<div class="verdict">%s<span>%s</span></div><p class="why">%s</p><h1>%s</h1>'

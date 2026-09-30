@@ -8,6 +8,8 @@ the Authorization header and only ever sent to the API's own host."""
 import base64
 import datetime as dt
 import json
+import time
+from urllib.parse import quote
 
 import pytest
 import requests
@@ -271,3 +273,43 @@ def test_an_api_refusal_is_an_error_not_a_crash(monkeypatch, capsys):
     monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
     code, _, err = run(["graph", "--offline", "-q", "--no-color"], capsys)
     assert code == 3 and "Mail.Read" in err and "Traceback" not in err
+
+
+def test_report_file_names_never_collide(monkeypatch, tmp_path, capsys):
+    # Graph ids hold "/", "+" and "=", and differ by case: made file-safe, or
+    # on a disk that ignores case, these four would share one name.
+    ids = ["AAMk/abc=", "AAMk+abc=", "AAMkQ", "AAMkq"]
+    routes = {(GRAPH + "/me/mailFolders/inbox/messages", ()): graph_page(ids)}
+    for message_id in ids:
+        routes[(GRAPH + "/me/messages/%s/$value" % quote(message_id, safe=""), ())] = Response(body=LUNCH)
+    monkeypatch.setattr(requests, "Session", lambda: Api(routes))
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
+    code, out, _ = run(["graph", "--offline", "-q", "--no-color", "--out", str(tmp_path)], capsys)
+    assert code == 0 and all("graph://me/inbox/" + message_id in out for message_id in ids)
+    assert len({p.name.lower() for p in tmp_path.iterdir() if p.suffix == ".json"}) == 4
+
+
+def test_watch_mode_asks_again_for_a_message_the_api_throttled(monkeypatch, capsys):
+    listing = GRAPH + "/me/mailFolders/inbox/messages"
+    answers = [Response(429, {"error": {"code": "TooManyRequests"}}), Response(body=PHISH)]
+
+    class Throttling(Api):
+        def get(self, url, params=None, stream=False, timeout=None, headers=None):
+            if url == GRAPH + "/me/messages/A1/$value":
+                return answers.pop(0)
+            return super().get(url, params, stream, timeout, headers)
+
+    naps = []
+
+    def nap(seconds):
+        naps.append(seconds)
+        if len(naps) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(requests, "Session", lambda: Throttling({(listing, ()): graph_page(["A1"])}))
+    monkeypatch.setattr(time, "sleep", nap)
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
+    with pytest.raises(KeyboardInterrupt):
+        main(["graph", "--offline", "-q", "--no-color", "--watch", "60"])
+    out = capsys.readouterr().out
+    assert answers == [] and "LIKELY PHISHING" in out  # throttled once, read on the next round

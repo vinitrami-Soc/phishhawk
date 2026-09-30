@@ -427,9 +427,11 @@ def _7z_number(value: int) -> bytes:
     return bytes([0xE0 | (value >> 24)]) + (value & 0xFFFFFF).to_bytes(3, "little")
 
 
-def seven_zip_packed(files: dict[str, bytes], bcj: bool = False, header_coder: str = "") -> bytes:
+def seven_zip_packed(files: dict[str, bytes], bcj: bool = False, header_coder: str = "",
+                     unbacked: tuple[str, ...] = ()) -> bytes:
     """A 7z archive whose files are really compressed: one solid LZMA2 folder,
-    optionally behind the x86 branch filter, as 7-Zip packs executables."""
+    optionally behind the x86 branch filter, as 7-Zip packs executables.
+    `unbacked` names more files with a data stream the archive does not have."""
     import lzma
 
     data = b"".join(files.values())
@@ -449,8 +451,9 @@ def seven_zip_packed(files: dict[str, bytes], bcj: bool = False, header_coder: s
     header += b"\x08\x0d" + _7z_number(len(files)) + b"\x09" \
         + b"".join(_7z_number(len(item)) for item in sizes[:-1]) + b"\x00"
     header += b"\x00"
-    names_blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in files)
-    header += b"\x05" + _7z_number(len(files)) + b"\x11" + _7z_number(len(names_blob)) + names_blob + b"\x00"
+    names = list(files) + list(unbacked)
+    names_blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in names)
+    header += b"\x05" + _7z_number(len(names)) + b"\x11" + _7z_number(len(names_blob)) + names_blob + b"\x00"
     header += b"\x00"
     start = struct.pack("<QQI", len(packed), len(header), binascii.crc32(header))
     return b"7z\xbc\xaf\x27\x1c\x00\x04" + struct.pack("<I", binascii.crc32(start)) + start + packed + header

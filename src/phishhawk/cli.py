@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import getpass
+import hashlib
 import json
 import mailbox
 import os
@@ -678,11 +679,17 @@ def cmd_mail_api(args: argparse.Namespace, parser: _Parser) -> int:
     fetch = mailapi.fetch_graph if args.command == "graph" else mailapi.fetch_gmail
     if args.out:
         os.makedirs(args.out, exist_ok=True)
+    ids: dict[str, str] = {}  # label -> message id, for the report file names
 
     def save(label: str, analysis: Analysis) -> None:
         if not args.out:
             return
-        tail = re.sub(r"[^0-9A-Za-z_-]", "_", label.rsplit("/", 1)[-1])[-64:]
+        message_id = ids.get(label, label)
+        tail = message_id
+        if not re.fullmatch(r"[0-9a-z_-]{1,64}", message_id):
+            # Made file-safe, or on a disk that ignores case, two ids could share a name.
+            digest = hashlib.sha256(message_id.encode("utf-8", "replace")).hexdigest()[:12]
+            tail = "%s-%s" % (re.sub(r"[^0-9A-Za-z_-]", "_", message_id)[-40:], digest)
         name = os.path.join(args.out, "%s-%s" % (args.command, tail))
         try:
             _write(name + ".json", json.dumps(to_dict(analysis), indent=2, ensure_ascii=False) + "\n")
@@ -696,7 +703,9 @@ def cmd_mail_api(args: argparse.Namespace, parser: _Parser) -> int:
         def messages(limit: int) -> Iterator[tuple[str, bytes | Exception]]:
             try:
                 for label, message_id, data in fetch(source, limit, seen=frozenset(done)):
-                    done.add(message_id)
+                    if not isinstance(data, mailapi.MailApiError):  # throttled or offline: ask again next round
+                        done.add(message_id)
+                    ids[label] = message_id
                     yield label, data
             except mailapi.MailApiError as exc:
                 yield "%s://%s" % (args.command, source.mailbox), exc

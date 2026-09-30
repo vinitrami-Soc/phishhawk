@@ -6,6 +6,7 @@ disguised Latin word, your own domain)."""
 
 import json
 import os
+import time
 
 import pytest
 
@@ -59,6 +60,13 @@ def test_weak_findings_of_one_kind_count_once():
                   ("low", "credential-harvesting path on www[.]dilbert[.]com", "link"))
     assert signal_kind(a.signals[1].label) == signal_kind(a.signals[2].label)
     assert a.score == 3 and a.verdict == "NO STRONG INDICATORS"  # 2.0 scored 4: suspicious
+
+
+def test_the_kind_of_a_huge_label_is_found_in_linear_time():
+    # Labels quote the message; "\\S+[.]\\S+" over a long unbroken run is quadratic.
+    started = time.perf_counter()
+    kind = signal_kind("credential-harvesting path on " + "a" * 200_000)
+    assert time.perf_counter() - started < 1 and kind.startswith("credential-harvesting path on")
 
 
 def test_the_family_is_in_the_json_report_and_the_schema_allows_it():
@@ -180,3 +188,17 @@ def test_a_sign_in_word_in_an_image_address_is_not_a_credential_page():
 def test_lure_wording_in_more_languages(text, category):
     a = triage_bytes(build_eml(subject=text[:40], text=text))
     assert any(s.label.startswith("%s lure wording" % category) for s in a.signals)
+
+
+def test_the_html_report_states_the_rule_that_decided():
+    from phishhawk.report import html
+
+    a = _analysis(("medium", "SPF=none", "auth"), ("medium", "shortened link: hxxp://bit[.]ly/x", "link"),
+                  ("medium", "prize lure wording: you have won, claim your", "content"),
+                  ("low", "greets the recipient by email address instead of by name", "content"),
+                  ("low", "recipient's address pasted into the subject (mail-merge lure)", "content"))
+    assert a.verdict == "LIKELY PHISHING" and not any(s.severity == "high" for s in a.signals)
+    page = html.render([a])
+    assert "also needs a high-severity signal," not in page  # not since 2.1: three kinds of evidence do too
+    assert "a high-severity signal or three independent kinds of evidence" in page
+    assert "3 parts of the message" in page

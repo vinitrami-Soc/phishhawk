@@ -43,6 +43,8 @@ def psl(tmp_path):
     ("phish.github.io", "phish.github.io"),
     ("a.phish.github.io", "phish.github.io"),
     ("shop.example.xn--55qx5d.cn", "example.xn--55qx5d.cn"),
+    ("shishi.公司.cn", "shishi.公司.cn"),  # a host in Unicode meets the same rule
+    ("www.食狮.公司.cn", "食狮.公司.cn"),
     ("a.b.example.unknowntld", "example.unknowntld"),
 ])
 def test_a_loaded_list_decides_the_registrable_domain(psl, host, registrable):

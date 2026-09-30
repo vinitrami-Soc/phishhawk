@@ -99,6 +99,24 @@ def test_reads_stop_at_the_budget(monkeypatch):
         vdisk.list_vhd(fb.vhd_dynamic(_disk()))
 
 
+def test_file_contents_share_one_budget_across_partitions(monkeypatch):
+    # Every partition could point at the same volume: what the disk's files
+    # may cost is set once for the disk, not once per partition.
+    monkeypatch.setattr(vdisk, "MAX_TOTAL_BYTES", 3 * len(PAYLOAD))
+    ntfs = fb.ntfs({"a.exe": PAYLOAD, "b.exe": PAYLOAD})
+    fat = fb.fat12({"c.exe": PAYLOAD, "d.exe": PAYLOAD})
+    files = vdisk.list_vhd(fb.vhd_fixed(fb.mbr_disk([(0x07, ntfs), (0x01, fat), (0x07, ntfs)])))
+    assert len(files) == 6 and sum(f.data is not None for f in files) == 3
+
+
+def test_a_damaged_partition_does_not_hide_the_others():
+    broken = bytearray(fb.ntfs({"x.exe": b"MZ"}))
+    broken[48:56] = (10 ** 9).to_bytes(8, "little")  # its file table is outside the volume
+    disk_image = fb.mbr_disk([(0x01, fb.fat12({"run.js": b"WScript"})), (0x07, bytes(broken))])
+    files = vdisk.list_vhd(fb.vhd_fixed(disk_image))
+    assert [(f.name, f.data) for f in files] == [("partition 1/RUN.JS", b"WScript")]
+
+
 def test_an_ntfs_parent_loop_is_skipped_not_followed():
     volume = bytearray(fb.ntfs({"a.exe": b"MZ" * 10}))
     record = 4 * 4096 + 24 * 1024  # record 24: the file

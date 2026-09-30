@@ -18,9 +18,10 @@ from phishhawk.cache import Cache
 from phishhawk.cli import main
 from phishhawk.enrich import redact_recipients
 from phishhawk.lookalike import find_lookalikes
-from phishhawk.parse import parse_bytes
+from phishhawk.parse import MAX_UNWRAP_DEPTH, parse_bytes
 from phishhawk.pipeline import Options, triage_bytes, triage_file
 from phishhawk.report import console, csvout, html, markdown
+from phishhawk.report.common import children_of
 
 from conftest import build_eml, sample
 
@@ -119,6 +120,51 @@ def test_a_phish_carrying_a_harmless_attached_message_is_still_caught():
     assert a.verdict != "NO STRONG INDICATORS"  # ...but the carrier's findings count
     assert any(s.label.startswith("carrier email: ") for s in a.signals)
     assert any("micros0ft-verify.top" in u.url for u in a.urls)
+
+
+def test_an_impossible_date_in_a_received_header_is_ignored():
+    # parsedate_to_datetime raises OverflowError, not ValueError, for a year
+    # too large for C; that ended the whole analysis.
+    hop = "from mail.evil.top (mail.evil.top [203.0.113.9]) by mx.acme-labs.example; Mon, 1 Jan %s 00:00:00 +0000"
+    a = triage_bytes(build_eml(headers=[("Received", hop % ("9" * 30))]))
+    assert a.hops and a.hops[0]["time"] == "" and a.hops[0]["ip"] == "203.0.113.9"
+
+
+def test_a_carriers_findings_keep_their_family():
+    # 2.1 weighs independent evidence by family; the carrier's findings are
+    # copied across, and must say what part of the message they are about.
+    inner = EmailMessage()
+    inner["From"], inner["Subject"] = "colleague@acme-labs.example", "Lunch?"
+    inner.set_content("Lunch on Friday?")
+    outer = EmailMessage()
+    outer["From"] = '"Microsoft 365" <no-reply@micros0ft-verify.top>'
+    outer["To"], outer["Subject"] = "victim@acme-labs.example", "Your password expires today"
+    outer.set_content("Your password expires today. Keep it: https://micros0ft-verify.top/login")
+    outer.add_attachment(inner)
+    carried = [s for s in triage_bytes(outer.as_bytes()).signals if s.label.startswith("carrier email: ")]
+    assert carried and all(s.family for s in carried)
+
+
+def test_files_that_share_a_name_still_form_a_tree():
+    # Messages attached inside a message all get the default name
+    # "attached-message.eml": matched by name alone, two of them were each
+    # other's child, and the console and HTML reports recursed for ever.
+    def message(subject, *attached):
+        m = EmailMessage()
+        m["From"], m["To"], m["Subject"] = "a@acme-labs.example", "b@acme-labs.example", subject
+        m.set_content("see attached")
+        for part in attached:
+            m.add_attachment(part)
+        return m
+
+    raw = message("A", message("B", message("C1"), message("C2")))
+    for level in range(MAX_UNWRAP_DEPTH):  # past the forwarding layers PhishHawk unwraps
+        raw = message("forward %d" % level, raw)
+    a = triage_bytes(raw.as_bytes())
+    assert a.subject == "A" and [f.filename for f in a.attachments] == ["attached-message.eml"] * 3
+    assert sorted(len(children_of(a, f)) for f in a.attachments) == [0, 0, 2]  # B -> C1, C2
+    html.render([a])
+    console.render(a, console.Palette(False), True)
 
 
 def test_a_genuine_report_gains_nothing_from_the_reporters_note():

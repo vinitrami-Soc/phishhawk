@@ -569,8 +569,8 @@ def _files(reader: _Reader, listing: Listing, streams: _Streams, contents: list[
             continue
         listing.names.append(name.replace("\\", "/"))
         listing.sizes.append(sizes[stream - 1] if has_stream and stream <= len(sizes) else 0)
-        if listing.contents is not None:
-            content = contents[stream - 1] if has_stream and stream <= len(contents) else b""
+        if listing.contents is not None:  # an empty file is b""; one whose data is missing, unknown
+            content = (contents[stream - 1] if stream <= len(contents) else None) if has_stream else b""
             listing.contents.append(content)
         if len(listing.names) >= MAX_MEMBERS:
             listing.truncated = True

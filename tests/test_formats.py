@@ -217,6 +217,13 @@ def test_7z_extraction_stops_at_the_budget():
     assert listing.contents == [b"\0" * 4096, b"\1" * 4096]
 
 
+def test_a_7z_member_whose_data_is_missing_is_unread_not_empty():
+    # The file list names a member with data the archive does not hold: its
+    # content is unknown, not an empty file.
+    listing = archives.list_7z(fb.seven_zip_packed({"a.txt": b"x" * 10}, unbacked=("ghost.exe",)), budget=1 << 20)
+    assert listing.names == ["a.txt", "ghost.exe"] and listing.contents == [b"x" * 10, None]
+
+
 def test_rar_and_7z_readers_refuse_garbage():
     for data in (b"Rar!\x1a\x07\x01\x00" + b"\xff" * 50, b"Rar!\x1a\x07\x00" + b"\x00" * 3):
         archives.list_rar(data)  # truncated: an empty or partial listing, no exception
