@@ -1,8 +1,115 @@
 {
-  "about": "Offline evaluation of PhishHawk 1.2.0. Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py and eval/fetch_spamassassin.py. Charts in docs/images are drawn from this file by tools/make_charts.py.",
-  "generated": "2026-09-28",
-  "tool_version": "1.2.0",
+  "about": "Offline evaluation of PhishHawk after 1.2.0, with QR-code decoding, the security fixes and the crypto and gambling lures (unreleased). Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail entries need eval/fetch_phishing_pot.py and eval/fetch_spamassassin.py.",
+  "generated": "2026-09-30",
+  "tool_version": "1.2.0+unreleased",
   "sets": {
+    "pot_holdout": {
+      "title": "Real phishing, held out, 2022 to 2026",
+      "source": "phishing_pot at 49f6377: every sample not used before, split with seed 2027; this is the part never looked at while developing",
+      "result": {
+        "emails": 5714,
+        "verdicts": {
+          "phish": {
+            "LIKELY PHISHING": 1608,
+            "SUSPICIOUS": 2875,
+            "NO STRONG INDICATORS": 1231
+          }
+        },
+        "phish": 5714,
+        "benign": 0,
+        "errors": 0,
+        "flagged": {
+          "tp": 4483,
+          "fn": 1231,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.7846,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "strict": {
+          "tp": 1608,
+          "fn": 4106,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.2814,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "timing_ms": {
+          "median": 11.0,
+          "p95": 53.0,
+          "max": 1124.0
+        }
+      },
+      "by_year": {
+        "2022": {
+          "n": 146,
+          "flagged_1_2_0": 95,
+          "flagged": 99
+        },
+        "2023": {
+          "n": 1425,
+          "flagged_1_2_0": 1034,
+          "flagged": 1057
+        },
+        "2024": {
+          "n": 1431,
+          "flagged_1_2_0": 1192,
+          "flagged": 1228
+        },
+        "2025": {
+          "n": 1338,
+          "flagged_1_2_0": 1002,
+          "flagged": 1064
+        },
+        "2026": {
+          "n": 1307,
+          "flagged_1_2_0": 928,
+          "flagged": 975
+        }
+      }
+    },
+    "pot_tune": {
+      "title": "Real phishing, used while developing detections (2022 to 2026)",
+      "source": "phishing_pot at 49f6377, the other 2,500 of the seed-2027 split",
+      "result": {
+        "emails": 2500,
+        "verdicts": {
+          "phish": {
+            "LIKELY PHISHING": 668,
+            "SUSPICIOUS": 1295,
+            "NO STRONG INDICATORS": 537
+          }
+        },
+        "phish": 2500,
+        "benign": 0,
+        "errors": 0,
+        "flagged": {
+          "tp": 1963,
+          "fn": 537,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.7852,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "strict": {
+          "tp": 668,
+          "fn": 1832,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.2672,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "timing_ms": {
+          "median": 12.0,
+          "p95": 54.0,
+          "max": 1368.0
+        }
+      }
+    },
     "holdout": {
       "title": "Real phishing, held-out sample",
       "source": "phishing_pot, seed 7, 200 messages",
@@ -10,20 +117,60 @@
         "emails": 200,
         "verdicts": {
           "phish": {
-            "NO STRONG INDICATORS": 59,
-            "SUSPICIOUS": 93,
-            "LIKELY PHISHING": 48
+            "NO STRONG INDICATORS": 55,
+            "SUSPICIOUS": 95,
+            "LIKELY PHISHING": 50
           }
         },
         "phish": 200,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 141,
-          "fn": 59,
+          "tp": 145,
+          "fn": 55,
           "fp": 0,
           "tn": 0,
-          "recall": 0.705,
+          "recall": 0.725,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "strict": {
+          "tp": 50,
+          "fn": 150,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.25,
+          "false_positive_rate": null,
+          "precision": 1.0
+        },
+        "timing_ms": {
+          "median": 11.5,
+          "p95": 63.0,
+          "max": 323.0
+        }
+      }
+    },
+    "tune": {
+      "title": "Real phishing, tuning sample",
+      "source": "phishing_pot, seed 42, 200 messages",
+      "result": {
+        "emails": 200,
+        "verdicts": {
+          "phish": {
+            "LIKELY PHISHING": 48,
+            "NO STRONG INDICATORS": 36,
+            "SUSPICIOUS": 116
+          }
+        },
+        "phish": 200,
+        "benign": 0,
+        "errors": 0,
+        "flagged": {
+          "tp": 164,
+          "fn": 36,
+          "fp": 0,
+          "tn": 0,
+          "recall": 0.82,
           "false_positive_rate": null,
           "precision": 1.0
         },
@@ -37,49 +184,9 @@
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 11.1,
-          "p95": 81.7,
-          "max": 498.2
-        }
-      }
-    },
-    "tune": {
-      "title": "Real phishing, tuning sample",
-      "source": "phishing_pot, seed 42, 200 messages",
-      "result": {
-        "emails": 200,
-        "verdicts": {
-          "phish": {
-            "LIKELY PHISHING": 43,
-            "NO STRONG INDICATORS": 40,
-            "SUSPICIOUS": 117
-          }
-        },
-        "phish": 200,
-        "benign": 0,
-        "errors": 0,
-        "flagged": {
-          "tp": 160,
-          "fn": 40,
-          "fp": 0,
-          "tn": 0,
-          "recall": 0.8,
-          "false_positive_rate": null,
-          "precision": 1.0
-        },
-        "strict": {
-          "tp": 43,
-          "fn": 157,
-          "fp": 0,
-          "tn": 0,
-          "recall": 0.215,
-          "false_positive_rate": null,
-          "precision": 1.0
-        },
-        "timing_ms": {
-          "median": 9.6,
-          "p95": 69.3,
-          "max": 551.7
+          "median": 11.0,
+          "p95": 76.0,
+          "max": 384.0
         }
       }
     },
@@ -117,9 +224,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 5.5,
-          "p95": 21.1,
-          "max": 67.8
+          "median": 6.0,
+          "p95": 18.0,
+          "max": 64.0
         }
       }
     },
@@ -156,9 +263,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 4.7,
-          "p95": 8.8,
-          "max": 44.0
+          "median": 6.0,
+          "p95": 10.0,
+          "max": 41.0
         }
       }
     },
@@ -196,9 +303,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 26.0,
-          "p95": 46.2,
-          "max": 64.2
+          "median": 19.0,
+          "p95": 33.0,
+          "max": 64.0
         }
       }
     },
@@ -236,9 +343,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 4.9,
-          "p95": 13.4,
-          "max": 1142.5
+          "median": 5.0,
+          "p95": 12.0,
+          "max": 470.0
         }
       }
     },
@@ -275,8 +382,8 @@
         },
         "timing_ms": {
           "median": 4.5,
-          "p95": 13.1,
-          "max": 14.8
+          "p95": 10.0,
+          "max": 31.0
         }
       }
     },
@@ -315,10 +422,167 @@
           "false_positive_rate": 0.0,
           "precision": 1.0
         },
+        "scenarios": {
+          "bec-lookalike": {
+            "label": "phish",
+            "n": 8,
+            "flagged": 8
+          },
+          "brand-credential": {
+            "label": "phish",
+            "n": 14,
+            "flagged": 14
+          },
+          "callback": {
+            "label": "phish",
+            "n": 6,
+            "flagged": 6
+          },
+          "ceo-freemail": {
+            "label": "phish",
+            "n": 8,
+            "flagged": 8
+          },
+          "compromised-sender": {
+            "label": "phish",
+            "n": 8,
+            "flagged": 8
+          },
+          "html-attachment": {
+            "label": "phish",
+            "n": 8,
+            "flagged": 8
+          },
+          "malware-attachment": {
+            "label": "phish",
+            "n": 12,
+            "flagged": 12
+          },
+          "masquerade": {
+            "label": "phish",
+            "n": 4,
+            "flagged": 4
+          },
+          "open-redirect": {
+            "label": "phish",
+            "n": 6,
+            "flagged": 6
+          },
+          "punycode": {
+            "label": "phish",
+            "n": 3,
+            "flagged": 3
+          },
+          "qr-code": {
+            "label": "phish",
+            "n": 3,
+            "flagged": 3
+          },
+          "reply-to-diversion": {
+            "label": "phish",
+            "n": 5,
+            "flagged": 5
+          },
+          "reported-forward": {
+            "label": "phish",
+            "n": 6,
+            "flagged": 6
+          },
+          "safelinks-wrapped": {
+            "label": "phish",
+            "n": 3,
+            "flagged": 3
+          },
+          "scam": {
+            "label": "phish",
+            "n": 4,
+            "flagged": 4
+          },
+          "shortener-ip": {
+            "label": "phish",
+            "n": 4,
+            "flagged": 4
+          },
+          "calendar": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "csv-zip": {
+            "label": "benign",
+            "n": 2,
+            "flagged": 0
+          },
+          "docusign": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "drive-share": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "genuine-alert": {
+            "label": "benign",
+            "n": 8,
+            "flagged": 0
+          },
+          "hindi": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "hr-docx": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "internal": {
+            "label": "benign",
+            "n": 8,
+            "flagged": 0
+          },
+          "invoice": {
+            "label": "benign",
+            "n": 5,
+            "flagged": 0
+          },
+          "marketing-shortener": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "newsletter": {
+            "label": "benign",
+            "n": 8,
+            "flagged": 0
+          },
+          "password-reset": {
+            "label": "benign",
+            "n": 5,
+            "flagged": 0
+          },
+          "reply-chain": {
+            "label": "benign",
+            "n": 3,
+            "flagged": 0
+          },
+          "safelinks-internal": {
+            "label": "benign",
+            "n": 4,
+            "flagged": 0
+          },
+          "shipping": {
+            "label": "benign",
+            "n": 4,
+            "flagged": 0
+          }
+        },
         "timing_ms": {
-          "median": 4.2,
-          "p95": 9.3,
-          "max": 13.3
+          "median": 4.3,
+          "p95": 6.9,
+          "max": 19.8
         }
       }
     }
@@ -334,7 +598,13 @@
     "ham_holdout_easy_false_positive_rate": 0.2329,
     "ham_holdout_hard_false_positive_rate": 0.552,
     "ham_tune_false_positive_rate": 0.2453,
-    "holdout_strict_recall_1_1": 0.305
+    "holdout_strict_recall_1_1": 0.305,
+    "about_1_2_0": "The phishing_pot sets scored with the released PhishHawk 1.2.0, before this round.",
+    "pot_holdout_flagged_recall_1_2_0": 0.7545,
+    "pot_holdout_strict_recall_1_2_0": 0.2585,
+    "pot_tune_flagged_recall_1_2_0": 0.7524,
+    "holdout_flagged_recall_1_2_0": 0.705,
+    "tune_flagged_recall_1_2_0": 0.8
   },
-  "tests": 191
+  "tests": 239
 }

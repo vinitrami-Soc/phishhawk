@@ -38,11 +38,11 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-kpis-dark.svg">
-  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 70.5% of held-out real phishing flagged, up from 70%. 0.7% false positives: 10 of 1,400 held-out real legitimate emails, down from 23.3%. 1.14 seconds worst-case parse across 4,765 emails, down from 60 seconds. 191 automated tests.">
+  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 78.5% of 5,714 unseen real phishing emails flagged, up from 75.4% in 1.2.0. 0.7% false positives: 10 of 1,400 held-out real legitimate emails, down from 23.3%. 1.37 seconds worst-case parse across 12,979 emails, down from 60 seconds. 239 automated tests.">
 </picture>
 
-<sub>Measured offline, with no reputation lookups, on 200 held-out real phishing emails and 1,400 held-out real
-legitimate ones. [How these numbers were measured](#tested-on-real-mail).</sub>
+<sub>Measured offline, with no reputation lookups, on 5,714 held-out real phishing emails from 2022 to 2026 and
+1,400 held-out real legitimate ones. [How these numbers were measured](#tested-on-real-mail).</sub>
 
 ## Contents
 
@@ -421,46 +421,61 @@ on, detection can only go up.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-evaluation-dark.svg">
-  <img src="docs/images/chart-evaluation-light.svg" width="760" alt="Dumbbell chart, before and after tuning on real mail. Recall on held-out phishing went from 70% to 70.5%; on the tuning sample from 75% to 80%. False positives on held-out everyday legitimate mail fell from 23.3% to 0.7%, on held-out spam-like legitimate mail from 55.2% to 23.2%, and on the CPython test mail from 12.5% to 0%.">
+  <img src="docs/images/chart-evaluation-light.svg" width="760" alt="Dumbbell chart. Real phishing flagged, PhishHawk 1.2.0 to now: 5,714 unseen emails from 2022 to 2026 went from 75.4% to 78.5%, and the earlier 200-email held-out sample from 70.5% to 72.5%. Legitimate mail flagged by mistake, 1.1.0 to now: held-out everyday mail fell from 23.3% to 0.7%, held-out spam-like legitimate mail from 55.2% to 23.2%, and the CPython test mail from 12.5% to 0%.">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-verdicts-dark.svg">
-  <img src="docs/images/chart-verdicts-light.svg" width="760" alt="Stacked bars of verdicts. Held-out phishing: 48 likely phishing, 93 suspicious, 59 missed. Tuning phishing: 43 likely, 117 suspicious, 40 missed. Held-out legitimate mail: 1,486 not flagged, 37 suspicious, 2 likely phishing.">
+  <img src="docs/images/chart-verdicts-light.svg" width="760" alt="Stacked bars of verdicts. Unseen phishing, 5,714 emails: 1,608 likely phishing, 2,875 suspicious, 1,231 not flagged. Earlier held-out sample, 200 emails: 50 likely phishing, 95 suspicious, 55 not flagged. Held-out legitimate mail, 1,525 emails: 1,486 not flagged, 37 suspicious, 2 likely phishing.">
 </picture>
 
 | Data set | Emails | Flagged | Strict | False positives | Median time |
 |---|---|---|---|---|---|
-| Real phishing, **held-out** sample of the [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot corpus | 200 | **70.5%** | 24.0% | n/a | 11.1 ms |
-| Real phishing, sample used while developing detections | 200 | 80.0% | 21.5% | n/a | 9.6 ms |
-| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.7%** (10 of 1,400) | 4.7 ms |
-| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 23.2% (29 of 125) | 26.0 ms |
-| Real legitimate mail used while fixing false positives (`easy_ham` + the other half of `hard_ham`) | 2,625 | n/a | n/a | 1.4% (36 of 2,625) | 4.9 ms |
+| Real phishing, **held out**, 2022 to 2026: every [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot email not used before, split at random | 5,714 | **78.5%** | 28.1% | n/a | 11.0 ms |
+| Real phishing, the other part of that split, used while developing detections | 2,500 | 78.5% | 26.7% | n/a | 12.0 ms |
+| Real phishing, earlier held-out sample | 200 | 72.5% | 25.0% | n/a | 11.5 ms |
+| Real phishing, earlier sample used while developing detections | 200 | 82.0% | 24.0% | n/a | 11.0 ms |
+| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.7%** (10 of 1,400) | 6.0 ms |
+| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 23.2% (29 of 125) | 19.0 ms |
+| Real legitimate mail used while fixing false positives (`easy_ham` + the other half of `hard_ham`) | 2,625 | n/a | n/a | 1.4% (36 of 2,625) | 5.0 ms |
 | Legitimate and edge-case mail (CPython email test corpus) | 48 | n/a | n/a | 0% (0 of 48) | 4.5 ms |
-| Labelled synthetic corpus, including tricky legitimate mail | 167 | 100% | 59.8% | 0.0% | 4.2 ms |
+| Labelled synthetic corpus, including tricky legitimate mail | 167 | 100% | 59.8% | 0.0% | 4.3 ms |
 
 *Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse. *n/a* means the
 measure does not apply: a set of only phishing has no legitimate mail to flag by
 mistake, and a set of only legitimate mail has no phishing to catch.
 
 **The held-out numbers are the honest ones.** Those sets were scored once, at
-the end, after all tuning was finished. Two things to know about them:
+the end, after all tuning was finished. Some things to know about them:
 
+- **It holds up across years.** Flagged, by the year the phishing was sent
+  (1.2.0 → now): 2022 65.1% → 67.8%, 2023 72.6% → 74.2%, 2024 83.3% → 85.8%,
+  2025 74.9% → 79.5%, 2026 71.0% → 74.6%. Against 1.2.0 on the same 5,714
+  emails, 172 more are flagged, none are lost, and no legitimate email is
+  newly flagged.
 - **False positives were far worse before real legitimate mail was tested.**
   The earlier figure, 2.1%, came from 48 CPython test messages. On 4,150 real
   legitimate emails from the SpamAssassin corpus, 1.1.0 flagged 23% of
   everyday mail and 55% of spam-like mail. Almost all of it came from
   mailing lists setting Reply-To to themselves, newsletter click trackers, and
   names such as `linuxmafia.com` read as lookalikes. Fixing those left
-  phishing recall within one message of where it was; fewer messages now reach
-  *strict*, because link mismatches through ordinary click trackers stopped
-  counting as high.
+  phishing recall within one message of where it was.
+- **The legitimate mail is old.** SpamAssassin's corpus is from 2002 and 2003;
+  no public corpus of recent legitimate mail exists, so modern newsletters and
+  SaaS notifications are covered only by the synthetic and CPython sets. Run
+  your own mail through `eval/run_eval.py` (it reads `.mbox` exports) to check.
 - **The phishing honeypot also labels plain spam as phishing** (casino offers,
   diet pills), which PhishHawk leaves alone on purpose, so some of the misses
   are not phishing at all.
+- **QR codes are rare in this corpus**: 2 of the 5,714 held-out emails carry
+  one, both found (a `data:` image and a PDF). The QR detections are tested
+  on their own in [tests/test_qr.py](tests/test_qr.py).
 
-Running real mail also found a regex that took **60 seconds** on one message;
-the slowest message now is a 3,129-link digest at about one second.
+Running real mail through the parser also found bugs no synthetic test had:
+a regex that took **60 seconds** on one message, a malformed `Message-Id`
+header that erased the authentication results, and Microsoft 365
+`Authentication-Results` headers sent base64-encoded. All are fixed and
+tested. The slowest of 12,979 messages now takes 1.4 seconds.
 [eval/README.md](eval/README.md) has the method, the caveats and the commands to
 reproduce every number; the raw figures are in
 [eval/results.json](eval/results.json).
@@ -600,7 +615,7 @@ phishhawk/
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, STIX, Markdown, CSV
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              191 offline tests, including the evaluation gate
+├── tests/              239 offline tests, including the evaluation gate
 ├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetcher, results.json
 ├── tools/              scripts that draw the logo, banner, demo and charts in docs/images
@@ -617,7 +632,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 191 tests, offline, a few seconds
+pytest                                       # 239 tests, offline, a few seconds
 ruff check src tests samples eval tools phishhawk
 python eval/run_eval.py --synthetic          # the labelled-corpus regression gate
 ```

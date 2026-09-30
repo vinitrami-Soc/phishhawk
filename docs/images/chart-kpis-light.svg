@@ -5,9 +5,9 @@
 <text x="28.0" y="60.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Offline evaluation: parser and heuristics only, no reputation lookups</text>
 <rect x="28.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
 <text x="44.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Real phishing flagged</text>
-<text x="44.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">70.5%</text>
-<text x="44.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">held-out, no API keys</text>
-<text x="44.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▲ from 70%</text>
+<text x="44.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">78.5%</text>
+<text x="44.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">of 5,714 unseen emails</text>
+<text x="44.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▲ from 75.4% in 1.2.0</text>
 <rect x="207.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
 <text x="223.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">False positives</text>
 <text x="223.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">0.7%</text>
@@ -15,12 +15,12 @@
 <text x="223.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▼ from 23.3%</text>
 <rect x="386.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
 <text x="402.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Worst-case parse</text>
-<text x="402.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">1.14 s</text>
-<text x="402.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">slowest of 4,765 emails</text>
+<text x="402.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">1.37 s</text>
+<text x="402.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">slowest of 12,979 emails</text>
 <text x="402.0" y="187.0" fill="#006300" font-size="11.5" font-weight="600" text-anchor="start">▼ from 60 s</text>
 <rect x="565.0" y="84" width="167.0" height="116" rx="10" fill="none" stroke="#e1e0d9"/>
 <text x="581.0" y="110.0" fill="#52514e" font-size="12.5" font-weight="400" text-anchor="start">Automated tests</text>
-<text x="581.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">191</text>
+<text x="581.0" y="146.0" fill="#0b0b0b" font-size="30" font-weight="600" text-anchor="start">239</text>
 <text x="581.0" y="168.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">Python 3.10 to 3.13</text>
 <text x="581.0" y="187.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="start">incl. evaluation gate</text>
 </svg>

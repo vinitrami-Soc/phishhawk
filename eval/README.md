@@ -12,8 +12,10 @@ human should look. "Strict" means `LIKELY PHISHING` or worse.
 
 | Data set | Emails | Flagged recall | Strict recall | False-positive rate |
 |---|---|---|---|---|
-| Real phishing, **held-out** sample (phishing_pot, seed 7) | 200 | **70.5%** | 24.0% | n/a |
-| Real phishing, tuning sample (phishing_pot, seed 42) | 200 | 80.0% | 21.5% | n/a |
+| Real phishing, **held out**, 2022 to 2026 (phishing_pot at `49f6377`, seed 2027) | 5,714 | **78.5%** | 28.1% | n/a |
+| Real phishing, tuning part of the same split | 2,500 | 78.5% | 26.7% | n/a |
+| Real phishing, earlier **held-out** sample (phishing_pot, seed 7) | 200 | 72.5% | 25.0% | n/a |
+| Real phishing, earlier tuning sample (phishing_pot, seed 42) | 200 | 82.0% | 24.0% | n/a |
 | Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.7%** (10/1,400) |
 | Real legitimate mail, **held out**: SpamAssassin `hard_ham`, seeded half | 125 | n/a | n/a | 23.2% (29/125) |
 | Real legitimate mail, tuning set: `easy_ham` + the other half of `hard_ham` | 2,625 | n/a | n/a | 1.4% (36/2,625) |
@@ -23,20 +25,75 @@ human should look. "Strict" means `LIKELY PHISHING` or worse.
 *n/a* means the measure does not apply: a set of only phishing has no legitimate
 mail to flag by mistake, and a set of only legitimate mail has no phishing to catch.
 
-Before the first real-mail evaluation, the code scored 70.0% on the held-out
-phishing, 75.0% on the tuning phishing and 12.5% false positives on the CPython
-corpus, and its worst-case parse took 60 seconds. Before the legitimate-mail
-evaluation, PhishHawk 1.1.0 flagged **23.3%** of `easy_ham_2` (326/1,400) and
-**55.2%** of the held-out `hard_ham` (69/125); it scored 71.0% and 30.5% strict
-on the held-out phishing. The slowest message is now a 3,129-link digest at
-about one second.
+PhishHawk 1.2.0 scored 75.4% (25.8% strict) on the 5,714 held-out emails,
+75.2% on the 2,500 tuning emails, 70.5% on the earlier held-out sample and
+80.0% on the earlier tuning sample, with exactly the same false positives as
+now. Before the first real-mail evaluation, the code scored 70.0% on the
+earlier held-out phishing, 75.0% on the earlier tuning phishing and 12.5%
+false positives on the CPython corpus, and its worst-case parse took 60
+seconds. Before the legitimate-mail evaluation, PhishHawk 1.1.0 flagged
+**23.3%** of `easy_ham_2` (326/1,400) and **55.2%** of the held-out
+`hard_ham` (69/125). The slowest of all 12,979 messages now takes 1.4 seconds.
+
+## The 2026 evaluation: every phishing_pot email
+
+The first evaluation used two samples of 200. For 1.3.0 the whole
+[phishing_pot](https://github.com/rf-peixoto/phishing_pot) corpus was used,
+pinned at commit `49f6377`: 8,614 emails, almost all sent between 2022 and
+2026. The 400 of the first evaluation were set aside; the other 8,214 were
+shuffled with `random.Random(2027)` and cut into 2,500 for tuning and 5,714
+held out. The sample numbers of each part are in
+[splits/phishing_pot_2026.json](splits/phishing_pot_2026.json), so the split
+can be rebuilt exactly.
+
+New detections were developed against the tuning part only: crypto-wallet
+lures (seed phrases, "validate your wallet", airdrops), casino "free spins"
+lures in five languages, Ledger as a brand, typosquats split by hyphens
+(`micros-oft`) and MFA or remote-access words in combosquats. Each was checked
+against the legitimate tuning mail as it went in; one (`casino` as a lure
+word) was dropped for a false positive. The held-out part was then scored
+once, with 1.2.0 and with the new code:
+
+| Year sent | Emails | 1.2.0 | Now |
+|---|---|---|---|
+| 2022 | 146 | 65.1% | 67.8% |
+| 2023 | 1,425 | 72.6% | 74.2% |
+| 2024 | 1,431 | 83.3% | 85.8% |
+| 2025 | 1,338 | 74.9% | 79.5% |
+| 2026 | 1,307 | 71.0% | 74.6% |
+| **All 5,714** | 5,714 | 75.4% | **78.5%** |
+
+The year is read from the `Date:` header; 67 emails have none that parses or
+one outside 2022 to 2026, and are counted only in the total. Message by
+message, 172 held-out emails are flagged now that were not, none that were
+are lost, and in every legitimate set exactly the same messages are flagged
+as with 1.2.0.
+
+**QR codes.** Two held-out emails carry a QR code, one as a `data:` image in
+the HTML and one inside a PDF, and both are decoded; one tuning email has a
+code whose payload is not a link. Quishing is rarer in this honeypot than in
+the reports, so the QR detections are tested on their own in
+[tests/test_qr.py](../tests/test_qr.py): eleven hiding places, hostile images
+and PDFs written by real software.
+
+**Parser bugs.** Scanning 12,979 real messages found two that no synthetic
+test had: a malformed `Message-Id` header made Python's `email` library raise
+while listing headers, which erased the SPF, DKIM and DMARC results; and
+Microsoft 365 sends some `Authentication-Results` headers as base64 encoded
+words, so headers are now read raw and decoded one at a time. Both have
+tests in `tests/test_security.py`.
+
+**Spam is not phishing.** For information, 31.3% of SpamAssassin's 2002 spam
+is flagged. PhishHawk looks for credential theft, malware and impersonation,
+not for unsolicited offers, so this number is expected to stay low.
 
 ## How to read these numbers
 
 * **The held-out number is the honest one.** Detections were developed while
-  looking at the tuning sample only. The held-out sample, disjoint from it,
-  was scored once at the end. The gap between the two (80% vs 70.5%) is the
-  expected optimism of measuring on data you tuned against.
+  looking at the tuning part only. The held-out part, disjoint from it, was
+  scored once at the end. On 200-email samples the gap between the two was
+  large (82% vs 72.5%); with 2,500 and 5,714 emails it is gone (78.5% both),
+  which says the small samples were noisy rather than that tuning overfitted.
 * **phishing_pot is a honeypot**, so its "phishing" label includes a lot of
   generic spam: casino offers, diet pills, loan consolidation, crypto
   "mining balance" lures. A sample of the held-out misses is mostly that.
@@ -62,7 +119,10 @@ about one second.
 * **The SpamAssassin mail is from 2002.** It has no DKIM, DMARC or
   `Authentication-Results`, so it cannot test those checks; it does test
   everything else, and mailing lists, newsletters and click trackers have not
-  changed much.
+  changed much. No public corpus of recent legitimate mail exists: to measure
+  false positives on today's newsletters and SaaS notifications, run your own
+  mail through `run_eval.py --benign`, which reads `.mbox` exports and prints
+  only totals.
 
 ## False positives on real legitimate mail
 
@@ -119,20 +179,25 @@ had:
 python eval/run_eval.py --synthetic                  # the regression gate, about 1 second
 python eval/fetch_phishing_pot.py /tmp/pot           # partial clone + the two seeded samples
 python eval/run_eval.py --phish /tmp/pot/holdout
+python eval/fetch_phishing_pot.py /tmp/pot --full    # the 2026 split, every message (about an hour)
+python eval/run_eval.py --phish /tmp/pot/pot2026/holdout
 python eval/fetch_spamassassin.py /tmp/ham           # 4,150 legitimate emails, split as above
 python eval/run_eval.py --benign /tmp/ham/holdout/easy --benign /tmp/ham/holdout/hard
 python eval/run_eval.py --phish DIR --benign DIR     # your own labelled mail
+python eval/run_eval.py --benign ~/Takeout/Inbox.mbox  # your own mail as an .mbox export
 ```
 
 Add `--json` for machine-readable results. To check false positives against
 your own organisation's mail, export a few hundred legitimate messages as `.eml`
-and pass the folder with `--benign`.
+files or one `.mbox` and pass it with `--benign`. Only totals are printed;
+nothing leaves the machine.
 
 ## Data sources
 
 * **phishing_pot** by rf-peixoto, real phishing collected by honeypots,
-  licensed CC BY-NC 4.0. It is used here for non-commercial evaluation
-  only; no samples are redistributed in this repository.
+  licensed CC BY-NC 4.0, at commit `49f6377`. It is used here for
+  non-commercial evaluation only; no samples are redistributed in this
+  repository, only their numbers in `splits/`.
 * **SpamAssassin public corpus** (Apache SpamAssassin project), the
   `easy_ham`, `easy_ham_2` and `hard_ham` folders of 2003-02-28: real
   legitimate mail from 2002. `fetch_spamassassin.py` downloads it from

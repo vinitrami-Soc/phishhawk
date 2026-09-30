@@ -68,14 +68,15 @@ def legend(items, x, y, t):
 
 def kpis(data: dict, t: dict) -> str:
     sets, base = data["sets"], data["baseline"]
-    holdout = sets["holdout"]["result"]
+    holdout = sets["pot_holdout"]["result"]
     legit = sets["ham_holdout_easy"]["result"]["flagged"]
     whole = [k for k in sets if k not in ("ham_holdout_easy", "ham_holdout_hard")]  # parts of ham_holdout
     worst = max(sets[k]["result"]["timing_ms"]["max"] for k in whole) / 1000
     emails = sum(sets[k]["result"]["emails"] for k in whole)
     tiles = [
-        ("Real phishing flagged", pct(100 * holdout["flagged"]["recall"]),
-         "held-out, no API keys", "▲ from %s" % pct(100 * base["holdout_flagged_recall"])),
+        ("Real phishing flagged", pct(round(100 * holdout["flagged"]["recall"], 1)),
+         "of {:,} unseen emails".format(holdout["emails"]),
+         "▲ from %s in 1.2.0" % pct(round(100 * base["pot_holdout_flagged_recall_1_2_0"], 1))),
         ("False positives", "%.1f%%" % (100 * legit["false_positive_rate"]),
          "%d of %s legit emails" % (legit["fp"], "{:,}".format(legit["fp"] + legit["tn"])),
          "▼ from %.1f%%" % (100 * base["ham_holdout_easy_false_positive_rate"])),
@@ -139,13 +140,14 @@ def pct(value: float) -> str:
 def evaluation(data: dict, t: dict) -> str:
     sets, base = data["sets"], data["baseline"]
     x0, x1 = 250, WIDTH - 70
-    body = legend([("Before tuning on real mail", t["before"]), ("After", t["after"])], 28, 86, t)
-    rows = [("Held-out sample (200)", 100 * base["holdout_flagged_recall"],
-             100 * sets["holdout"]["result"]["flagged"]["recall"]),
-            ("Tuning sample (200)", 100 * base["tune_flagged_recall"],
-             100 * sets["tune"]["result"]["flagged"]["recall"])]
+    body = legend([("Before", t["before"]), ("Now", t["after"])], 28, 86, t)
+    recall = lambda key: round(100 * sets[key]["result"]["flagged"]["recall"], 1)  # noqa: E731
+    rows = [("Unseen phishing, 2022-2026 (5,714)", round(100 * base["pot_holdout_flagged_recall_1_2_0"], 1),
+             recall("pot_holdout")),
+            ("Earlier held-out sample (200)", round(100 * base["holdout_flagged_recall_1_2_0"], 1),
+             recall("holdout"))]
     panel, y = dumbbell_panel(rows, 124, x0, x1, 100, [0, 25, 50, 75, 100], pct, t,
-                              "Real phishing flagged · higher is better")
+                              "Real phishing flagged, 1.2.0 to now · higher is better")
     body += panel
     fpr = lambda key: 100 * sets[key]["result"]["flagged"]["false_positive_rate"]  # noqa: E731
     rows = [("Everyday mail, held out (1,400)", 100 * base["ham_holdout_easy_false_positive_rate"],
@@ -154,18 +156,19 @@ def evaluation(data: dict, t: dict) -> str:
              fpr("ham_holdout_hard")),
             ("CPython test mail (48)", 100 * base["cpython_false_positive_rate"], fpr("cpython"))]
     panel, y = dumbbell_panel(rows, y + 40, x0, x1, 60, [0, 20, 40, 60], pct, t,
-                              "Legitimate mail flagged by mistake · lower is better")
+                              "Legitimate mail flagged by mistake, 1.1.0 to now · lower is better")
     body += panel
     return frame(body, y + 26, t, "Testing against real mail changed the numbers",
-                 "Same messages scored before and after tuning; held-out sets were scored once, at the end")
+                 "Held-out sets, scored once at the end; legitimate mail is compared with 1.1.0, "
+                 "before any tuning on it")
 
 
 # ----------------------------------------------------------- verdict bars --
 
 def verdicts(data: dict, t: dict) -> str:
     sets = data["sets"]
-    groups = [("Held-out phishing", sets["holdout"]["result"]["verdicts"]["phish"]),
-              ("Tuning phishing", sets["tune"]["result"]["verdicts"]["phish"]),
+    groups = [("Unseen phishing", sets["pot_holdout"]["result"]["verdicts"]["phish"]),
+              ("Earlier sample", sets["holdout"]["result"]["verdicts"]["phish"]),
               ("Legitimate mail", sets["ham_holdout"]["result"]["verdicts"]["benign"])]
     order = [("LIKELY PHISHING", "likely phishing", t["after"]), ("SUSPICIOUS", "suspicious", t["before"]),
              ("NO STRONG INDICATORS", "not flagged", t["missed"])]
@@ -173,7 +176,7 @@ def verdicts(data: dict, t: dict) -> str:
     x0, x1, y, height = 200, WIDTH - 28, 110, 24
     for label, counts in groups:
         total = sum(counts.values())
-        body.append(text(28, y + 16.5, "%s (%d)" % (label, total), t["ink2"], 13))
+        body.append(text(28, y + 16.5, "%s (%s)" % (label, "{:,}".format(total)), t["ink2"], 13))
         x = x0
         segments = [(counts.get(key, 0), name, colour) for key, name, colour in order if counts.get(key, 0)]
         for index, (count, name, colour) in enumerate(segments):

@@ -2,12 +2,12 @@
 <title>Testing against real mail changed the numbers</title>
 <rect x="0.5" y="0.5" width="759" height="433" rx="12" fill="#1a1a19" stroke="rgba(255,255,255,0.10)"/>
 <text x="28.0" y="38.0" fill="#ffffff" font-size="16" font-weight="600" text-anchor="start">Testing against real mail changed the numbers</text>
-<text x="28.0" y="60.0" fill="#c3c2b7" font-size="12.5" font-weight="400" text-anchor="start">Same messages scored before and after tuning; held-out sets were scored once, at the end</text>
+<text x="28.0" y="60.0" fill="#c3c2b7" font-size="12.5" font-weight="400" text-anchor="start">Held-out sets, scored once at the end; legitimate mail is compared with 1.1.0, before any tuning on it</text>
 <circle cx="33.0" cy="86.0" r="5" fill="#256abf"/>
-<text x="44.0" y="90.0" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="start">Before tuning on real mail</text>
-<circle cx="254.4" cy="86.0" r="5" fill="#9ec5f4"/>
-<text x="265.4" y="90.0" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="start">After</text>
-<text x="28.0" y="124.0" fill="#ffffff" font-size="13" font-weight="600" text-anchor="start">Real phishing flagged · higher is better</text>
+<text x="44.0" y="90.0" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="start">Before</text>
+<circle cx="116.4" cy="86.0" r="5" fill="#9ec5f4"/>
+<text x="127.4" y="90.0" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="start">Now</text>
+<text x="28.0" y="124.0" fill="#ffffff" font-size="13" font-weight="600" text-anchor="start">Real phishing flagged, 1.2.0 to now · higher is better</text>
 <line x1="250.0" y1="142.0" x2="250.0" y2="210.0" stroke="#383835" stroke-width="1"/>
 <text x="250.0" y="228.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="middle">0%</text>
 <line x1="360.0" y1="142.0" x2="360.0" y2="210.0" stroke="#2c2c2a" stroke-width="1"/>
@@ -18,19 +18,19 @@
 <text x="580.0" y="228.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="middle">75%</text>
 <line x1="690.0" y1="142.0" x2="690.0" y2="210.0" stroke="#2c2c2a" stroke-width="1"/>
 <text x="690.0" y="228.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="middle">100%</text>
-<text x="28.0" y="162.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Held-out sample (200)</text>
-<line x1="558.0" y1="158.0" x2="560.2" y2="158.0" stroke="#256abf" stroke-width="2" stroke-linecap="round"/>
-<circle cx="558.0" cy="158.0" r="6" fill="#256abf" stroke="#1a1a19" stroke-width="2"/>
-<circle cx="560.2" cy="158.0" r="6" fill="#9ec5f4" stroke="#1a1a19" stroke-width="2"/>
-<text x="546.0" y="162.5" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="end">70%</text>
-<text x="572.2" y="162.5" fill="#ffffff" font-size="12.5" font-weight="600" text-anchor="start">70.5%</text>
-<text x="28.0" y="198.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Tuning sample (200)</text>
-<line x1="580.0" y1="194.0" x2="602.0" y2="194.0" stroke="#256abf" stroke-width="2" stroke-linecap="round"/>
-<circle cx="580.0" cy="194.0" r="6" fill="#256abf" stroke="#1a1a19" stroke-width="2"/>
-<circle cx="602.0" cy="194.0" r="6" fill="#9ec5f4" stroke="#1a1a19" stroke-width="2"/>
-<text x="568.0" y="198.5" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="end">75%</text>
-<text x="614.0" y="198.5" fill="#ffffff" font-size="12.5" font-weight="600" text-anchor="start">80%</text>
-<text x="28.0" y="268.0" fill="#ffffff" font-size="13" font-weight="600" text-anchor="start">Legitimate mail flagged by mistake · lower is better</text>
+<text x="28.0" y="162.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Unseen phishing, 2022-2026 (5,714)</text>
+<line x1="581.8" y1="158.0" x2="595.4" y2="158.0" stroke="#256abf" stroke-width="2" stroke-linecap="round"/>
+<circle cx="581.8" cy="158.0" r="6" fill="#256abf" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="595.4" cy="158.0" r="6" fill="#9ec5f4" stroke="#1a1a19" stroke-width="2"/>
+<text x="569.8" y="162.5" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="end">75.4%</text>
+<text x="607.4" y="162.5" fill="#ffffff" font-size="12.5" font-weight="600" text-anchor="start">78.5%</text>
+<text x="28.0" y="198.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Earlier held-out sample (200)</text>
+<line x1="560.2" y1="194.0" x2="569.0" y2="194.0" stroke="#256abf" stroke-width="2" stroke-linecap="round"/>
+<circle cx="560.2" cy="194.0" r="6" fill="#256abf" stroke="#1a1a19" stroke-width="2"/>
+<circle cx="569.0" cy="194.0" r="6" fill="#9ec5f4" stroke="#1a1a19" stroke-width="2"/>
+<text x="548.2" y="198.5" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="end">70.5%</text>
+<text x="581.0" y="198.5" fill="#ffffff" font-size="12.5" font-weight="600" text-anchor="start">72.5%</text>
+<text x="28.0" y="268.0" fill="#ffffff" font-size="13" font-weight="600" text-anchor="start">Legitimate mail flagged by mistake, 1.1.0 to now · lower is better</text>
 <line x1="250.0" y1="286.0" x2="250.0" y2="390.0" stroke="#383835" stroke-width="1"/>
 <text x="250.0" y="408.0" fill="#898781" font-size="11.5" font-weight="400" text-anchor="middle">0%</text>
 <line x1="396.7" y1="286.0" x2="396.7" y2="390.0" stroke="#2c2c2a" stroke-width="1"/>

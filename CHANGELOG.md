@@ -26,6 +26,14 @@ the JSON and STIX output are the public interface.
 - The JSON report has `qr_codes` and `forged_auth`.
 - [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md): PhishHawk attacked as a
   target, every finding with its fix and a test.
+- Crypto-wallet lures (seed and recovery phrases, "validate your wallet",
+  airdrops; high with two or more) and casino "free spins" lures in five
+  languages. Ledger joins the brand list.
+- A new evaluation on every email in phishing_pot: 5,714 held-out phishing
+  emails from 2022 to 2026, 78.5% flagged (1.2.0: 75.4%), with no change in
+  false positives. The split is in `eval/splits/phishing_pot_2026.json` and
+  `eval/fetch_phishing_pot.py --full` rebuilds it.
+- A quishing sample, `samples/sample_quishing.eml`, with its QR code in a PDF.
 
 ### Security
 
@@ -54,6 +62,11 @@ the JSON and STIX output are the public interface.
 - A message with 50,000 links takes 3 s instead of 31 s. Lookalike checks stop
   at 5,000 distinct hosts, and a message over that is flagged, so padding cannot
   hide a link.
+- A malformed header such as a broken `Message-Id` no longer erases the SPF,
+  DKIM and DMARC results; `Authentication-Results` sent as base64 encoded words
+  (Microsoft 365) are decoded.
+- MFA, SSO, VPN and Microsoft 365 words count in combosquats
+  (`example-corp-mfa.top`).
 
 ## [1.2.0] - 2026-09-29
 
