@@ -22,7 +22,7 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator
 
-from . import __version__, banner, config, imapfetch, mailapi, yararules
+from . import __version__, banner, config, extract, imapfetch, mailapi, yararules
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
@@ -195,6 +195,9 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     det.add_argument("--no-qr", action="store_true",
                      help="do not decode QR codes in images, PDFs and drawn tables "
                           "(decoding needs: pip install 'phishhawk[qr]')")
+    det.add_argument("--psl", metavar="FILE",
+                     help="a copy of the Public Suffix List (public_suffix_list.dat from publicsuffix.org), used "
+                          "instead of the built-in approximation (default $PHISHHAWK_PSL)")
 
     enr = command.add_argument_group("enrichment")
     enr.add_argument("-o", "--offline", action="store_true", help="no network access at all")
@@ -450,6 +453,13 @@ def _settings(args: argparse.Namespace, error: Callable[[str], None]) -> tuple[O
     protected += [d.strip() for d in os.environ.get("PHISHHAWK_PROTECT", "").split(",") if d.strip()]
     trusted = args.trusted_authserv or settings.trusted_authserv or [
         item.strip() for item in os.environ.get("PHISHHAWK_TRUSTED_AUTHSERV", "").split(",") if item.strip()]
+    psl = args.psl or settings.public_suffix_list or os.environ.get("PHISHHAWK_PSL", "")
+    if psl:
+        try:
+            extract.load_public_suffixes(os.path.expanduser(psl))
+        except ValueError as exc:
+            error(str(exc))
+            raise config.ConfigError(str(exc)) from exc
     rules = None
     yara_path = args.yara or settings.yara
     if yara_path:
