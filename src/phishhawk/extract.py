@@ -122,6 +122,15 @@ def host_of(url: str) -> str:
     return canonical_host(raw_host(url))
 
 
+_ANY_URL_RE = re.compile(r"(?:https?|ftp)://[^\s\"'<>]{1,2000}", re.I)
+
+
+def defang_text(text: str) -> str:
+    """Free text (a shortcut's command line, a QR payload, a note) with
+    every URL in it defanged, so no report shows a live link."""
+    return _ANY_URL_RE.sub(lambda m: defang_url(m.group(0)), text or "")
+
+
 def is_ip(value: str) -> bool:
     if IPV4_RE.fullmatch(value or ""):
         return True

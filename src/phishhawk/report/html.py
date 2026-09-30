@@ -28,7 +28,7 @@ from importlib.resources import files as package_files
 
 from .. import __version__
 from ..attack import TACTIC_ORDER, technique_tactic
-from ..extract import defang_host
+from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, vt_is_malicious
 from .common import (
     children_of,
@@ -40,6 +40,7 @@ from .common import (
     summary_sentences,
     technique_rows,
     top_level_files,
+    unopened_members,
     urlscan_text,
     utc_now,
     vt_text,
@@ -695,6 +696,12 @@ def _sender(a: Analysis) -> str:
             rows.append((label, '<span class="mono">%s</span>' % escape(defang_host(value))))
     rows.append(("Received hops", str(a.received_hops)))
     rows.append(("Auth", _auth_badges(a)))
+    if a.forged_auth:
+        rows.append(("Forged auth", "<br>".join(
+            "%s claimed as <span class=\"mono\">%s</span>%s" % (
+                escape(claim["claim"]), escape(claim["authserv"]),
+                " (your server's name)" if claim.get("impersonates") else "")
+            for claim in a.forged_auth[:6])))
     if a.protected_domains:
         rows.append(("Protected", escape(", ".join(a.protected_domains))))
     if a.reported_by:
@@ -744,7 +751,11 @@ def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]
     cls = " ".join(c for c in ("child" if depth else "", "flagged" if f.flagged else "") if c)
     hashes = "".join('<div><dt>%s</dt><dd>%s</dd></div>' % (label, escape(value))
                      for label, value in (("SHA-256", f.sha256), ("SHA-1", f.sha1), ("MD5", f.md5)) if value)
-    rows = [(cls, ['%s<span class="ioc">%s</span>%s' % (arrow, escape(f.filename), _notes(f.notes)),
+    listing = unopened_members(a, f)
+    contains = ('<div class="sub">contains: %s</div>' % escape(
+        ", ".join(listing[:12]) + (" (+%d more)" % (len(listing) - 12) if len(listing) > 12 else ""))
+        if listing else "")
+    rows = [(cls, ['%s<span class="ioc">%s</span>%s%s' % (arrow, escape(f.filename), _notes(f.notes), contains),
                    '%s%s<div class="sub">%s</div>' % (escape(f.content_type), real, escape(human_size(f.size))),
                    '<dl class="hashes">%s</dl>' % hashes,
                    _vt_cell(f.vt)])]
@@ -814,6 +825,60 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
                 rows += _file_rows(a, f, 0)
         out.append(_panel("Attachments", _table(["File", "Type", "Hashes", "VirusTotal"], [27, 17, 40, 16], rows),
                           len(files)))
+
+    if a.qr_codes:
+        rows = [("flagged" if code.get("url") else "",
+                 [escape(code["where"]),
+                  '<span class="mono ioc">%s</span>' % escape(defang_url(code["url"]) if code.get("url")
+                                                               else code.get("payload", "")[:200])])
+                for code in a.qr_codes]
+        out.append(_panel("QR codes", _table(["Found in", "Leads to (defanged)"], [34, 66], rows),
+                          len(a.qr_codes),
+                          note="decoded offline; the phone that scans one skips every desktop link check"))
+
+    if a.calendar:
+        rows = [("", [escape(invite.get("summary") or "(no title)"),
+                      '<span class="mono ioc">%s</span>' % escape(defang_host(invite.get("organizer") or "")),
+                      escape(invite.get("method") or "-"), str(invite.get("links", 0)), escape(invite["where"])])
+                for invite in a.calendar]
+        out.append(_panel("Calendar invitations", _table(["Title", "Organiser", "Method", "Links", "Found in"],
+                                                         [30, 28, 12, 10, 20], rows), len(a.calendar)))
+
+    if a.wallets or a.phones:
+        rows = [("flagged", [escape(w["currency"]), '<span class="mono ioc">%s</span>' % escape(w["address"])])
+                for w in a.wallets]
+        rows += [("flagged", ["phone", '<span class="mono ioc">%s</span>' % escape(number)])
+                 for number in a.phones]
+        out.append(_panel("Payment and callback details", _table(["Kind", "Value"], [20, 80], rows),
+                          len(a.wallets) + len(a.phones),
+                          note="where the message asks the reader to send money or to call"))
+
+    if a.yara:
+        rows = [("flagged" if m.get("severity") == "high" else "",
+                 [_badge(m.get("severity", "high"), m.get("severity", "high")), escape(m["rule"]),
+                  escape(m["where"]), escape(m.get("description") or "-")]) for m in a.yara]
+        out.append(_panel("YARA matches", _table(["Severity", "Rule", "Matched", "Description"], [13, 27, 30, 30],
+                                                 rows), len(a.yara)))
+
+    if a.hops:
+        rows = []
+        for index, hop in enumerate(a.hops, 1):
+            delay = hop.get("delay_seconds")
+            timing = ("+%d s" % delay if delay >= 0 else "%d s (clock skew)" % delay) if isinstance(delay, int) \
+                else "-"
+            when = escape(hop.get("time", "")[:19].replace("T", " ")) or "-"
+            rows.append(("", ['<span class="idx">%d</span>' % index,
+                              '<span class="mono ioc">%s</span>%s' % (
+                                  escape(defang_host(hop.get("from", "?"))),
+                                  '<div class="sub">%s</div>' % escape(defang_host(hop["ip"]))
+                                  if hop.get("ip") else ""),
+                              '<span class="mono ioc">%s</span>' % escape(defang_host(hop.get("by", "?"))),
+                              escape(hop.get("with", "-")),
+                              '<span class="sub">%s</span>%s' % (when, "<div>%s</div>" % timing
+                                                                  if timing != "-" else "")]))
+        out.append(_panel("Mail path", _table(["#", "From", "By", "With", "When"], [6, 32, 30, 12, 20], rows),
+                          len(a.hops), note="oldest hop first; only the receiving server's own entries are "
+                                            "trustworthy"))
 
     if a.domain_intel or a.ip_intel:
         rows = []

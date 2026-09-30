@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..extract import defang_host
+from ..extract import defang_host, defang_url
 from ..models import Analysis, vt_is_malicious
 from .common import (
     children_of,
@@ -13,6 +13,7 @@ from .common import (
     summary_sentences,
     technique_rows,
     top_level_files,
+    unopened_members,
     urlscan_text,
     vt_text,
 )
@@ -83,6 +84,22 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     if a.protected_domains:
         out.append("Protected    : %s" % colour(", ".join(a.protected_domains), "dim"))
 
+    if a.hops:
+        out += ["", colour(_section("MAIL PATH (%d hop%s, oldest first)" % (len(a.hops), "" if len(a.hops) == 1
+                                                                         else "s")), "bold")]
+        shown = a.hops if verbose else a.hops[:8]
+        for index, hop in enumerate(shown, 1):
+            ip = " [%s]" % defang_host(hop["ip"]) if hop.get("ip") else ""
+            delay = hop.get("delay_seconds")
+            timing = "  +%ss" % delay if isinstance(delay, int) and delay >= 0 else \
+                ("  %ss (clock skew)" % delay if isinstance(delay, int) else "")
+            out.append("  %d. %s%s -> %s%s%s" % (index, defang_host(hop.get("from", "?")), ip,
+                                                defang_host(hop.get("by", "?")),
+                                                "  (%s)" % hop["with"] if hop.get("with") else "",
+                                                colour(timing, "dim")))
+        if len(shown) < len(a.hops):
+            out.append(colour("  ... %d more hops (use --verbose)" % (len(a.hops) - len(shown)), "dim"))
+
     if a.lookalikes:
         out += ["", colour(_section("LOOKALIKE DOMAINS (%d)" % len(a.lookalikes)), "bold")]
         for hit in a.lookalikes:
@@ -123,6 +140,10 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
             out.append("%sMD5    : %s" % (body, f.md5))
         for note in f.notes:
             out.append("%s%s" % (body, colour("! " + note, "amber")))
+        listing = unopened_members(a, f)
+        if listing:
+            out.append("%s%s" % (body, "contains: " + ", ".join(listing[:8])
+                                 + (" (+%d more)" % (len(listing) - 8) if len(listing) > 8 else "")))
         if f.vt:
             text, tone = vt_text(f.vt)
             out.append("%s%s" % (body, colour("VT: " + text, tone)))
@@ -132,6 +153,33 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     for f in top_level_files(a):
         if not f.inline:
             file_lines(f, 0)
+
+    if a.qr_codes:
+        out += ["", colour(_section("QR CODES (%d)" % len(a.qr_codes)), "bold")]
+        for code in a.qr_codes:
+            target = code.get("url") and defang_url(code["url"]) or code.get("payload", "")[:120]
+            out.append("  %s  %s" % (colour("%-30s" % code["where"][:30], "cyan"), target))
+
+    if a.calendar:
+        out += ["", colour(_section("CALENDAR INVITATIONS (%d)" % len(a.calendar)), "bold")]
+        for invite in a.calendar:
+            out.append("  %s  organiser %s  %d link(s)" % (invite.get("summary") or "(no title)",
+                                                          defang_host(invite.get("organizer") or "?"),
+                                                          invite.get("links", 0)))
+
+    if a.wallets or a.phones:
+        out += ["", colour(_section("PAYMENT AND CALLBACK DETAILS"), "bold")]
+        for wallet in a.wallets:
+            out.append("  %-10s %s" % (wallet["currency"], wallet["address"]))
+        for number in a.phones:
+            out.append("  %-10s %s" % ("phone", number))
+
+    if a.yara:
+        out += ["", colour(_section("YARA MATCHES (%d)" % len(a.yara)), "bold")]
+        for match in a.yara:
+            tone = {"high": "red", "medium": "amber"}.get(match.get("severity", ""), "dim")
+            out.append("  %s  %s in %s" % (colour("%-6s" % match.get("severity", ""), tone), match["rule"],
+                                           match["where"]))
 
     if a.domain_intel or a.ip_intel:
         out += ["", colour(_section("INFRASTRUCTURE"), "bold")]

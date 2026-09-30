@@ -50,6 +50,10 @@ def render(a: Analysis) -> str:
         out.append("| **Reply-To** | %s |" % _code(defang_host(a.reply_to)))
     if a.originating_ip:
         out.append("| **Originating IP** | %s |" % _code(defang_host(a.originating_ip)))
+    if a.hops:
+        first = a.hops[0]
+        out.append("| **First hop** | %s |" % _code("%s -> %s" % (defang_host(first.get("from", "?")),
+                                                                defang_host(first.get("by", "?")))))
     if a.auth:
         out.append("| **Authentication** | %s |" % " · ".join(
             "%s %s" % (k.upper(), v) for k, v in a.auth.items()))
@@ -66,6 +70,19 @@ def render(a: Analysis) -> str:
             out.append("- **%s**: %s%s" % (signal.severity.upper(), _cell(signal.label), tags))
         if len(signals) > 15:
             out.append("- ... %d lower-priority findings in the full report" % (len(signals) - 15))
+        out.append("")
+
+    if a.qr_codes:
+        out += ["### QR codes", ""]
+        for code in a.qr_codes:
+            target = defang_ioc("url", code["url"]) if code.get("url") else code.get("payload", "")[:200]
+            out.append("- in %s: %s" % (_cell(code["where"]), _code(target)))
+        out.append("")
+
+    if a.yara:
+        out += ["### YARA matches", ""]
+        out += ["- **%s** %s in %s" % (m.get("severity", "high").upper(), _code(m["rule"]), _cell(m["where"]))
+                for m in a.yara]
         out.append("")
 
     iocs = a.iocs()

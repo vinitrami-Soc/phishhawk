@@ -134,6 +134,15 @@ def children_of(analysis: Analysis, parent: FileIoc) -> list[FileIoc]:
     return [f for f in analysis.attachments if f.parent == parent.filename and f is not parent]
 
 
+def unopened_members(analysis: Analysis, parent: FileIoc) -> list[str]:
+    """Names listed in a container that were not opened (RAR and 7-Zip
+    members, encrypted or oversized ones), so the report still shows them."""
+    if not parent.archive:
+        return []
+    opened = {f.filename for f in children_of(analysis, parent)}
+    return [name for name in parent.archive.get("listing", []) if name not in opened]
+
+
 def summary_sentences(analysis: Analysis) -> list[str]:
     lines: list[str] = []
     urls = analysis.urls

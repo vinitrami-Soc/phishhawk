@@ -36,6 +36,7 @@ from .extract import (
     PRIVATE_IP_RE,
     ZERO_WIDTH_RE,
     clean_url,
+    defang_text,
     domain_of_address,
     host_of,
     parse_html,
@@ -540,7 +541,7 @@ class _QrScan:
             if url:
                 _add_url(self.bucket, url, "qr-code in %s" % where)
             if ioc is not None:
-                ioc.notes.append("QR code: %s" % payload[:200])
+                ioc.notes.append("QR code: %s" % defang_text(payload[:200]))
         return payloads
 
     def image(self, data: bytes, where: str, ioc: FileIoc | None = None) -> list[str]:
@@ -655,7 +656,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
         if payloads:
             ioc = file_ioc("(inline image)", part.get_content_type(), data)
             ioc.inline = True
-            ioc.notes.extend("QR code: %s" % payload[:200] for payload in payloads)
+            ioc.notes.extend("QR code: %s" % defang_text(payload[:200]) for payload in payloads)
             analysis.attachments.append(ioc)
     if inspector.extra_text:  # the body Outlook hid inside winmail.dat
         extra = " ".join(" ".join(inspector.extra_text).split())

@@ -22,7 +22,7 @@ import zlib
 from collections.abc import Callable
 from typing import Any
 
-from .extract import sniff_type, urls_from_pdf, urls_from_text
+from .extract import defang_text, sniff_type, urls_from_pdf, urls_from_text
 from .formats import archives, disk, documents, lnk, mailparts
 from .formats.cfb import SIGNATURE as OLE_SIGNATURE
 from .models import Analysis, FileIoc
@@ -170,6 +170,7 @@ class Inspector:
     def _office(self, ioc: FileIoc, found: documents.DocFindings, depth: int) -> None:
         ioc.details[found.kind] = {"features": found.features, "remote": found.remote[:20]}
         for note in found.notes:
+            note = defang_text(note)
             if note not in ioc.notes:
                 ioc.notes.append(note)
         if found.features and set(found.features) - {"corrupt", "encrypted", "xfa", "rich-media"}:
@@ -206,7 +207,7 @@ class Inspector:
         ioc.details["lnk"] = dict(shown, reasons=reasons, minimized=details.get("minimized", False))
         command = ((shown["target"] or shown["relative_path"]) + " " + shown["arguments"]).strip()
         if command:
-            ioc.notes.append("runs: %s" % command[:200])
+            ioc.notes.append("runs: %s" % defang_text(command[:200]))
         for reason in reasons:
             ioc.notes.append("shortcut %s" % reason)
         ioc.flagged = True
