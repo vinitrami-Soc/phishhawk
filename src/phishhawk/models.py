@@ -111,7 +111,12 @@ class Analysis:
     qr_codes: list[dict[str, str]] = field(default_factory=list)  # where, payload, url
     lookalikes: list[Lookalike] = field(default_factory=list)
     zero_width_chars: int = 0
-    body_text: str = field(default="", repr=False)  # visible text, capped; not exported
+    hidden_splits: int = 0  # hidden text inside visible words
+    tag_splits: int = 0  # visible words broken up by HTML tags
+    hidden_filler: int = 0  # letters of hidden text unrelated to the visible text
+    hidden_sample: str = ""  # the start of that hidden text
+    script_links: list[dict[str, Any]] = field(default_factory=list)  # javascript: and data:text/html links
+    body_text: str = field(default="", repr=False)  # visible then hidden text, capped; not exported
     ip_intel: dict[str, Any] | None = None
     domain_intel: dict[str, dict[str, Any]] = field(default_factory=dict)
     enrichment_sources: list[str] = field(default_factory=list)

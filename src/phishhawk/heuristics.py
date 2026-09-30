@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from urllib.parse import urlsplit
 
 from .extract import (
@@ -16,8 +17,10 @@ from .extract import (
     TYPE_DESCRIPTIONS,
     defang_host,
     defang_url,
+    domain_label,
     host_of,
     is_ip,
+    raw_host,
     registrable_domain,
     urls_from_text,
 )
@@ -34,6 +37,7 @@ from .knowledge import (
     SHORTENERS,
     SUSPICIOUS_TLDS,
     TOKEN_ONLY_BRANDS,
+    known_legit_domains,
 )
 from .lookalike import HIGH_METHODS, find_lookalikes, strong_subdomain
 from .models import Analysis, vt_is_malicious, vt_is_suspicious
@@ -86,6 +90,22 @@ def _authentication(a: Analysis) -> None:
                          % (server, ", ".join(claims)))
 
 
+def _spoofed_brand_sender(a: Analysis) -> None:
+    """Mail really from a big brand is always DKIM-signed and passes DMARC.
+    When the From domain is the brand's own and the receiving server could
+    verify neither, someone else wrote that From line."""
+    if not a.auth or not a.from_domain or a.is_protected(a.from_domain):
+        return
+    base = registrable_domain(a.from_domain)
+    if base in FREEMAIL or base not in known_legit_domains():
+        return
+    dkim, dmarc = a.auth.get("dkim", ""), a.auth.get("dmarc", "")
+    if dkim != "pass" and dmarc in ("fail", "none", "") and (dkim or dmarc):
+        a.add_signal("high", "sender address uses %s, but the message is not authenticated for it "
+                             "(DKIM %s, DMARC %s): the From line is probably forged"
+                     % (defang_host(base), dkim or "missing", dmarc or "missing"), ("T1656", "T1036"))
+
+
 def _brand_claimed(display: str, from_domain: str) -> str:
     lowered = (display or "").lower()
     squashed = re.sub(r"[^a-z0-9]", "", lowered)  # "Trust-Wallet", "Pay Pal" -> trustwallet, paypal
@@ -96,6 +116,91 @@ def _brand_claimed(display: str, from_domain: str) -> str:
         if named and base and base not in legit:
             return brand
     return ""
+
+
+# Letters from other alphabets that render as Latin ones, and digits used as
+# letters inside a word ("Amaz0n"). Display names only: a bare "10" stays 10.
+_LETTER_CONFUSABLES = str.maketrans({
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j", "ӏ": "l",
+    "ԁ": "d", "ѕ": "s", "һ": "h", "ԛ": "q", "ԝ": "w", "ɡ": "g", "ո": "n", "ս": "u", "ı": "i", "в": "b",
+    "к": "k", "м": "m", "н": "h", "т": "t", "α": "a", "ο": "o", "ρ": "p", "ν": "v", "τ": "t", "ι": "i",
+    "κ": "k", "ε": "e", "υ": "u", "β": "b", "χ": "x", "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H",
+    "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X", "А": "A",
+    "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X",
+})
+_DIGIT_LETTERS = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b"})
+_WORD_RE = re.compile(r"[^\W_]{3,}")
+
+
+def _skeleton(text: str) -> str:
+    """What a reader sees in a display name: accents dropped, Cyrillic and
+    Greek look-alikes read as Latin, digits inside words read as letters."""
+    text = unicodedata.normalize("NFKD", (text or "")[:200])
+    text = "".join(ch for ch in text if not unicodedata.combining(ch)).translate(_LETTER_CONFUSABLES)
+    return _WORD_RE.sub(lambda m: m.group(0).translate(_DIGIT_LETTERS)
+                        if re.search(r"[A-Za-z]", m.group(0)) and re.search(r"\d", m.group(0)) else m.group(0),
+                        text)
+
+
+def _script_of(ch: str) -> str:
+    name = unicodedata.name(ch, "")
+    for script in ("LATIN", "CYRILLIC", "GREEK", "ARMENIAN", "CHEROKEE"):
+        if name.startswith(script):
+            return script
+    return ""
+
+
+def _mixed_script_words(text: str) -> list[str]:
+    """Words that mix Latin with Cyrillic, Greek or Armenian letters: nobody
+    types that, but a spoofer writing "Micrоsoft" with a Cyrillic "о" does."""
+    found = []
+    for word in re.findall(r"[^\W\d_]{3,}", (text or "")[:2000]):
+        scripts = {_script_of(ch) for ch in word} - {""}
+        if "LATIN" in scripts and len(scripts) > 1:
+            found.append(word)
+    return found
+
+
+def _script_note(word: str) -> str:
+    foreign = sorted({_script_of(ch).capitalize() for ch in word} - {"Latin", ""})
+    return "'%s' has %s letters" % (word[:30], "/".join(foreign))
+
+
+_STYLED_RE = re.compile("[\U0001D400-\U0001D7FF\U0001F130-\U0001F189\uFF21-\uFF3A\uFF41-\uFF5A]")
+_DISGUISE_RE = re.compile(r"[A-Za-z0-9]{4,24}")
+
+
+def _disguised_brand(word: str) -> str:
+    """The brand a word imitates with a capital I for an l ("Iedger",
+    "PayPaI") or a digit for a letter ("Amaz0n"), else ''."""
+    lowered = word.lower()
+    if lowered in BRANDS:
+        return ""
+    candidates = {word.replace("I", "l").lower(), lowered.translate(_DIGIT_LETTERS),
+                  word.replace("I", "l").lower().translate(_DIGIT_LETTERS)}
+    for candidate in candidates - {lowered}:
+        if candidate in BRANDS and len(candidate) >= 5:
+            return candidate
+    return ""
+
+
+def _subject_tricks(a: Analysis) -> None:
+    subject = a.subject or ""
+    styled = len(_STYLED_RE.findall(subject))
+    if styled >= 4:
+        a.add_signal("medium", "subject written in styled Unicode letters ('%s'), which keyword filters do not "
+                               "read as text" % reading_text(subject)[:40], ("T1027",))
+    invisible = len(_INVISIBLE_RE.findall(subject))
+    if invisible >= 2:
+        a.add_signal("medium", "%d invisible characters inside the subject ('%s') to break up words for filters"
+                     % (invisible, reading_text(subject)[:40]), ("T1027",))
+    for where, text in (("subject", subject), ("display name", a.from_display or "")):
+        for word in _DISGUISE_RE.findall(text[:300]):
+            brand = _disguised_brand(word)
+            if brand and not a.is_trusted_domain(a.from_domain):
+                a.add_signal("high", "%s spells '%s' as '%s' with look-alike characters" % (where, brand, word),
+                             ("T1036", "T1656"))
+                break
 
 
 def _brand_tokens(text: str) -> set[str]:
@@ -129,14 +234,30 @@ def _sender(a: Analysis) -> None:
             a.add_signal("medium" if a.mailing_list else "high",
                          "Reply-To domain (%s) differs from From domain (%s)"
                          % (defang_host(a.reply_to_domain), defang_host(a.from_domain)), ("T1656",))
-    if a.return_path_domain and from_base and registrable_domain(a.return_path_domain) != from_base:
-        a.add_signal("low", "Return-Path domain (%s) differs from From domain (%s)"
-                     % (defang_host(a.return_path_domain), defang_host(a.from_domain)))
+    _spoofed_brand_sender(a)
+    # A Return-Path on another domain is how every mailing service sends
+    # (on the tuning sets: 59% of legitimate mail, 16% of phishing), so it is
+    # shown in the report but not scored.
 
     brand = _brand_claimed(a.from_display, a.from_domain)
     if brand:
         a.add_signal("high", "display name claims '%s' but the domain is %s"
                      % (brand, defang_host(a.from_domain)), ("T1656",))
+    else:
+        disguised = _brand_claimed(_skeleton(a.from_display), a.from_domain)
+        if disguised:
+            brand = disguised
+            a.add_signal("high", "display name imitates '%s' with look-alike characters (%s), and the domain is %s"
+                         % (disguised, a.from_display[:40], defang_host(a.from_domain)), ("T1656", "T1036"))
+    mixed = _mixed_script_words(a.from_display)
+    if mixed:
+        a.add_signal("high", "display name mixes alphabets inside a word (%s): look-alike letters"
+                     % ", ".join(_script_note(word) for word in mixed[:2]), ("T1036",))
+    mixed = _mixed_script_words(a.subject)
+    if mixed:
+        a.add_signal("medium", "subject mixes alphabets inside a word (%s): look-alike letters"
+                     % ", ".join(_script_note(word) for word in mixed[:2]), ("T1036",))
+    _subject_tricks(a)
     shown = EMAIL_RE.search(a.from_display or "")
     if shown and shown.group(0).lower() != a.from_address:
         a.add_signal("medium", "display name shows a different address (%s)"
@@ -146,7 +267,7 @@ def _sender(a: Analysis) -> None:
     display_tokens = set(re.split(r"[^a-z0-9]+", (a.from_display or "").lower()))
     if base in FREEMAIL and (display_tokens & ORG_WORDS or display_tokens & set(BRANDS)):
         a.add_signal("medium", "display name '%s' reads as an organisation but the address is free-mail (%s)"
-                     % (a.from_display[:40], base), ("T1656",))
+                     % (a.from_display[:40], base), ("T1656", "T1585.002"))
 
     subject_brand = _subject_brand(a)
     if subject_brand and subject_brand != brand:
@@ -191,9 +312,13 @@ def _lookalikes(a: Analysis) -> None:
             a.lookalikes.append(hit)
             own = hit.target in protected
             if hit.method == "tld-swap":  # organisations often own several TLDs of their name
-                severity = "medium"
+                # "slack.net" or "zoom.org" is usually just another organisation
+                # with an ordinary word for a name (55 legitimate emails, no phish).
+                word = domain_label(hit.target) in TOKEN_ONLY_BRANDS and not own \
+                    and hit.domain.rsplit(".", 1)[-1] not in SUSPICIOUS_TLDS
+                severity = "low" if word else "medium"
             elif hit.method == "subdomain":
-                severity = "high" if strong_subdomain(hit.domain, hit.target) else "medium"
+                severity = "high" if strong_subdomain(hit.domain, hit.target) else "low"
             elif hit.method in HIGH_METHODS or own:
                 severity = "high"
             else:
@@ -224,15 +349,45 @@ def _shown_domain(anchor_text: str) -> str:
     return match.group(0).lower() if match else ""
 
 
+# Links straight to a file that runs when opened, and to archives and app
+# packages that usually carry one.
+RUNNABLE_DOWNLOADS = {".exe", ".scr", ".js", ".jse", ".vbs", ".vbe", ".wsf", ".hta", ".msi", ".bat", ".cmd",
+                      ".ps1", ".lnk", ".iso", ".img", ".vhd", ".vhdx", ".jar", ".one", ".appx", ".msix", ".cpl"}
+PACKED_DOWNLOADS = {".zip", ".rar", ".7z", ".apk", ".dmg", ".gz", ".tgz", ".cab", ".ace", ".arj"}
+
+
+def _download(url: str) -> str:
+    """The extension of the file a link downloads, when it is one to worry about."""
+    try:
+        path = urlsplit(url).path.lower().rstrip("/")
+    except ValueError:
+        return ""
+    extension = os.path.splitext(path)[1]
+    return extension if extension in RUNNABLE_DOWNLOADS | PACKED_DOWNLOADS else ""
+
+
 def _urls(a: Analysis) -> None:
     tracked: set[str] = set()  # destinations already reported for a plain mismatch
     for ioc in a.urls:
         host, base = ioc.host, ioc.domain
         trusted = a.is_trusted_domain(host)
+        extension = _download(ioc.url)
+        clicked = [s for s in ioc.sources if "resource" not in s and not s.startswith("header:")]
+        if extension and not trusted and clicked:  # a <script src> is not a download
+            runnable = extension in RUNNABLE_DOWNLOADS
+            ioc.notes.append("downloads a %s file" % extension)
+            ioc.flagged = ioc.flagged or runnable
+            a.add_signal("high" if runnable else "medium", "link downloads a %s file: %s"
+                         % (extension, defang_url(ioc.url)), ("T1204.001", "T1566.002"))
         if is_ip(host):
             ioc.notes.append("raw IP address instead of a hostname")
             ioc.flagged = True
             a.add_signal("high", "URL points at a raw IP: %s" % defang_url(ioc.url), ("T1608.005",))
+            written = raw_host(ioc.url)
+            if written and written != host and ":" not in host:
+                ioc.notes.append("the address is written as %s to hide it" % written[:40])
+                a.add_signal("high", "URL disguises the IP address %s as %s" % (defang_host(host), written[:40]),
+                             ("T1027", "T1608.005"))
         if "xn--" in host:
             ioc.notes.append("punycode hostname")
             ioc.flagged = True
@@ -384,12 +539,33 @@ def _html_attachment(a: Analysis, f) -> None:
 # Body checks
 # ---------------------------------------------------------------------------
 
+TAG_SPLIT_MIN = 8  # words broken by tags before it counts: a drop cap or a bold letter is one
+
+
 def _body(a: Analysis) -> None:
     if a.zero_width_chars >= 3:
         a.add_signal("medium", "%d zero-width characters hidden in the body (filter evasion)"
                      % a.zero_width_chars, ("T1027",))
-    if not a.urls and not [f for f in a.attachments if not f.inline]:
-        a.add_signal("low", "no URLs or attachments: possible BEC or reply-chain lure", ("T1656",))
+    # A message with no link or attachment is as common in legitimate mail as
+    # in phishing (7.4% and 6.0% of the tuning sets), so it is not scored.
+    if a.hidden_splits >= 2:
+        a.add_signal("high", "hidden text breaks up words in %d places, so filters read something else "
+                             "than the reader" % a.hidden_splits, ("T1027",))
+    elif a.hidden_splits:
+        a.add_signal("medium", "hidden text sits inside a visible word (filter evasion)", ("T1027",))
+    if a.tag_splits >= TAG_SPLIT_MIN:
+        a.add_signal("medium", "%d words broken up with HTML tags, one piece at a time, so filters cannot read "
+                               "them" % a.tag_splits, ("T1027",))
+    if a.hidden_filler:
+        a.add_signal("medium", "%d letters of hidden text the reader never sees, unrelated to the visible text "
+                               "('%s...')" % (a.hidden_filler, a.hidden_sample[:50]), ("T1027",))
+    for link in a.script_links[:3]:
+        if link["kind"].startswith("javascript"):  # 2002 newsletters still opened pop-ups this way
+            a.add_signal("medium", "a link runs JavaScript instead of opening a website (%s)" % link["where"],
+                         ("T1027.006",))
+        else:
+            a.add_signal("high", "a link opens a page built into the link itself (%s, %s)"
+                         % (link["kind"], link["where"]), ("T1027.006", "T1566.002"))
 
 
 # ---------------------------------------------------------------------------
@@ -411,11 +587,20 @@ _EMAIL_GREETING_RE = re.compile(
     r"[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63}){0,4}", re.I)
 
 
+_INVISIBLE_RE = re.compile("[\u200b-\u200f\u2060-\u2064\ufeff\u00ad\u034f\u180e]")
+
+
+def reading_text(text: str) -> str:
+    """Text as a reader reads it: styled Unicode letters (𝘾𝙊𝙉𝙂𝙍𝘼𝙏𝙎) folded
+    to plain ones and invisible characters dropped, so neither hides a lure."""
+    return unicodedata.normalize("NFKC", _INVISIBLE_RE.sub("", text or ""))
+
+
 def _lure_hits(a: Analysis) -> dict[str, list[str]]:
     cached = getattr(a, "_lure_cache", None)
     if cached is not None:
         return cached
-    text = ("%s\n%s" % (a.subject, a.body_text)).lower()
+    text = reading_text("%s\n%s" % (a.subject, a.body_text)).lower()
     squeezed = re.sub(r"\s+", "", text)
     hits: dict[str, list[str]] = {}
     for category, phrases in LURES.items():
@@ -446,7 +631,7 @@ def _language(a: Analysis) -> None:
     if hits.get("callback") and phones:
         severity = "high" if not a.urls or registrable_domain(a.from_domain) in FREEMAIL else "medium"
         a.add_signal(severity, "callback-phishing pattern: %s, and a number to call (%s)"
-                     % (hits["callback"][0], phones[0].strip()), ("T1566", "T1656"))
+                     % (hits["callback"][0], phones[0].strip()), ("T1566.004", "T1656"))
 
     # Quishing: the link is inside an image, so there is no URL to inspect.
     # The tell is the instruction to scan plus an image and nothing clickable.
@@ -463,7 +648,13 @@ def _language(a: Analysis) -> None:
     money = hits.get("payment") or [p for p in hits.get("prize", []) if "gift card" in p]
     if money and registrable_domain(a.from_domain) in FREEMAIL and not a.urls:
         a.add_signal("medium", "free-mail sender asks for money (%s): business email compromise pattern"
-                     % money[0], ("T1656",))
+                     % money[0], ("T1656", "T1657"))
+    # BEC: a lookalike of your own domain asking for a payment or gift cards.
+    own = next((hit for hit in a.lookalikes if hit.target in a.protected_domains
+                and hit.where in ("sender", "reply-to")), None)
+    if money and own:
+        a.add_signal("high", "business email compromise: %s, a lookalike of your domain %s, asks for money (%s)"
+                     % (defang_host(own.domain), defang_host(own.target), money[0]), ("T1656", "T1657"))
 
     spaced = _SPACED_LETTERS_RE.search(a.body_text)
     if spaced:

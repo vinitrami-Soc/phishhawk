@@ -346,7 +346,7 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
 
     display, address = email.utils.parseaddr(header(msg, "From"))
     analysis.from_display = display
-    analysis.from_address = address.lower()
+    analysis.from_address = address.strip("\"' ").lower()
     analysis.from_domain = domain_of_address(address)
 
     _, reply_to = email.utils.parseaddr(header(msg, "Reply-To"))
@@ -391,8 +391,20 @@ def _protected_domains(msg: Message, analysis: Analysis, explicit, auto: bool) -
 # Bodies and URLs
 # ---------------------------------------------------------------------------
 
-def _add_url(bucket: dict[str, UrlIoc], raw: str, source: str, anchor: str = "") -> None:
-    if not raw or raw.lower().startswith(SKIP_SCHEMES):
+_SCRIPT_LINK_RE = re.compile(r"^\s*(?:javascript:(?!\s*(?:void\s*\(\s*0?\s*\)|;|$|return\s+false))"
+                             r"|data:\s*(?:text/html|application/xhtml|image/svg|text/javascript))", re.I)
+
+
+def _add_url(bucket: dict[str, UrlIoc], raw: str, source: str, anchor: str = "",
+             analysis: Analysis | None = None) -> None:
+    if not raw:
+        return
+    if raw.lower().startswith(SKIP_SCHEMES):
+        # A link that runs script or opens a page built from the link itself
+        # never reaches a URL filter; mail from real senders does not use them.
+        if analysis is not None and _SCRIPT_LINK_RE.match(raw) and len(analysis.script_links) < 20:
+            kind = raw.strip()[:40].split(",", 1)[0].split(";", 1)[0]
+            analysis.script_links.append({"where": source, "kind": kind.lower(), "size": len(raw)})
         return
     url = clean_url(refang(raw))
     if not usable_url(url):
@@ -454,10 +466,10 @@ def _collect(msg: Message) -> tuple[list[str], list[str], list[Message], list[Me
     return text_parts, html_parts, attachments, images
 
 
-def _harvest_html(html: str, bucket: dict[str, UrlIoc], prefix: str) -> Any:
+def _harvest_html(html: str, bucket: dict[str, UrlIoc], prefix: str, analysis: Analysis | None = None) -> Any:
     found = parse_html(html)
     for href, anchor in found.anchors:
-        _add_url(bucket, href, prefix + "href", anchor)
+        _add_url(bucket, href, prefix + "href", anchor, analysis)
     for resource in found.resources:
         _add_url(bucket, resource, prefix + "resource")
     for redirect in found.redirects:
@@ -533,6 +545,24 @@ def _qr_url(payload: str) -> str:
     return found[0] if found else ""
 
 
+HIDDEN_FILLER_LETTERS = 300  # hidden letters before hidden text counts as filler
+_WORDS_RE = re.compile(r"[^\W\d_]{4,}")
+
+
+def _hidden_filler(visible: str, hidden: str) -> tuple[int, str]:
+    """(letters, sample) of hidden text that does not repeat the visible text.
+    Newsletters hide a short preview line, and responsive layouts hide a copy
+    of what is shown; filler meant for spam filters is long and different."""
+    letters = sum(ch.isalpha() for ch in hidden)
+    if letters < HIDDEN_FILLER_LETTERS:
+        return 0, ""
+    seen = {w.lower() for w in _WORDS_RE.findall(visible)}
+    words = [w.lower() for w in _WORDS_RE.findall(hidden)]
+    if not words or sum(1 for w in words if w not in seen) / len(words) < 0.6:
+        return 0, ""
+    return letters, " ".join(hidden.split())[:80]
+
+
 def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
     text_parts, html_parts, attachment_parts, image_parts = _collect(msg)
     bucket: dict[str, UrlIoc] = {}
@@ -542,8 +572,11 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
         for url in urls_from_text(body):
             _add_url(bucket, url, "body-text")
         scan.text(body)
+    html_found = []
     for body in html_parts:
-        scan.html(_harvest_html(body, bucket, "html-"), body, "the HTML body")
+        found = _harvest_html(body, bucket, "html-", analysis)
+        html_found.append(found)
+        scan.html(found, body, "the HTML body")
     for name in ("List-Unsubscribe", "X-Originating-URL"):
         for url in urls_from_text(header(msg, name)):
             _add_url(bucket, url, "header:%s" % name)
@@ -561,9 +594,16 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
 
     analysis.urls = list(bucket.values())
 
-    visible_html = [parse_html(body).text for body in html_parts]
-    analysis.zero_width_chars = sum(len(ZERO_WIDTH_RE.findall(t)) for t in text_parts + visible_html)
-    analysis.body_text = " ".join(" ".join(text_parts + visible_html).split())[:BODY_TEXT_LIMIT]
+    all_html_text = [found.text for found in html_found]
+    analysis.zero_width_chars = sum(len(ZERO_WIDTH_RE.findall(t)) for t in text_parts + all_html_text)
+    # The text as the reader sees it, words put back together, then the hidden
+    # text: a hidden preview line still shows in the inbox list.
+    visible = " ".join(" ".join(text_parts + [found.visible_text for found in html_found]).split())
+    hidden = " ".join(found.hidden_text for found in html_found)
+    analysis.body_text = ("%s %s" % (visible, hidden)).strip()[:BODY_TEXT_LIMIT]
+    analysis.hidden_splits = sum(found.hidden_splits for found in html_found)
+    analysis.tag_splits = sum(found.tag_splits for found in html_found)
+    analysis.hidden_filler, analysis.hidden_sample = _hidden_filler(visible, hidden)
     if _FORWARD_SUBJECT.match(analysis.subject or ""):
         match = _INLINE_FROM.search(analysis.body_text[:6000])
         if match:

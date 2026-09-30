@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import ipaddress
 import re
 import zlib
 from dataclasses import dataclass, field
@@ -65,16 +66,72 @@ def defang_url(url: str) -> str:
     return defang_host(out)
 
 
-def host_of(url: str) -> str:
+_ASCII_DIGITS_RE = re.compile(r"[0-9]+")
+_HEX_RE = re.compile(r"0[xX][0-9a-fA-F]*")
+
+
+def _ipv4_part(part: str) -> int | None:
+    if _HEX_RE.fullmatch(part):
+        return int(part[2:] or "0", 16)
+    if not _ASCII_DIGITS_RE.fullmatch(part):
+        return None
+    if len(part) > 1 and part[0] == "0":
+        return int(part, 8) if re.fullmatch(r"[0-7]+", part) else None
+    return int(part)
+
+
+def parse_ipv4(host: str) -> str:
+    """The dotted-quad address for every IPv4 spelling a browser opens:
+    3232235777, 0xC0A80101, 0300.0250.1.1 and 192.168.257 all reach
+    192.168.1.1. Attackers write the number to get past checks that only
+    look for four dotted decimals. Empty when the host is not an address."""
+    parts = host.split(".")
+    if len(parts) > 1 and parts[-1] == "":
+        parts.pop()
+    if not 1 <= len(parts) <= 4 or len(host) > 64:
+        return ""
+    numbers = [_ipv4_part(part) for part in parts]
+    if any(n is None for n in numbers):
+        return ""
+    values = [n for n in numbers if n is not None]
+    if any(n > 255 for n in values[:-1]) or values[-1] >= 256 ** (5 - len(values)):
+        return ""
+    total = values[-1] + sum(n << (8 * (3 - i)) for i, n in enumerate(values[:-1]))
+    return ".".join(str((total >> shift) & 255) for shift in (24, 16, 8, 0))
+
+
+def canonical_host(host: str) -> str:
+    """Lower case, no trailing dot, and an IP address in its standard form."""
+    host = (host or "").lower().rstrip(".")
+    if ":" in host:
+        try:
+            return str(ipaddress.IPv6Address(host.split("%", 1)[0]))
+        except ValueError:
+            return host
+    return parse_ipv4(host) or host
+
+
+def raw_host(url: str) -> str:
     try:
-        host = urlsplit(url).hostname or ""
+        return (urlsplit(url).hostname or "").lower().rstrip(".")
     except ValueError:
         return ""
-    return host.lower().rstrip(".")
+
+
+def host_of(url: str) -> str:
+    return canonical_host(raw_host(url))
 
 
 def is_ip(value: str) -> bool:
-    return bool(IPV4_RE.fullmatch(value or ""))
+    if IPV4_RE.fullmatch(value or ""):
+        return True
+    if ":" not in (value or ""):
+        return False
+    try:
+        ipaddress.IPv6Address(value)
+    except ValueError:
+        return False
+    return True
 
 
 def registrable_domain(host: str) -> str:
@@ -101,7 +158,8 @@ def domain_label(domain: str) -> str:
 def domain_of_address(address: str) -> str:
     if not address or "@" not in address:
         return ""
-    return address.rsplit("@", 1)[1].strip().strip(">").lower().rstrip(".")
+    # '"service@adac.de"' written without angle brackets keeps its quotes
+    return address.rsplit("@", 1)[1].strip().strip("<>\"' ").lower().rstrip(".")
 
 
 def clean_url(raw: str) -> str:
@@ -123,7 +181,7 @@ def usable_url(url: str) -> bool:
     if url.split("://", 1)[0].lower() not in ("http", "https", "ftp"):
         return False
     host = host_of(url)
-    return bool(host) and ("." in host or host == "localhost")
+    return bool(host) and ("." in host or host == "localhost" or is_ip(host))
 
 
 def urls_from_text(text: str) -> list[str]:
@@ -244,8 +302,12 @@ class HtmlFindings:
     password_inputs: int = 0
     redirects: list[str] = field(default_factory=list)
     script_text: str = ""
-    text: str = ""  # visible text (outside script/style)
+    text: str = ""  # all text outside script/style, hidden or not
     cell_grids: list[list[list[int]]] = field(default_factory=list)  # tables of dark/light cells
+    hidden_text: str = ""  # text styled invisible (display:none, font-size:0 ...), capped
+    visible_text: str = ""  # text a reader actually sees
+    hidden_splits: int = 0  # times hidden text sat inside a visible word: "Micro<span hidden>x</span>soft"
+    tag_splits: int = 0  # times a tag broke a visible word: "T<span></span>h<span></span>e"
 
     @property
     def smuggling_markers(self) -> list[str]:
@@ -254,6 +316,30 @@ class HtmlFindings:
         if _LONG_BASE64_RE.search(self.script_text):
             markers.append("large embedded base64 blob")
         return markers
+
+
+# Inline styles that make text invisible. Newsletters hide a short preview
+# line this way too, so the heuristics weigh how much is hidden and whether
+# it repeats the visible text, not the trick itself.
+_HIDING_STYLE_RE = re.compile(
+    r"display:none|visibility:hidden|mso-hide:all|opacity:0(?![.0-9]*[1-9])"
+    r"|font-size:0(?:\.0+)?(?:px|pt|em|rem|%)?(?![.0-9]*[1-9])|font-size:[01]px"
+    r"|(?:max-)?(?:height|width):0(?:px)?(?![.0-9]*[1-9]).{0,200}overflow:hidden"
+    r"|overflow:hidden.{0,200}(?:max-)?(?:height|width):0(?:px)?(?![.0-9]*[1-9])")
+_STYLE_CLASS_RULE_RE = re.compile(r"\.([A-Za-z0-9_-]{1,64})\s*\{([^{}]{0,1000})\}")
+_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param",
+              "source", "track", "wbr", "keygen", "frame", "basefont", "isindex"}
+# Elements that start a new line: text on either side of one is not one word.
+_BLOCK_TAGS = {"address", "article", "aside", "blockquote", "br", "center", "dd", "div", "dl", "dt",
+               "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
+               "header", "hr", "li", "main", "nav", "ol", "option", "p", "pre", "section", "table", "tbody",
+               "td", "tfoot", "th", "thead", "title", "tr", "ul", "body", "html", "head"}
+MAX_OPEN_ELEMENTS = 2000
+MAX_HIDDEN_TEXT = 20_000
+
+
+def hides_text(style: str) -> bool:
+    return bool(_HIDING_STYLE_RE.search(re.sub(r"\s+|!important", "", (style or "").lower())))
 
 
 _COLOR_RE = re.compile(r"background(?:-color)?\s*:\s*([^;\"']{1,40})", re.I)
@@ -295,6 +381,44 @@ class _HtmlParser(HTMLParser):
         self._text: list[str] = []
         self._form: dict | None = None
         self._tables: list[dict] = []
+        self._open: list[tuple[str, bool]] = []  # (tag, hidden) of open elements
+        self._open_count: dict[str, int] = {}
+        self._hidden_classes: set[str] = set()
+        self._hidden: list[str] = []
+        self._hidden_size = 0
+        self._visible: list[str] = []
+        self._last_visible_alnum = False
+        self._hidden_since_visible = False
+        self._tag_since_visible = False
+
+    @property
+    def _in_hidden(self) -> bool:
+        return bool(self._open) and self._open[-1][1]
+
+    def _push(self, tag: str, values: dict[str, str]) -> None:
+        if tag in _VOID_TAGS or len(self._open) >= MAX_OPEN_ELEMENTS:
+            return
+        classes = set(values.get("class", "").lower().split())
+        hidden = self._in_hidden or "hidden" in values or hides_text(values.get("style", "")) \
+            or bool(classes & self._hidden_classes)
+        self._open.append((tag, hidden))
+        self._open_count[tag] = self._open_count.get(tag, 0) + 1
+
+    def _pop(self, tag: str) -> None:
+        if not self._open_count.get(tag):
+            return  # a stray end tag closes nothing
+        while self._open:
+            name, _ = self._open.pop()
+            self._open_count[name] -= 1
+            if name == tag:
+                break
+
+    def _line_break(self) -> None:
+        """A visible block boundary: what follows is a new word."""
+        if not self._in_hidden:
+            self._visible.append(" ")
+            self._last_visible_alnum = False
+            self._hidden_since_visible = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
@@ -334,14 +458,27 @@ class _HtmlParser(HTMLParser):
         for key in self.RESOURCE_ATTRS:
             if values.get(key):
                 found.resources.append(values[key].strip())
+        if tag not in ("script", "style"):
+            self._push(tag, values)
+        self._tag_since_visible = True
+        if tag in _BLOCK_TAGS:
+            self._line_break()
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
-        if tag.lower() == "a" and self._anchor_depth:
+        tag = tag.lower()
+        if tag == "a" and self._anchor_depth:
             self._anchor_depth -= 1
+        if tag not in _VOID_TAGS:
+            self._pop(tag)  # <span/> opens and closes at once
 
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        closing_visible_block = tag in _BLOCK_TAGS and not self._in_hidden
+        self._pop(tag)
+        self._tag_since_visible = True
+        if closing_visible_block:
+            self._line_break()
         if tag == "a" and self._anchor_depth:
             self._anchor_depth -= 1
         elif tag == "script":
@@ -363,8 +500,27 @@ class _HtmlParser(HTMLParser):
             self.findings.script_text += data + "\n"
             return
         if self._in_style:
+            if len(self._hidden_classes) < 500:
+                for name, body in _STYLE_CLASS_RULE_RE.findall(data[:200_000]):
+                    if hides_text(body):
+                        self._hidden_classes.add(name.lower())
             return
         self._text.append(data)
+        if self._in_hidden:
+            if self._hidden_size < MAX_HIDDEN_TEXT:
+                self._hidden.append(data[:MAX_HIDDEN_TEXT - self._hidden_size])
+                self._hidden_size += len(data)
+            if any(ch.isalnum() for ch in data):
+                self._hidden_since_visible = True
+        elif data.strip() or not self._hidden_since_visible:
+            if self._last_visible_alnum and data[:1].isalnum():
+                if self._hidden_since_visible:
+                    self.findings.hidden_splits += 1
+                elif self._tag_since_visible:
+                    self.findings.tag_splits += 1
+            self._hidden_since_visible = self._tag_since_visible = False
+            self._visible.append(data)
+            self._last_visible_alnum = data[-1:].isalnum()
         if self._anchor_depth and self.findings.anchors:
             href, text = self.findings.anchors[-1]
             if len(text) < 500:  # anchor text only needs to show a domain
@@ -382,6 +538,8 @@ def parse_html(html: str) -> HtmlFindings:
         parser._close_table()  # noqa: SLF001
     found = parser.findings
     found.text = " ".join(parser._text)  # noqa: SLF001
+    found.hidden_text = " ".join(" ".join(parser._hidden).split())  # noqa: SLF001
+    found.visible_text = " ".join("".join(parser._visible).split())  # noqa: SLF001
     found.anchors = [(href, " ".join(text.split())) for href, text in found.anchors if href]
     for pattern in _JS_REDIRECT_RES:
         found.redirects.extend(match.group(1) for match in pattern.finditer(found.script_text))
