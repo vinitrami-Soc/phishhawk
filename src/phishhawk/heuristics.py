@@ -183,7 +183,7 @@ def _script_note(word: str) -> str:
     return "'%s' has %s letters" % (word[:30], "/".join(foreign))
 
 
-_STYLED_RE = re.compile("[\U0001D400-\U0001D7FF\U0001F130-\U0001F189\uFF21-\uFF3A\uFF41-\uFF5A]")
+_STYLED_RE = re.compile(r"[\U0001D400-\U0001D7FF\U0001F130-\U0001F189\uFF21-\uFF3A\uFF41-\uFF5A]")
 _DISGUISE_RE = re.compile(r"[A-Za-z0-9]{4,24}")
 
 
