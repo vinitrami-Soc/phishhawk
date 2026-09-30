@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from . import heuristics
+from . import heuristics, yararules
 from .enrich import Enricher
+from .extract import registrable_domain
 from .models import Analysis
 from .parse import load_message, parse_message
 
@@ -18,6 +19,9 @@ class Options:
     auto_protect: bool = True
     qr: bool = True  # decode QR codes when the optional extra is installed
     trusted_authserv: list[str] = field(default_factory=list)  # your MX's authserv-id(s)
+    allow_domains: list[str] = field(default_factory=list)  # partners never reported as lookalikes or IOCs
+    block_domains: list[str] = field(default_factory=list)  # domains always flagged
+    yara: object | None = None  # compiled rules (see phishhawk.yara)
 
 
 def _carriers(analysis: Analysis, options: Options) -> None:
@@ -43,6 +47,8 @@ def _carriers(analysis: Analysis, options: Options) -> None:
 
 def _finish(analysis: Analysis, options: Options, enricher: Enricher | None,
             progress: Callable[[str], None] | None) -> Analysis:
+    analysis.allowed_domains = sorted({registrable_domain(d) for d in options.allow_domains if d})
+    analysis.blocked_domains = sorted({registrable_domain(d) for d in options.block_domains if d})
     heuristics.analyse(analysis)
     _carriers(analysis, options)
     if enricher is not None:
@@ -55,9 +61,15 @@ def triage_bytes(data: bytes, path: str = "<memory>", options: Options | None = 
                  enricher: Enricher | None = None,
                  progress: Callable[[str], None] | None = None) -> Analysis:
     options = options or Options()
+    rules = options.yara
     analysis = parse_message(load_message(data), path=path, unwrap=options.unwrap,
                              protected=options.protected, auto_protect=options.auto_protect, qr=options.qr,
-                             trusted_authserv=tuple(options.trusted_authserv))
+                             trusted_authserv=tuple(options.trusted_authserv),
+                             file_hook=yararules.hook(rules) if rules is not None else None)
+    if rules is not None:
+        for match in rules.match(data):  # type: ignore[attr-defined]
+            match["where"] = "the raw message"
+            analysis.yara.append(match)
     return _finish(analysis, options, enricher, progress)
 
 

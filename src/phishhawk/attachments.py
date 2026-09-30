@@ -79,8 +79,10 @@ class Inspector:
     link; `scan` decodes QR codes; `inspect_html(ioc, data)` handles HTML."""
 
     def __init__(self, analysis: Analysis, add_url: Callable[[str, str], None], scan: Any,
-                 inspect_html: Callable[[FileIoc, bytes], None], passwords: list[str]) -> None:
+                 inspect_html: Callable[[FileIoc, bytes], None], passwords: list[str],
+                 file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None) -> None:
         self.analysis, self.add_url, self.scan = analysis, add_url, scan
+        self.file_hook = file_hook
         self.inspect_html = inspect_html
         self.passwords = passwords
         self.files = 0
@@ -100,6 +102,8 @@ class Inspector:
         self.files += 1
         self.bytes += len(data)
         try:
+            if self.file_hook is not None:
+                self.file_hook(self.analysis, ioc, data)
             self.inspect(ioc, data, depth)
         except Exception as exc:  # one hostile file must not end the analysis
             ioc.notes.append("could not be fully inspected (%s)" % type(exc).__name__)

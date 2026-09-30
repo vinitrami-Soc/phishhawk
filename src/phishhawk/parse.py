@@ -24,7 +24,7 @@ import email.policy
 import email.utils
 import html as html_module
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from email.message import Message
 from typing import Any
 
@@ -46,6 +46,7 @@ from .extract import (
     usable_url,
 )
 from .formats.msg import MsgError, is_msg, msg_to_message
+from .indicators import find_wallets
 from .knowledge import FREEMAIL
 from .models import Analysis, FileIoc, UrlIoc
 
@@ -97,13 +98,14 @@ def parse_bytes(data: bytes, path: str = "<memory>", unwrap: bool = True,
 
 def parse_message(message: Message, path: str = "<memory>", unwrap: bool = True,
                   protected: list[str] | tuple = (), auto_protect: bool = True,
-                  qr: bool = True, trusted_authserv: tuple[str, ...] = ()) -> Analysis:
+                  qr: bool = True, trusted_authserv: tuple[str, ...] = (),
+                  file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None) -> Analysis:
     analysis = Analysis(path=path)
     carriers: list[Message] = []
     if unwrap:
         message, carriers = _unwrap(message, analysis)
     _read_headers(message, analysis, tuple(t.lower() for t in trusted_authserv))
-    _read_content(message, analysis, qr)
+    _read_content(message, analysis, qr, file_hook)
     analysis.protected_domains = _protected_domains(message, analysis, protected, auto_protect)
     analysis._carriers = carriers  # noqa: SLF001 - the unwrapped layers, re-checked by the pipeline
     return analysis
@@ -314,6 +316,47 @@ def _originating_ip(msg: Message) -> str:
     return ""
 
 
+_HOP_FROM_RE = re.compile(r"\bfrom\s+([^\s;()]{1,120})", re.I)
+_HOP_BY_RE = re.compile(r"\bby\s+([^\s;()]{1,120})", re.I)
+_HOP_WITH_RE = re.compile(r"\bwith\s+([^\s;()]{1,40})", re.I)
+_HOP_IP_RE = re.compile(r"\[((?:\d{1,3}\.){3}\d{1,3}|(?:IPv6:)?[0-9A-Fa-f:]{2,39})\]")
+MAX_HOPS = 30
+
+
+def _hops(msg: Message) -> list[dict[str, Any]]:
+    """The Received chain, oldest hop first: who handed the message to whom,
+    when, and how long each step took."""
+    try:
+        received = [" ".join(str(value).split()) for value in (msg.get_all("Received", []) or [])]
+    except Exception:
+        return []
+    hops: list[dict[str, Any]] = []
+    previous = None
+    for value in reversed(received[:MAX_HOPS]):
+        head, _, stamp = value.rpartition(";")
+        head = head or value
+        when = None
+        try:
+            when = email.utils.parsedate_to_datetime(stamp.strip()) if stamp.strip() else None
+            if when is not None and when.tzinfo is None:
+                when = None
+        except (TypeError, ValueError, IndexError):
+            when = None
+        hop: dict[str, Any] = {}
+        for key, pattern in (("from", _HOP_FROM_RE), ("by", _HOP_BY_RE), ("with", _HOP_WITH_RE),
+                             ("ip", _HOP_IP_RE)):
+            match = pattern.search(head)
+            if match:
+                hop[key] = match.group(1).removeprefix("IPv6:")[:120]
+        hop["time"] = when.isoformat() if when else ""
+        if when is not None and previous is not None:
+            hop["delay_seconds"] = int((when - previous).total_seconds())
+        if when is not None:
+            previous = when
+        hops.append(hop)
+    return hops
+
+
 # Headers only a list server adds. List-Id and List-Unsubscribe are left out on
 # purpose: every bulk-mail service sets them, including the ones phishers rent.
 _LIST_HEADERS = ("List-Post", "Mailing-List", "X-Mailing-List", "X-BeenThere")
@@ -357,6 +400,7 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
     analysis.mailing_list, analysis.list_domains = _mailing_list(msg)
     analysis.auth, analysis.forged_auth = _auth_results(msg, trusted_authserv)
     analysis.originating_ip = _originating_ip(msg)
+    analysis.hops = _hops(msg)
     try:
         analysis.received_hops = len(msg.get_all("Received", []) or [])
     except Exception:
@@ -563,7 +607,8 @@ def _hidden_filler(visible: str, hidden: str) -> tuple[int, str]:
     return letters, " ".join(hidden.split())[:80]
 
 
-def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
+def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
+                  file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None) -> None:
     text_parts, html_parts, attachment_parts, image_parts, calendar_parts = _collect(msg)
     bucket: dict[str, UrlIoc] = {}
     scan = _QrScan(analysis, bucket, qr)
@@ -595,7 +640,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
     inspector = Inspector(
         analysis, lambda url, source: _add_url(bucket, url, source), scan,
         lambda ioc, data: _inspect_html(ioc, data, bucket, scan),
-        password_candidates("%s\n%s" % (analysis.subject, analysis.body_text)))
+        password_candidates("%s\n%s" % (analysis.subject, analysis.body_text)), file_hook)
     for part in attachment_parts:
         content_type = part.get_content_type() or "application/octet-stream"
         default_name = "attached-message.eml" if content_type == "message/rfc822" else "(unnamed)"
@@ -617,6 +662,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True) -> None:
         analysis.body_text = ("%s %s" % (analysis.body_text, extra)).strip()[:BODY_TEXT_LIMIT]
 
     analysis.urls = list(bucket.values())
+    analysis.wallets = find_wallets("%s\n%s" % (analysis.subject, analysis.body_text))
     if _FORWARD_SUBJECT.match(analysis.subject or ""):
         match = _INLINE_FROM.search(analysis.body_text[:6000])
         if match:

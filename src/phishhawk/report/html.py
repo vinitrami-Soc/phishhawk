@@ -28,10 +28,11 @@ from importlib.resources import files as package_files
 
 from .. import __version__
 from ..attack import TACTIC_ORDER, technique_tactic
-from ..extract import defang_host, defang_url
+from ..extract import defang_host
 from ..models import Analysis, FileIoc, vt_is_malicious
 from .common import (
     children_of,
+    defang_ioc,
     display_copy,
     human_size,
     recommendations,
@@ -753,15 +754,7 @@ def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]
 
 
 def _defanged_iocs(a: Analysis) -> list[tuple[str, str]]:
-    out = []
-    for ioc in a.iocs():
-        value = ioc["value"]
-        if ioc["type"] == "url":
-            value = defang_url(value)
-        elif ioc["type"] != "sha256":
-            value = defang_host(value)
-        out.append((ioc["type"], value))
-    return out
+    return [(ioc["type"], defang_ioc(ioc["type"], ioc["value"])) for ioc in a.iocs()]
 
 
 def _url_cell(ioc) -> str:

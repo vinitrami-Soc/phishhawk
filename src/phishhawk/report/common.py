@@ -10,6 +10,7 @@ from typing import Any
 
 from .. import __version__
 from ..attack import technique_name, technique_url
+from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, vt_is_malicious
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -45,6 +46,20 @@ def display_copy(value: Any) -> Any:
         return dataclasses.replace(value, **{f.name: display_copy(getattr(value, f.name))
                                              for f in dataclasses.fields(value) if f.init})
     return value
+
+
+RAW_IOC_TYPES = {"sha256", "crypto-wallet", "phone"}  # nothing in them can be clicked
+REPORT_VERSION = "2.0"  # the JSON layout; docs/report.schema.json describes it
+
+
+def defang_ioc(kind: str, value: str) -> str:
+    """An indicator made safe to paste: URLs and hosts defanged, hashes,
+    wallet addresses and phone numbers as they are."""
+    if kind == "url":
+        return defang_url(value)
+    if kind in RAW_IOC_TYPES:
+        return value
+    return defang_host(value)
 
 
 def utc_now() -> str:
@@ -195,6 +210,7 @@ def to_dict(analysis: Analysis) -> dict[str, Any]:
     payload["summary"] = summary_sentences(analysis)
     payload["generated_at"] = utc_now()
     payload["tool_version"] = __version__
+    payload["report_version"] = REPORT_VERSION
     for item, ioc in zip(payload["urls"], analysis.urls, strict=True):
         item["defanged"] = ioc.defanged
     return payload

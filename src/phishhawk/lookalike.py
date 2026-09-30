@@ -201,6 +201,12 @@ def _compare_brand(raw: str, variants: set[str], brand: str, suffix: str) -> str
     return ""
 
 
+def clear_caches() -> None:
+    """After the brand list changes (knowledge.extend)."""
+    _brand_hits.cache_clear()
+    _canonical.cache_clear()
+
+
 @lru_cache(maxsize=4096)
 def _brand_hits(base: str) -> tuple[tuple[str, str], ...]:
     """Brand comparisons depend only on the registrable domain, and a digest

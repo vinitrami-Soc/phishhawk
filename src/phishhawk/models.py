@@ -98,6 +98,7 @@ class Analysis:
     return_path_domain: str = ""
     originating_ip: str = ""
     received_hops: int = 0
+    hops: list[dict[str, Any]] = field(default_factory=list)  # Received chain, oldest first: from, by, ip, time
     mailing_list: bool = False  # List-Post, Mailing-List, X-BeenThere or Precedence: list
     list_domains: list[str] = field(default_factory=list)  # where those list headers point
     auth: dict[str, str] = field(default_factory=dict)
@@ -105,12 +106,17 @@ class Analysis:
     reported_by: dict[str, Any] | None = None
     forwarded_from: dict[str, str] | None = None  # original sender of an inline forward
     protected_domains: list[str] = field(default_factory=list)
+    allowed_domains: list[str] = field(default_factory=list)  # configured partners: trusted like known brands
+    blocked_domains: list[str] = field(default_factory=list)  # configured: always flagged
     urls: list[UrlIoc] = field(default_factory=list)
     attachments: list[FileIoc] = field(default_factory=list)
     domains: list[str] = field(default_factory=list)
     body_emails: list[str] = field(default_factory=list)
     qr_codes: list[dict[str, str]] = field(default_factory=list)  # where, payload, url
     calendar: list[dict[str, Any]] = field(default_factory=list)  # invitations: organizer, summary, links
+    wallets: list[dict[str, str]] = field(default_factory=list)  # cryptocurrency addresses: currency, address
+    phones: list[str] = field(default_factory=list)  # numbers a callback phish asks the reader to ring
+    yara: list[dict[str, Any]] = field(default_factory=list)  # matches of your YARA rules: rule, where, severity
     lookalikes: list[Lookalike] = field(default_factory=list)
     zero_width_chars: int = 0
     hidden_splits: int = 0  # hidden text inside visible words
@@ -167,7 +173,8 @@ class Analysis:
         return bool(base) and base in {registrable_domain(d) for d in self.protected_domains}
 
     def is_trusted_domain(self, domain: str) -> bool:
-        return registrable_domain(domain) in known_legit_domains() or self.is_protected(domain)
+        base = registrable_domain(domain)
+        return base in known_legit_domains() or self.is_protected(domain) or base in self.allowed_domains
 
     def iocs(self) -> list[dict[str, str]]:
         """Indicators worth blocking or sharing. Empty for a clean verdict.
@@ -180,12 +187,17 @@ class Analysis:
         if self.verdict == "NO STRONG INDICATORS":
             return []
         out: list[dict[str, str]] = []
-        seen: set[tuple[str, str]] = set()
+        seen: dict[tuple[str, str], dict[str, str]] = {}
 
         def add(kind: str, value: str, context: str) -> None:
-            if value and (kind, value) not in seen:
-                seen.add((kind, value))
-                out.append({"type": kind, "value": value, "context": context})
+            if not value:
+                return
+            existing = seen.get((kind, value))
+            if existing is None:
+                seen[(kind, value)] = entry = {"type": kind, "value": value, "context": context}
+                out.append(entry)
+            elif context and context not in existing["context"].split(", "):
+                existing["context"] += ", " + context  # an IP that is both a link host and the origin
 
         for ioc in self.urls:
             # A Google Drive or Forms link is blockable as a URL even though
@@ -202,7 +214,8 @@ class Analysis:
             if (not base or base in SHORTENERS or base in FREEMAIL or self.is_trusted_domain(base)
                     or hosting_kind("https://%s/" % domain) in ("free hosting", "file sharing")):
                 continue
-            add("ipv4" if domain.replace(".", "").isdigit() else "domain", domain, role)
+            kind = "ipv6" if ":" in domain else "ipv4" if domain.replace(".", "").isdigit() else "domain"
+            add(kind, domain, role)
 
         for address, role in ((self.from_address, "sender address"),
                               (self.reply_to, "reply-to address")):
@@ -210,7 +223,11 @@ class Analysis:
                 add("email", address, role)
 
         if self.originating_ip:
-            add("ipv4", self.originating_ip, "originating IP")
+            add("ipv6" if ":" in self.originating_ip else "ipv4", self.originating_ip, "originating IP")
+        for wallet in self.wallets:
+            add("crypto-wallet", wallet["address"], "%s wallet in the message" % wallet["currency"])
+        for number in self.phones:
+            add("phone", number, "number the message asks the reader to call")
         for attachment in self.attachments:
             if attachment.inline or not attachment.sha256:
                 continue

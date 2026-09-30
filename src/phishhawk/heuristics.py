@@ -49,6 +49,7 @@ _DOUBLE_EXT_RE = re.compile(r"\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|txt|csv|rtf|wav
 
 
 def analyse(analysis: Analysis) -> Analysis:
+    _block_list(analysis)
     _authentication(analysis)
     _sender(analysis)
     _lookalikes(analysis)
@@ -58,12 +59,26 @@ def analyse(analysis: Analysis) -> Analysis:
     _body(analysis)
     _language(analysis)
     _qr_codes(analysis)
+    _yara(analysis)
     return analysis
 
 
 # ---------------------------------------------------------------------------
 # Header checks
 # ---------------------------------------------------------------------------
+
+def _block_list(a: Analysis) -> None:
+    """Domains your organisation has already decided are hostile."""
+    if not a.blocked_domains:
+        return
+    blocked = set(a.blocked_domains)
+    for domain, role in [(a.from_domain, "sender"), (a.reply_to_domain, "reply-to"),
+                         (a.return_path_domain, "return-path")] + [(u.host, "link") for u in a.urls]:
+        if domain and registrable_domain(domain) in blocked:
+            a.add_signal("high", "%s domain %s is on your block list" % (role, defang_host(domain)), ("T1566",))
+            for ioc in a.urls:
+                if registrable_domain(ioc.host) in blocked:
+                    ioc.flagged = True
 
 def _authentication(a: Analysis) -> None:
     for mechanism, bad in (("spf", {"fail", "softfail", "permerror", "temperror", "none"}),
@@ -304,7 +319,10 @@ def _lookalikes(a: Analysis) -> None:
     targets += [(host, "url") for host in hosts[:MAX_LOOKALIKE_HOSTS]]
     seen: set[tuple[str, str]] = set()
     protected = set(a.protected_domains)
+    allowed = set(a.allowed_domains)
     for domain, where in targets:
+        if allowed and registrable_domain(domain) in allowed:
+            continue  # a partner you told PhishHawk about
         for hit in find_lookalikes(domain, where, a.protected_domains):
             key = (registrable_domain(hit.domain), hit.target)
             if key in seen:
@@ -733,6 +751,20 @@ def _language(a: Analysis) -> None:
         severity = "high" if not a.urls or registrable_domain(a.from_domain) in FREEMAIL else "medium"
         a.add_signal(severity, "callback-phishing pattern: %s, and a number to call (%s)"
                      % (hits["callback"][0], phones[0].strip()), ("T1566.004", "T1656"))
+        for number in phones[:3]:
+            number = " ".join(number.split())
+            if number not in a.phones:
+                a.phones.append(number)
+
+    # Extortion, advance-fee and investment scams end in a wallet address.
+    if a.wallets:
+        currencies = sorted({w["currency"] for w in a.wallets})
+        asks = [c for c in ("extortion", "advance-fee", "crypto", "payment", "prize") if hits.get(c)]
+        if asks:
+            a.add_signal("high", "asks for payment to a %s wallet (%s wording)" % ("/".join(currencies), asks[0]),
+                         ("T1657",))
+        else:
+            a.add_signal("low", "%s wallet address in the message" % "/".join(currencies), ("T1657",))
 
     # Quishing: the link is inside an image, so there is no URL to inspect.
     # The tell is the instruction to scan plus an image and nothing clickable.
@@ -778,6 +810,20 @@ def _language(a: Analysis) -> None:
 # ---------------------------------------------------------------------------
 # Enrichment-driven signals
 # ---------------------------------------------------------------------------
+
+def _yara(a: Analysis) -> None:
+    for match in a.yara:
+        label = "YARA rule %s matched %s" % (match["rule"], match["where"])
+        if match.get("description"):
+            label += " (%s)" % match["description"][:80]
+        a.add_signal(match.get("severity", "high"), label, tuple(match.get("techniques", ())))
+        for f in a.attachments:
+            if f.filename == match["where"]:
+                f.flagged = True
+                note = "YARA: %s" % match["rule"]
+                if note not in f.notes:
+                    f.notes.append(note)
+
 
 def apply_enrichment(a: Analysis) -> Analysis:
     for ioc in a.urls:

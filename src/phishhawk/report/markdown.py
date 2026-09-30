@@ -5,9 +5,17 @@ from __future__ import annotations
 import re
 
 from .. import __version__
-from ..extract import defang_host, defang_url
+from ..extract import defang_host
 from ..models import Analysis
-from .common import display_copy, recommendations, sorted_signals, summary_sentences, technique_rows, utc_now
+from .common import (
+    defang_ioc,
+    display_copy,
+    recommendations,
+    sorted_signals,
+    summary_sentences,
+    technique_rows,
+    utc_now,
+)
 
 _MARKDOWN_RE = re.compile(r"([\\`*_{}\[\]()#+!|~])")
 _AUTOLINK_RE = re.compile(r"(?i)\b(https?)(?=://)|\bwww\.")  # GitHub and GitLab link these bare
@@ -28,11 +36,7 @@ def _code(text: str) -> str:
 
 
 def _defang_ioc(ioc: dict) -> str:
-    if ioc["type"] == "url":
-        return defang_url(ioc["value"])
-    if ioc["type"] == "sha256":
-        return ioc["value"]
-    return defang_host(ioc["value"])
+    return defang_ioc(ioc["type"], ioc["value"])
 
 
 def render(a: Analysis) -> str:

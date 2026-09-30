@@ -227,11 +227,27 @@ GENERIC_CCTLDS = {"co", "cc", "tk", "ml", "ga", "cf", "gq", "ws", "io", "me", "l
                   "cm", "nu", "tv", "ai", "sh", "gg", "la", "vc", "st", "cx", "ms", "fm", "am", "ru"}
 
 
+_LEGIT: set[str] = set()
+
+
 def known_legit_domains() -> set[str]:
-    legit: set[str] = set()
-    for domains in BRANDS.values():
-        legit |= domains
-    return legit
+    if not _LEGIT:
+        for domains in BRANDS.values():
+            _LEGIT.update(domains)
+    return _LEGIT
+
+
+def extend(brands: dict[str, list[str]] | None = None, lures: dict[str, list[str]] | None = None) -> None:
+    """Add an organisation's own brands ({name: [domains]}) and lure phrases
+    ({category: [phrases]}) to the built-in lists."""
+    for name, domains in (brands or {}).items():
+        BRANDS.setdefault(name, set()).update(domains)
+    for category, phrases in (lures or {}).items():
+        LURES[category] = tuple(dict.fromkeys(LURES.get(category, ()) + tuple(phrases)))
+    _LEGIT.clear()
+    from . import lookalike  # noqa: PLC0415 - lookalike imports this module
+
+    lookalike.clear_caches()
 
 
 # Display-name words that say "an organisation sent this". From a free-mail

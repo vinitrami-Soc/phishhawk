@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/vinitrami-Soc/phishhawk/blob/main/docs/report.schema.json",
+  "title": "PhishHawk report",
+  "description": "One message's triage, as written by `phishhawk scan --json`. A batch is {\"reports\": [report, ...]}. report_version changes only when a field is renamed or removed; new fields can appear at any time.",
+  "type": "object",
+  "required": ["report_version", "tool_version", "generated_at", "path", "subject", "verdict", "score", "signals",
+               "techniques", "urls", "attachments", "iocs", "recommendations", "summary"],
+  "properties": {
+    "report_version": {"const": "2.0"},
+    "tool_version": {"type": "string"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "path": {"type": "string", "description": "file, mbox#index or imap://host/folder;UID=n"},
+    "subject": {"type": "string"},
+    "date": {"type": "string"},
+    "message_id": {"type": "string"},
+    "to": {"type": "string"},
+    "from_display": {"type": "string"},
+    "from_address": {"type": "string"},
+    "from_domain": {"type": "string"},
+    "reply_to": {"type": "string"},
+    "reply_to_domain": {"type": "string"},
+    "return_path": {"type": "string"},
+    "return_path_domain": {"type": "string"},
+    "originating_ip": {"type": "string"},
+    "received_hops": {"type": "integer", "minimum": 0},
+    "hops": {
+      "type": "array",
+      "description": "Received chain, oldest hop first",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {"type": "string"}, "by": {"type": "string"}, "with": {"type": "string"},
+          "ip": {"type": "string"}, "time": {"type": "string"}, "delay_seconds": {"type": "integer"}
+        }
+      }
+    },
+    "mailing_list": {"type": "boolean"},
+    "list_domains": {"type": "array", "items": {"type": "string"}},
+    "auth": {"type": "object", "additionalProperties": {"type": "string"},
+             "description": "spf, dkim, dmarc, compauth from the receiving server"},
+    "forged_auth": {"type": "array", "items": {"type": "object", "required": ["claim", "authserv", "impersonates"],
+                                               "properties": {"claim": {"type": "string"},
+                                                              "authserv": {"type": "string"},
+                                                              "impersonates": {"type": "boolean"}}}},
+    "reported_by": {"type": ["object", "null"]},
+    "forwarded_from": {"type": ["object", "null"]},
+    "protected_domains": {"type": "array", "items": {"type": "string"}},
+    "allowed_domains": {"type": "array", "items": {"type": "string"}},
+    "blocked_domains": {"type": "array", "items": {"type": "string"}},
+    "verdict": {"enum": ["NO STRONG INDICATORS", "SUSPICIOUS", "LIKELY PHISHING", "MALICIOUS"]},
+    "score": {"type": "integer", "minimum": 0},
+    "signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "label", "techniques"],
+        "properties": {
+          "severity": {"enum": ["high", "medium", "low"]},
+          "label": {"type": "string"},
+          "techniques": {"type": "array", "items": {"type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$"}}
+        }
+      }
+    },
+    "techniques": {
+      "type": "array",
+      "items": {"type": "object", "required": ["id", "name", "url", "evidence"],
+                "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "url": {"type": "string"},
+                               "evidence": {"type": "array", "items": {"type": "string"}}}}
+    },
+    "urls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "host", "domain", "sources", "notes", "flagged", "defanged"],
+        "properties": {
+          "url": {"type": "string"}, "host": {"type": "string"}, "domain": {"type": "string"},
+          "defanged": {"type": "string"},
+          "sources": {"type": "array", "items": {"type": "string"}},
+          "anchor_texts": {"type": "array", "items": {"type": "string"}},
+          "notes": {"type": "array", "items": {"type": "string"}},
+          "flagged": {"type": "boolean"},
+          "redirect_to": {"type": "string"}, "wrapped_by": {"type": "string"},
+          "vt": {"type": ["object", "null"]}, "urlscan": {"type": ["object", "null"]}
+        }
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["filename", "content_type", "size", "md5", "sha1", "sha256", "true_type", "parent", "notes",
+                     "flagged"],
+        "properties": {
+          "filename": {"type": "string"}, "content_type": {"type": "string"},
+          "size": {"type": "integer", "minimum": 0},
+          "md5": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+          "sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "true_type": {"type": "string"},
+          "parent": {"type": "string", "description": "the container this file came out of, if any"},
+          "inline": {"type": "boolean"},
+          "notes": {"type": "array", "items": {"type": "string"}},
+          "flagged": {"type": "boolean"},
+          "vt": {"type": ["object", "null"]},
+          "archive": {"type": ["object", "null"]},
+          "html": {"type": ["object", "null"]},
+          "details": {"type": "object", "description": "per format: office, pdf, rtf, lnk, onenote, container"}
+        }
+      }
+    },
+    "qr_codes": {"type": "array", "items": {"type": "object", "required": ["where", "payload", "url"]}},
+    "calendar": {"type": "array", "items": {"type": "object"}},
+    "wallets": {"type": "array", "items": {"type": "object", "required": ["currency", "address"]}},
+    "phones": {"type": "array", "items": {"type": "string"}},
+    "yara": {"type": "array", "items": {"type": "object", "required": ["rule", "where", "severity"]}},
+    "lookalikes": {"type": "array", "items": {"type": "object", "required": ["domain", "target", "method", "where"]}},
+    "iocs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "value", "context"],
+        "properties": {
+          "type": {"enum": ["url", "domain", "ipv4", "ipv6", "email", "sha256", "crypto-wallet", "phone"]},
+          "value": {"type": "string"},
+          "context": {"type": "string"}
+        }
+      }
+    },
+    "recommendations": {"type": "array", "items": {"type": "string"}},
+    "summary": {"type": "array", "items": {"type": "string"}}
+  }
+}
