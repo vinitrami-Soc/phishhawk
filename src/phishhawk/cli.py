@@ -22,7 +22,7 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator
 
-from . import __version__, banner, config, imapfetch, yararules
+from . import __version__, banner, config, imapfetch, mailapi, yararules
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
@@ -32,7 +32,7 @@ from .pipeline import Options, triage_bytes
 from .report import console, csvout, html, markdown, misp, stix
 from .report.common import printable, to_dict
 
-COMMANDS = ("scan", "imap", "doctor", "cache", "techniques", "help")
+COMMANDS = ("scan", "imap", "graph", "gmail", "doctor", "cache", "techniques", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -85,6 +85,29 @@ examples:
 The folder is opened read-only (EXAMINE) and fetched with BODY.PEEK, so nothing
 changes on the server. The password is read from $PHISHHAWK_IMAP_PASSWORD or a
 prompt, never from the command line."""
+
+GRAPH_EPILOG = """\
+examples:
+  export PHISHHAWK_GRAPH_TOKEN=...     (an access token with Mail.Read)
+  phishhawk graph --mailbox soc@example.com --folder "Phish reports" --unread
+  phishhawk graph --since 2026-09-01 --out reports/       (the token's own mailbox)
+  phishhawk graph --mailbox soc@example.com --watch 300 --quiet
+
+Only GET requests are sent: each message is read as MIME ($value), and nothing
+is marked read, moved or deleted. The token is read from $PHISHHAWK_GRAPH_TOKEN,
+never the command line; `az account get-access-token --resource-type ms-graph`
+prints one for a quick test."""
+
+GMAIL_EPILOG = """\
+examples:
+  export PHISHHAWK_GMAIL_TOKEN=...     (an access token with gmail.readonly)
+  phishhawk gmail --label "Phish reports" --unread
+  phishhawk gmail --query "has:attachment" --since 2026-09-01
+  phishhawk gmail --mailbox soc@example.com --watch 300 --out reports/
+
+Only GET requests are sent: each message is read in raw form, and nothing is
+marked read, moved or deleted. The token is read from $PHISHHAWK_GMAIL_TOKEN,
+never the command line."""
 
 
 # ---------------------------------------------------------------------------
@@ -235,6 +258,29 @@ def build_parser() -> _Parser:
     box.add_argument("--watch", type=int, default=0, metavar="SECONDS",
                      help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
     _triage_options(imap)
+
+    for name, epilog, what in (
+            ("graph", GRAPH_EPILOG, "a Microsoft 365 mailbox through Microsoft Graph"),
+            ("gmail", GMAIL_EPILOG, "a Gmail or Google Workspace mailbox through the Gmail API")):
+        api = commands.add_parser(
+            name, parents=[display], formatter_class=_Formatter, epilog=epilog,
+            help="triage messages from %s, read-only" % what,
+            description="Triage the messages in %s. Only GET requests are sent: nothing is marked read, "
+                        "moved or deleted." % what)
+        box = api.add_argument_group("mailbox")
+        box.add_argument("--mailbox", default="me", help="a user id or address (default 'me': the token's own)")
+        if name == "graph":
+            box.add_argument("--folder", default="", help="folder name or id (default the Inbox)")
+        else:
+            box.add_argument("--label", dest="folder", default="", help="label (default the inbox)")
+            box.add_argument("--query", default="", help="more Gmail search terms, e.g. 'has:attachment'")
+        box.add_argument("--since", metavar="YYYY-MM-DD", help="only messages received on or after this date")
+        box.add_argument("--unread", action="store_true", help="only messages nobody has read yet")
+        box.add_argument("--limit", type=int, default=50, metavar="N", help="the newest N messages (default 50)")
+        box.add_argument("--out", metavar="DIR", help="also write a JSON and an HTML report per message here")
+        box.add_argument("--watch", type=int, default=0, metavar="SECONDS",
+                         help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
+        _triage_options(api)
 
     doctor = commands.add_parser(
         "doctor", parents=[display], formatter_class=_Formatter,
@@ -600,6 +646,59 @@ def cmd_imap(args: argparse.Namespace, parser: _Parser) -> int:
 
 
 # ---------------------------------------------------------------------------
+# graph and gmail
+# ---------------------------------------------------------------------------
+
+def cmd_mail_api(args: argparse.Namespace, parser: _Parser) -> int:
+    command = parser.commands[args.command]
+    err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    variable = "PHISHHAWK_%s_TOKEN" % args.command.upper()
+    token = os.environ.get(variable, "").strip()
+    if not token:
+        command.error("set %s to an access token (it is never taken on the command line)" % variable)
+    since = None
+    if args.since:
+        try:
+            since = datetime.date.fromisoformat(args.since)
+        except ValueError:
+            command.error("--since must be a date like 2026-09-01")
+    source = mailapi.ApiSource(token=token, mailbox=args.mailbox or "me", folder=args.folder,
+                               query=getattr(args, "query", ""), since=since, unread=args.unread,
+                               limit=max(0, args.limit), timeout=args.timeout)
+    fetch = mailapi.fetch_graph if args.command == "graph" else mailapi.fetch_gmail
+    if args.out:
+        os.makedirs(args.out, exist_ok=True)
+
+    def save(label: str, analysis: Analysis) -> None:
+        if not args.out:
+            return
+        tail = re.sub(r"[^0-9A-Za-z_-]", "_", label.rsplit("/", 1)[-1])[-64:]
+        name = os.path.join(args.out, "%s-%s" % (args.command, tail))
+        try:
+            _write(name + ".json", json.dumps(to_dict(analysis), indent=2, ensure_ascii=False) + "\n")
+            _write(name + ".html", html.render([analysis]))
+        except OSError as exc:
+            print(err("[!] could not write %s: %s" % (name, exc), "red"), file=sys.stderr)
+
+    done: set[str] = set()
+    code = 0
+    while True:
+        def messages(limit: int) -> Iterator[tuple[str, bytes | Exception]]:
+            try:
+                for label, message_id, data in fetch(source, limit, seen=frozenset(done)):
+                    done.add(message_id)
+                    yield label, data
+            except mailapi.MailApiError as exc:
+                yield "%s://%s" % (args.command, source.mailbox), exc
+
+        code = max(code, _triage(args, command, messages, save))
+        if not args.watch:
+            return code
+        print(err("[i] waiting %d s for new messages (Ctrl+C stops)" % args.watch, "dim"), file=sys.stderr)
+        time.sleep(args.watch)
+
+
+# ---------------------------------------------------------------------------
 # doctor
 # ---------------------------------------------------------------------------
 
@@ -767,6 +866,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_scan(args, parser)
     if args.command == "imap":
         return cmd_imap(args, parser)
+    if args.command in ("graph", "gmail"):
+        return cmd_mail_api(args, parser)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "cache":
