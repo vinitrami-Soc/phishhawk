@@ -46,6 +46,10 @@ class ApiSource:
 
 class _Client:
     def __init__(self, source: ApiSource, service: str, session: Any) -> None:
+        # Such a header is refused, and the refusal quotes it: never let it get that far.
+        if not source.token or any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in source.token):
+            raise MailApiError("%s: the access token is empty or contains spaces or control characters "
+                               "(check how it was copied)" % service)
         if session is None:
             import requests  # noqa: PLC0415 - only these commands need it
 
@@ -67,7 +71,7 @@ class _Client:
         if status == 429:
             raise MailApiError("%s is throttling requests: try again later" % self.service)
         if status >= 400:
-            raise MailApiError("%s answered HTTP %d" % (self.service, status))
+            raise MailApiError("%s answered HTTP %d%s" % (self.service, status, _error_code(response)))
         return response
 
     def json(self, url: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -80,19 +84,37 @@ class _Client:
         return body
 
 
+def _error_code(response: Any) -> str:
+    """ (InefficientFilter): what an API error calls itself, made printable.
+    Graph puts it in error.code, Gmail in error.status."""
+    try:
+        error = response.json().get("error")
+    except (ValueError, AttributeError):
+        return ""
+    if not isinstance(error, dict):
+        return ""
+    code = error.get("status") if isinstance(error.get("status"), str) else error.get("code")
+    code = "".join(ch for ch in str(code or "") if ch.isalnum() or ch in "._-")[:60]
+    return " (%s)" % code if code and not code.isdigit() else ""
+
+
 def _too_big(max_bytes: int) -> ValueError:
     return ValueError("larger than %d MB" % max(1, max_bytes // (1024 * 1024)))
 
 
-def _download(response: Any, max_bytes: int) -> bytes | Exception:
-    """A streamed body; one past max_bytes is skipped, never cut short."""
+def _download(response: Any, max_bytes: int, service: str) -> bytes | Exception:
+    """A streamed body; one past max_bytes is skipped, never cut short, and
+    one whose connection breaks off is skipped, to be asked for again."""
     chunks, total = [], 0
-    for chunk in response.iter_content(64 * 1024):
-        chunks.append(chunk)
-        total += len(chunk)
-        if total > max_bytes:
-            response.close()
-            return _too_big(max_bytes)
+    try:
+        for chunk in response.iter_content(64 * 1024):
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > max_bytes:
+                response.close()
+                return _too_big(max_bytes)
+    except OSError as exc:  # requests' errors are OSErrors: a dropped connection, a broken chunk
+        return MailApiError("%s: the download broke off (%s)" % (service, type(exc).__name__))
     return b"".join(chunks)
 
 
@@ -112,6 +134,13 @@ def _graph_folder(client: _Client, base: str) -> str:
         found = _ids(client.json(parent, wanted).get("value"))
         if found:
             return found[0]
+    if not any(ch.isspace() for ch in folder):  # a folder id, as Graph and Outlook show them
+        try:
+            found = _ids([client.json("%s/mailFolders/%s" % (base, quote(folder, safe="")), {"$select": "id"})])
+        except MailApiError:
+            found = []
+        if found:
+            return found[0]
     raise MailApiError("Graph: no folder called %r at the top level or in the Inbox" % folder)
 
 
@@ -125,8 +154,9 @@ def fetch_graph(source: ApiSource, max_bytes: int, seen: set[str] | frozenset[st
     params: dict[str, Any] | None = {"$select": "id,receivedDateTime", "$orderby": "receivedDateTime desc",
                                      "$top": min(source.limit, 100) if source.limit else 100}
     filters = []
-    if source.since:
-        filters.append("receivedDateTime ge %sT00:00:00Z" % source.since.isoformat())
+    if source.since or source.unread:
+        # Graph refuses to sort by receivedDateTime unless the filter starts with it.
+        filters.append("receivedDateTime ge %sT00:00:00Z" % (source.since or dt.date(1900, 1, 1)).isoformat())
     if source.unread:
         filters.append("isRead eq false")
     if filters and params is not None:
@@ -136,15 +166,17 @@ def fetch_graph(source: ApiSource, max_bytes: int, seen: set[str] | frozenset[st
     listed: list[str] = []
     while url and len(listed) < wanted:
         page = client.json(url, params)
-        listed += [i for i in _ids(page.get("value")) if i not in seen]
+        listed += _ids(page.get("value"))
         url, params = str(page.get("@odata.nextLink") or ""), None  # a next link carries its own query
         if not url.startswith(GRAPH + "/"):
             break  # the token goes to Graph and nowhere else
-    for message_id in reversed(listed[:wanted]):
+    # Only the newest `wanted` are looked at: a --watch round with nothing new
+    # must not walk back through the folder.
+    for message_id in reversed([i for i in listed[:wanted] if i not in seen]):
         label = "graph://%s/%s/%s" % (mailbox, source.folder or "inbox", message_id)
         try:
             response = client.get("%s/messages/%s/$value" % (base, quote(message_id, safe="")), stream=True)
-            yield label, message_id, _download(response, max_bytes)
+            yield label, message_id, _download(response, max_bytes, "Graph")
         except MailApiError as exc:
             yield label, message_id, exc
 
@@ -173,11 +205,11 @@ def fetch_gmail(source: ApiSource, max_bytes: int, seen: set[str] | frozenset[st
     listed: list[str] = []
     while len(listed) < wanted:
         page = client.json(base, params)
-        listed += [i for i in _ids(page.get("messages")) if i not in seen]
+        listed += _ids(page.get("messages"))
         if not page.get("nextPageToken"):
             break
         params = dict(params, pageToken=str(page["nextPageToken"]))
-    for message_id in reversed(listed[:wanted]):
+    for message_id in reversed([i for i in listed[:wanted] if i not in seen]):  # the newest only, as for Graph
         label = "gmail://%s/%s" % (mailbox, message_id)
         url = "%s/%s" % (base, quote(message_id, safe=""))
         try:

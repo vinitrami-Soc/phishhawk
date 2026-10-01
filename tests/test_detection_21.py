@@ -215,5 +215,14 @@ def test_the_html_report_states_the_rule_that_decided():
     assert a.verdict == "LIKELY PHISHING" and not any(s.severity == "high" for s in a.signals)
     page = html.render([a])
     assert "also needs a high-severity signal," not in page  # not since 2.1: three kinds of evidence do too
-    assert "a high-severity signal or three independent kinds of evidence" in page
+    assert "three kinds of evidence and a score of 8 do" in page
     assert "3 parts of the message" in page
+    # A high signal backed by evidence of another kind is likely phishing at 5 points, not 8.
+    backed = _analysis(("high", "display name claims 'paypal' but the domain is x[.]top", "sender"),
+                       ("medium", "shortened link: hxxp://bit[.]ly/x", "link"),
+                       ("low", "credential-harvesting path on a[.]top", "link"),
+                       ("low", "credential-harvesting path on b[.]top", "link"))
+    assert backed.score == 6 and backed.verdict == "LIKELY PHISHING"
+    page = html.render([backed])
+    assert "a second high signal or evidence of another kind" in page
+    assert "<i>one per kind</i>" in page and "<i>capped</i>" not in page  # 2 low signals, 1 point: merged

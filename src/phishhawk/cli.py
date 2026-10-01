@@ -227,6 +227,16 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
                             help="SQLite cache file (default: %(default)s)")
 
 
+def _seconds(value: str) -> int:
+    try:
+        seconds = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("must be a whole number of seconds") from None
+    if seconds < 0:
+        raise argparse.ArgumentTypeError("must be 0 or more")
+    return seconds
+
+
 def build_parser() -> _Parser:
     parser = _Parser(prog="phishhawk", description=OVERVIEW, epilog=MAIN_EPILOG, formatter_class=_Formatter)
     parser.add_argument("-V", "--version", action="version", version="PhishHawk %s" % __version__)
@@ -259,7 +269,7 @@ def build_parser() -> _Parser:
     box.add_argument("--unseen", action="store_true", help="only messages nobody has read yet")
     box.add_argument("--limit", type=int, default=50, metavar="N", help="the newest N messages (default 50)")
     box.add_argument("--out", metavar="DIR", help="also write a JSON and an HTML report per message here")
-    box.add_argument("--watch", type=int, default=0, metavar="SECONDS",
+    box.add_argument("--watch", type=_seconds, default=0, metavar="SECONDS",
                      help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
     _triage_options(imap)
 
@@ -282,7 +292,7 @@ def build_parser() -> _Parser:
         box.add_argument("--unread", action="store_true", help="only messages nobody has read yet")
         box.add_argument("--limit", type=int, default=50, metavar="N", help="the newest N messages (default 50)")
         box.add_argument("--out", metavar="DIR", help="also write a JSON and an HTML report per message here")
-        box.add_argument("--watch", type=int, default=0, metavar="SECONDS",
+        box.add_argument("--watch", type=_seconds, default=0, metavar="SECONDS",
                          help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
         _triage_options(api)
 

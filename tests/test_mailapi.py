@@ -313,3 +313,89 @@ def test_watch_mode_asks_again_for_a_message_the_api_throttled(monkeypatch, caps
         main(["graph", "--offline", "-q", "--no-color", "--watch", "60"])
     out = capsys.readouterr().out
     assert answers == [] and "LIKELY PHISHING" in out  # throttled once, read on the next round
+
+
+# ------------------------------------------------------- 2.1 code review --
+
+class BrokenOff(Response):
+    """A message body whose connection drops halfway."""
+
+    def iter_content(self, size):
+        yield self._body[:10]
+        raise requests.exceptions.ChunkedEncodingError("connection broken: IncompleteRead")
+
+
+def test_a_download_that_breaks_off_is_skipped_not_fatal(monkeypatch, capsys):
+    routes = {(GRAPH + "/me/mailFolders/inbox/messages", ()): graph_page(["A2", "A1"]),
+              (GRAPH + "/me/messages/A1/$value", ()): BrokenOff(body=PHISH),
+              (GRAPH + "/me/messages/A2/$value", ()): Response(body=LUNCH)}
+    got = {i: data for _, i, data in mailapi.fetch_graph(source(), 1 << 20, session=Api(routes))}
+    assert isinstance(got["A1"], mailapi.MailApiError) and got["A2"] == LUNCH
+    monkeypatch.setattr(requests, "Session", lambda: Api(routes))
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
+    code, out, err = run(["graph", "--offline", "-q", "--no-color"], capsys)
+    assert code == 3 and "Traceback" not in err and "graph://me/inbox/A2" in out
+
+
+def _graph_pages(count, per_page):
+    listing = GRAPH + "/me/mailFolders/inbox/messages"
+    ids = ["M%03d" % n for n in range(count, 0, -1)]  # newest first
+    routes = {}
+    for page in range(0, count, per_page):
+        url = listing if page == 0 else listing + "?$skiptoken=%d" % page
+        following = listing + "?$skiptoken=%d" % (page + per_page) if page + per_page < count else None
+        routes[(url, ())] = graph_page(ids[page:page + per_page], next_link=following)
+    return routes, ids
+
+
+def test_a_round_looks_only_at_the_newest_messages():
+    # With the newest five already triaged, a --watch round walked back
+    # through the folder and triaged the five before them, and so on.
+    routes, ids = _graph_pages(120, 5)
+    api = Api(routes)
+    got = list(mailapi.fetch_graph(source(limit=5), 1 << 20, seen=set(ids[:5]), session=api))
+    assert got == [] and len(api.calls) == 1
+    listing = GMAIL + "/users/me/messages"
+    api = Api({(listing, ()): Response(payload={"messages": [{"id": i} for i in ids[:5]], "nextPageToken": "p2"})})
+    assert list(mailapi.fetch_gmail(source(limit=5), 1 << 20, seen=set(ids[:5]), session=api)) == []
+    assert len(api.calls) == 1
+
+
+def test_a_token_with_spaces_or_control_characters_is_refused_unseen(monkeypatch, capsys):
+    # requests refuses such a header, and its error quoted the header: the token.
+    monkeypatch.setattr(requests, "Session", lambda: Api({}))
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "eyJSECRET\nPART2")
+    code, out, err = run(["graph", "--offline", "-q", "--no-color"], capsys)
+    assert code == 3 and "SECRET" not in out + err and "spaces or control characters" in err
+
+
+def test_graph_filters_on_the_date_first_even_for_unread_alone():
+    # Graph refuses $orderby=receivedDateTime unless $filter starts with it (InefficientFilter).
+    api = Api({(GRAPH + "/me/mailFolders/inbox/messages", ()): graph_page([])})
+    list(mailapi.fetch_graph(source(unread=True), 1 << 20, session=api))
+    assert api.calls[0][2]["$filter"] == "receivedDateTime ge 1900-01-01T00:00:00Z and isRead eq false"
+
+
+def test_an_api_error_names_its_code():
+    refused = Response(400, {"error": {"code": "InefficientFilter", "message": "The restriction is too complex"}})
+    api = Api({(GRAPH + "/me/mailFolders/inbox/messages", ()): refused})
+    with pytest.raises(mailapi.MailApiError, match=r"HTTP 400 \(InefficientFilter\)"):
+        list(mailapi.fetch_graph(source(), 1 << 20, session=api))
+
+
+def test_graph_takes_a_folder_id_too():
+    folder = "AAMkAGVmMDEzMTM4LTZmYWUtNDdkNC1hMDZiLTU1OGY5OTZhYmY4OAAuAAAAAAAiQ8W967B7TKBjgx9rVEURAQAiIsqMbYjsT5e"
+    api = Api({(GRAPH + "/me/mailFolders", ()): Response(payload={"value": []}),
+               (GRAPH + "/me/mailFolders/inbox/childFolders", ()): Response(payload={"value": []}),
+               (GRAPH + "/me/mailFolders/" + folder, ()): Response(payload={"id": folder}),
+               (GRAPH + "/me/mailFolders/%s/messages" % folder, ()): graph_page([])})
+    assert list(mailapi.fetch_graph(source(folder=folder), 1 << 20, session=api)) == []
+    assert api.calls[-1][1] == GRAPH + "/me/mailFolders/%s/messages" % folder
+
+
+@pytest.mark.parametrize("command", ["graph", "gmail", "imap"])
+def test_a_negative_watch_interval_is_refused(command, capsys):
+    with pytest.raises(SystemExit) as stop:
+        main([command, "--watch", "-5", "--user", "x", "--host", "h"] if command == "imap" else
+             [command, "--watch", "-5"])
+    assert stop.value.code == 2 and "--watch: must be 0 or more" in capsys.readouterr().err
