@@ -95,6 +95,21 @@ def test_a_quoted_address_in_front_of_the_real_domain_is_flagged():
     assert any("hides its real domain evil[.]top behind a quoted address" in s.label for s in a.signals)
 
 
+def test_the_quoted_address_check_is_linear():
+    # Two whitespace runs back to back ("\\s*(@...)?\\s*$") split a long run of
+    # spaces every possible way before giving up: minutes for 50,000 spaces.
+    from phishhawk.parse import _QUOTED_ADDRESS_RE
+
+    started = time.perf_counter()
+    assert _QUOTED_ADDRESS_RE.match('"a@b.example"' + " " * 50_000 + "x") is None
+    assert time.perf_counter() - started < 1
+    assert _QUOTED_ADDRESS_RE.match('"a@b.example" @ evil.top  ').groups() == ("a@b.example", "evil.top")
+    assert _QUOTED_ADDRESS_RE.match('"a@b.example"  ').groups() == ("a@b.example", None)
+    started = time.perf_counter()
+    assert not list(_QUOTED_ADDRESS_RE.finditer(" " * 50_000 + "x"))  # nor wherever a search starts
+    assert time.perf_counter() - started < 1
+
+
 def test_an_ordinary_quoted_display_name_is_not_flagged():
     a = triage_bytes(build_eml(sender='"Smith, Jane" <jane@corp.example>'))
     assert not any("quoted" in s.label for s in a.signals)

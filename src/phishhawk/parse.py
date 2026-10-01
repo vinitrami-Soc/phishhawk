@@ -464,7 +464,9 @@ def _mailing_list(msg: Message) -> tuple[bool, list[str]]:
     return True, sorted(d for d in domains if d)
 
 
-_QUOTED_ADDRESS_RE = re.compile(r'\s*"([^"]{0,200}@[^"]{0,200})"\s*(?:@\s*([^\s@<>"]{1,255}))?\s*$')
+# One whitespace run between the quote and the end: two in a row split a long
+# run of spaces every possible way before failing.
+_QUOTED_ADDRESS_RE = re.compile(r'"([^"]{0,200}@[^"]{0,200})"\s*(?:@\s*([^\s@<>"]{1,255})\s*)?$')
 
 
 def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str, ...] = ()) -> None:
@@ -480,7 +482,7 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
     # <"service@adac.de"> is one quoted local part with no domain at all, and
     # "a@b.de"@evil.top sends from evil.top: both show a mail client an
     # address no server ever checked.
-    quoted = _QUOTED_ADDRESS_RE.match(address)
+    quoted = _QUOTED_ADDRESS_RE.match(address.strip())
     if quoted:
         analysis.__dict__["_quoted_from"] = (quoted.group(1).lower(), (quoted.group(2) or "").lower())
 
