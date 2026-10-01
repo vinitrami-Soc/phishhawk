@@ -115,3 +115,16 @@ def test_doctor_checks_the_list(psl, tmp_path, monkeypatch, capsys):
     assert main(["doctor", "--no-color"]) == 1
     out = capsys.readouterr().out
     assert "FAIL  Public suffixes" in out and "cannot read the public suffix list" in out
+
+
+def test_a_host_of_thousands_of_labels_is_cheap(psl):
+    # Every label was tried as the start of a rule, each with a join of the
+    # rest: quadratic, 5 s to triage a message with five such links.
+    import time
+
+    extract.load_public_suffixes(str(psl))
+    host = "a." * 20_000 + "phish.github.io"
+    started = time.perf_counter()
+    assert extract.registrable_domain(host) == "phish.github.io"
+    assert extract.registrable_domain("x." * 20_000 + "b.test.ck") == "b.test.ck"
+    assert time.perf_counter() - started < 0.5

@@ -154,6 +154,7 @@ class PublicSuffixes:
     rules: frozenset[str]  # "co.uk"
     wildcards: frozenset[str]  # "ck" for "*.ck": every label under it is a suffix
     exceptions: frozenset[str]  # "www.ck" for "!www.ck"
+    reach: int  # the most labels a matching name can have: no rule looks further left
 
 
 _SUFFIXES: PublicSuffixes | None = None
@@ -198,7 +199,9 @@ def load_public_suffixes(path: str) -> int:
     count = sum(len(found) for found in sets.values())
     if not count:
         raise ValueError("the public suffix list %s holds no rules" % path)
-    use_public_suffixes(PublicSuffixes(frozenset(sets[""]), frozenset(sets["*"]), frozenset(sets["!"])))
+    reach = max([rule.count(".") + 1 for rule in sets[""] | sets["!"]]
+                + [rule.count(".") + 2 for rule in sets["*"]])
+    use_public_suffixes(PublicSuffixes(frozenset(sets[""]), frozenset(sets["*"]), frozenset(sets["!"]), reach))
     return count
 
 
@@ -217,8 +220,9 @@ def _listed_registrable(labels: list[str], suffixes: PublicSuffixes) -> str:
     Unicode host is matched through its ASCII form but given back as it came."""
     size = len(labels)
     suffix = 1
-    encoded = [_ascii_label(label) for label in labels]
-    for start in range(size):
+    first = max(0, size - suffixes.reach)  # labels further left can match no rule
+    encoded = labels[:first] + [_ascii_label(label) for label in labels[first:]]
+    for start in range(first, size):
         name = ".".join(encoded[start:])
         if name in suffixes.exceptions:
             suffix = size - start - 1
