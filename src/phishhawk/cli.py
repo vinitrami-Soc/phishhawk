@@ -760,8 +760,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         rows.append(("YARA", "yara-python %s" % yararules.version(), "ok", "run your rules with --yara PATH"))
     else:
         rows.append(("YARA", "not installed", "info", "optional: pip install 'phishhawk[yara]'"))
+    psl = ""
     try:
         settings = config.load()
+        psl = settings.public_suffix_list
         if settings.path:
             rows.append(("Config", settings.path, "ok", "%d protected, %d allowed, %d blocked domain(s)"
                          % (len(settings.protect), len(settings.allow_domains), len(settings.block_domains))))
@@ -770,6 +772,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                          "optional: ~/.config/phishhawk/config.toml (see docs/USAGE.md)"))
     except config.ConfigError as exc:
         rows.append(("Config", "invalid", "fail", str(exc)[:200]))
+    psl = os.path.expanduser(psl or os.environ.get("PHISHHAWK_PSL", ""))  # as scan reads it, bar --psl
+    if psl:
+        try:
+            rows.append(("Public suffixes", "%s  (%d rules)" % (psl, extract.load_public_suffixes(psl)), "ok", ""))
+        except ValueError as exc:
+            rows.append(("Public suffixes", psl, "fail", str(exc)[:200]))
+        extract.use_public_suffixes(None)
+    else:
+        rows.append(("Public suffixes", "built-in approximation", "info",
+                     "optional: --psl FILE or PHISHHAWK_PSL, a copy of publicsuffix.org's list"))
 
     for name, envs, level, hint in (
         ("VirusTotal key", ("VT_API_KEY", "VIRUSTOTAL_API_KEY"), "warn",

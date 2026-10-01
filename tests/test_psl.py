@@ -96,3 +96,22 @@ def test_detection_is_unchanged_without_a_list():
     raw = build_eml(html='<a href="https://paypal-billing.github.io/login">Log in to PayPal</a>')
     methods = {hit.method for hit in triage_bytes(raw).lookalikes}
     assert "combosquat" not in methods  # github.io is one domain to the approximation
+
+
+def test_doctor_checks_the_list(psl, tmp_path, monkeypatch, capsys):
+    # A list named in the config file or the environment that cannot be read
+    # stops every scan, so doctor says so before a scan does.
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    (tmp_path / "config.json").write_text("{}")
+    monkeypatch.setenv("PHISHHAWK_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.delenv("PHISHHAWK_PSL", raising=False)
+    main(["doctor", "--no-color"])
+    out = capsys.readouterr().out
+    assert "--    Public suffixes" in out and "built-in approximation" in out
+    monkeypatch.setenv("PHISHHAWK_PSL", str(psl))
+    assert main(["doctor", "--no-color"]) == 0
+    assert "OK    Public suffixes    %s  (8 rules)" % psl in capsys.readouterr().out
+    monkeypatch.setenv("PHISHHAWK_PSL", str(tmp_path / "nope.dat"))
+    assert main(["doctor", "--no-color"]) == 1
+    out = capsys.readouterr().out
+    assert "FAIL  Public suffixes" in out and "cannot read the public suffix list" in out
