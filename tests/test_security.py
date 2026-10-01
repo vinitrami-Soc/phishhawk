@@ -21,7 +21,7 @@ from phishhawk.lookalike import find_lookalikes
 from phishhawk.parse import MAX_UNWRAP_DEPTH, parse_bytes
 from phishhawk.pipeline import Options, triage_bytes, triage_file
 from phishhawk.report import console, csvout, html, markdown
-from phishhawk.report.common import children_of
+from phishhawk.report.common import children_of, display_copy
 
 from conftest import build_eml, sample
 
@@ -147,8 +147,10 @@ def test_a_carriers_findings_keep_their_family():
 
 def test_files_that_share_a_name_still_form_a_tree():
     # Messages attached inside a message all get the default name
-    # "attached-message.eml": matched by name alone, two of them were each
-    # other's child, and the console and HTML reports recursed for ever.
+    # "attached-message.eml". Matched by name alone, siblings became each
+    # other's children: the reports recursed for ever (2.1 fuzzing), and once
+    # that was stopped, the printable copy the reports draw from still lost
+    # the link, so twelve siblings drew 2^11 rows.
     def message(subject, *attached):
         m = EmailMessage()
         m["From"], m["To"], m["Subject"] = "a@acme-labs.example", "b@acme-labs.example", subject
@@ -157,14 +159,18 @@ def test_files_that_share_a_name_still_form_a_tree():
             m.add_attachment(part)
         return m
 
-    raw = message("A", message("B", message("C1"), message("C2")))
+    raw = message("A", message("B", *[message("C%d" % i) for i in range(12)]))
     for level in range(MAX_UNWRAP_DEPTH):  # past the forwarding layers PhishHawk unwraps
         raw = message("forward %d" % level, raw)
     a = triage_bytes(raw.as_bytes())
-    assert a.subject == "A" and [f.filename for f in a.attachments] == ["attached-message.eml"] * 3
-    assert sorted(len(children_of(a, f)) for f in a.attachments) == [0, 0, 2]  # B -> C1, C2
-    html.render([a])
-    console.render(a, console.Palette(False), True)
+    assert a.subject == "A" and [f.filename for f in a.attachments] == ["attached-message.eml"] * 13
+    for analysis in (a, display_copy(a)):  # the reports draw from the printable copy
+        assert sorted(len(children_of(analysis, f)) for f in analysis.attachments) == [0] * 12 + [12]
+    page = html.render([a])
+    assert page.count('<span class="ioc">attached-message.eml</span>') == 13
+    text = console.render(a, console.Palette(False), True)
+    assert text.count("attached-message.eml") == 13
+    assert markdown.render(a).count("attached-message.eml") <= 13
 
 
 def test_a_genuine_report_gains_nothing_from_the_reporters_note():
