@@ -29,6 +29,7 @@ class Listing:
     truncated: bool = False
     contents: list[bytes | None] | None = None  # when extracted: each member's bytes, None if unreadable
     budget: int = 0  # bytes left to extract
+    unpacked: int = 0  # bytes decompressed or copied, headers included: what reading it cost
 
 
 RAR4 = b"Rar!\x1a\x07\x00"
@@ -64,6 +65,8 @@ def _rar5(data: bytes, listing: Listing) -> Listing:
             extra, position = _vint(data, position)
         if flags & 0x02:
             data_size, position = _vint(data, position)
+        if extra > end - position:  # the extra area ends the header: it cannot reach back before it
+            raise ValueError("RAR extra area outside its header")
         if kind == 4:  # archive encryption header: everything after it is encrypted
             listing.names_hidden = listing.encrypted = True
             break
@@ -204,6 +207,7 @@ def _keep(listing: Listing, content: bytes | None, size: int) -> None:
         content = None
     if content is not None:
         listing.budget -= size
+        listing.unpacked += size
     listing.contents.append(content)
 
 
@@ -474,6 +478,8 @@ def _decode(packed: bytes, chain: list[tuple[bytes, bytes]], size: int) -> bytes
     """A folder's output, at most `size` bytes."""
     if any(coder_id == _AES for coder_id, _ in chain):
         raise PermissionError("encrypted")
+    if size <= 0:  # zlib reads a max_length of 0 as "no limit"
+        return b""
     first = chain[0][0]
     try:
         if len(chain) == 1 and first == _COPY:
@@ -506,9 +512,10 @@ def _decode_header(data: bytes, streams: _Streams) -> bytes:
     return _decode(packed, _chain(folder), folder.unpack_size)
 
 
-def _extract(data: bytes, streams: _Streams, budget: int) -> list[bytes | None]:
+def _extract(data: bytes, streams: _Streams, listing: Listing) -> list[bytes | None]:
     """Every file's content in stream order; None where it cannot be read:
-    an encrypted or unsupported folder, or one past the byte budget."""
+    an encrypted or unsupported folder, or one past the listing's budget. A
+    folder is paid for before it is decoded, whether or not it decodes."""
     out: list[bytes | None] = []
     position = 32 + streams.pack_pos
     packed_index = 0
@@ -516,10 +523,11 @@ def _extract(data: bytes, streams: _Streams, budget: int) -> list[bytes | None]:
         lengths = streams.pack_sizes[packed_index:packed_index + len(folder.packed)]
         packed_index += len(folder.packed)
         content: bytes | None = None
-        if len(lengths) == 1 and folder.unpack_size <= budget and position + lengths[0] <= len(data):
+        if len(lengths) == 1 and folder.unpack_size <= listing.budget and position + lengths[0] <= len(data):
+            listing.budget -= folder.unpack_size
+            listing.unpacked += folder.unpack_size
             try:
                 content = _decode(data[position:position + lengths[0]], _chain(folder), folder.unpack_size)
-                budget -= len(content)
             except (ValueError, PermissionError):
                 content = None
         position += sum(lengths)
@@ -579,46 +587,60 @@ def _files(reader: _Reader, listing: Listing, streams: _Streams, contents: list[
 
 def list_7z(data: bytes, budget: int = 0) -> Listing:
     """The members of a 7-Zip archive. With a byte budget, their contents
-    too, decompressed in memory: LZMA, LZMA2, Deflate, BZip2 and stored
-    folders with any branch or delta filter. Encrypted and other folders
-    are listed only."""
-    listing = Listing("7z", contents=[] if budget > 0 else None)
+    too, decompressed in memory: LZMA and LZMA2 folders behind any branch or
+    delta filter, and Deflate, BZip2 and stored ones. Encrypted and other
+    folders are listed only. A damaged archive raises ValueError, unless
+    something was already decompressed: then it is a truncated listing, so
+    that `unpacked` still says what reading it cost."""
+    listing = Listing("7z", contents=[] if budget > 0 else None, budget=budget)
     if not data.startswith(SEVEN_ZIP) or len(data) < 32:
         raise ValueError("not a 7-Zip archive")
     offset, size = struct.unpack_from("<QQ", data, 12)
     if size > MAX_HEADER or 32 + offset + size > len(data):
         raise ValueError("7z header outside the file")
-    header = data[32 + offset:32 + offset + size]
     try:
-        for _ in range(4):  # an encoded header can itself be encoded
-            reader = _Reader(header)
-            marker = reader.byte()
-            if marker == 0x17:
-                header = _decode_header(data, _streams_info(reader))
-                continue
-            if marker != 0x01:
-                raise ValueError("unexpected 7z header")
-            streams = _Streams()
-            contents: list[bytes | None] = []
-            while True:
-                section = reader.byte()
-                if section == 0x00:
-                    return listing
-                if section == 0x02:  # archive properties
-                    while reader.byte() != 0:
-                        reader.take(reader.number())
-                elif section == 0x03:
-                    _streams_info(reader)
-                elif section == 0x04:
-                    streams = _streams_info(reader)
-                    listing.encrypted = any(coder_id == _AES for folder in streams.folders
-                                            for coder_id, _, _, _ in folder.coders)
-                    if budget > 0:
-                        contents = _extract(data, streams, budget)
-                elif section == 0x05:
-                    _files(reader, listing, streams, contents)
-                else:
-                    raise ValueError("unexpected 7z header section")
+        _read_7z(data, data[32 + offset:32 + offset + size], listing)
     except PermissionError:
         listing.names_hidden = listing.encrypted = True
+    except ValueError:
+        if not listing.unpacked:
+            raise
+        listing.truncated = True
     return listing
+
+
+def _read_7z(data: bytes, header: bytes, listing: Listing) -> None:
+    for _ in range(4):  # an encoded header can itself be encoded
+        reader = _Reader(header)
+        marker = reader.byte()
+        if marker == 0x17:
+            header = _decode_header(data, _streams_info(reader))
+            listing.unpacked += len(header)
+            continue
+        if marker != 0x01:
+            raise ValueError("unexpected 7z header")
+        streams = _Streams()
+        contents: list[bytes | None] = []
+        last = 0
+        while True:
+            section = reader.byte()
+            if section == 0x00:
+                return
+            # 7-Zip reads each section once, in this order, and refuses anything else.
+            if section not in (0x02, 0x03, 0x04, 0x05) or section <= last:
+                raise ValueError("unexpected 7z header section")
+            last = section
+            if section == 0x02:  # archive properties
+                while reader.byte() != 0:
+                    reader.take(reader.number())
+            elif section == 0x03:
+                _streams_info(reader)
+            elif section == 0x04:
+                streams = _streams_info(reader)
+                listing.encrypted = any(coder_id == _AES for folder in streams.folders
+                                        for coder_id, _, _, _ in folder.coders)
+                if listing.contents is not None:
+                    contents = _extract(data, streams, listing)
+            else:
+                _files(reader, listing, streams, contents)
+    raise ValueError("7z header encoded too many times")

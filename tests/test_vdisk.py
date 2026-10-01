@@ -131,3 +131,68 @@ def test_an_ntfs_parent_loop_is_skipped_not_followed():
 def test_damaged_disks_raise_value_error(data):
     with pytest.raises(ValueError):
         vdisk.list_vhd(data)
+
+
+# ------------------------------------------------------- 2.1 code review --
+
+def test_one_damaged_file_record_does_not_hide_the_volume():
+    # A record whose first attribute is cut short (a torn write, or a hostile
+    # builder) raised out of the whole volume, so its files went unread.
+    volume = bytearray(fb.ntfs({"invoice.lnk": SHORTCUT, "readme.txt": b"hello"}))
+    mft, size = 4 * 4096, 1024
+    record = bytearray(volume[mft + 24 * size:mft + 25 * size])
+    struct.pack_into("<II", record, struct.unpack_from("<H", record, 20)[0], 0x30, 16)
+    volume[mft + 40 * size:mft + 41 * size] = record
+    files = vdisk.list_vhd(fb.vhd_fixed(fb.mbr_disk([(0x07, bytes(volume))])))
+    assert [(f.name, f.data) for f in files] == [("invoice.lnk", SHORTCUT), ("readme.txt", b"hello")]
+
+
+def test_partitions_on_a_4k_sector_disk_are_found():
+    # The partition table counts in the disk's own sectors, 4096 bytes on a 4K-native disk.
+    volume, start = fb.fat12({"INVOICE.LNK": SHORTCUT}), 256
+    raw = bytearray(start * 4096)
+    struct.pack_into("<II", raw, 446 + 8, start, -(-len(volume) // 4096))
+    raw[446 + 4], raw[510:512] = 0x01, b"\x55\xaa"
+    image = bytearray(fb.vhdx(bytes(raw + volume)))
+    sector_at = 2 * 1024 * 1024 + 0x10000 + 16  # the logical sector size in the builder's metadata
+    assert struct.unpack_from("<I", image, sector_at)[0] == 512
+    struct.pack_into("<I", image, sector_at, 4096)
+    assert [(f.name, f.data) for f in vdisk.list_vhd(bytes(image))] == [("INVOICE.LNK", SHORTCUT)]
+
+
+def test_ntfs_on_4096_byte_sectors_is_read():
+    # Update sequences step in 512 bytes whatever the sector size.
+    volume = fb.ntfs({"setup.exe": PAYLOAD}, sector=4096)
+    files = vdisk.list_ntfs(vdisk.Volume(vdisk._Raw(volume, len(volume)), 0, len(volume)))
+    assert [(f.name, f.data) for f in files] == [("setup.exe", PAYLOAD)]
+
+
+def test_a_sparse_file_is_read():
+    # Sparse is not compressed or encrypted: its holes read as zeros.
+    volume = fb.ntfs({"setup.exe": PAYLOAD}, sparse=("setup.exe",))
+    files = vdisk.list_ntfs(vdisk.Volume(vdisk._Raw(volume, len(volume)), 0, len(volume)))
+    assert [(f.name, f.data) for f in files] == [("setup.exe", PAYLOAD)]
+
+
+def test_a_disk_says_which_partitions_it_could_not_read():
+    broken = bytearray(fb.ntfs({"x.exe": b"MZ"}))
+    broken[48:56] = (10 ** 9).to_bytes(8, "little")
+    disk_image = fb.vhd_fixed(fb.mbr_disk([(0x01, fb.fat12({"run.js": b"WScript"})), (0x07, bytes(broken))]))
+    listing = vdisk.read_vhd(disk_image)
+    assert [f.name for f in listing.files] == ["partition 1/RUN.JS"]
+    assert listing.damaged == ["partition 2: unreadable NTFS master file table"] and listing.read > 0
+    a = triage_bytes(build_eml(attachments=[(disk_image, "application", "octet-stream", "Invoice.vhd")]))
+    assert "partition 2 could not be read (unreadable NTFS master file table)" in a.attachments[0].notes
+
+
+def test_disk_images_in_one_message_share_one_read_budget(monkeypatch):
+    # Each disk had its own 256 MB to read: many small disks whose block
+    # tables point at one block could make one message read gigabytes.
+    from phishhawk import attachments
+
+    image = fb.vhd_fixed(_disk())
+    one = vdisk.read_vhd(image).read
+    monkeypatch.setattr(attachments, "MAX_UNPACKED", 2 * one)
+    raw = build_eml(attachments=[(image, "application", "octet-stream", "d%d.vhd" % i) for i in range(4)])
+    disks = [f for f in triage_bytes(raw).attachments if f.filename.endswith(".vhd")]
+    assert [attachments.UNPACK_SPENT in f.notes for f in disks] == [False, False, True, True]

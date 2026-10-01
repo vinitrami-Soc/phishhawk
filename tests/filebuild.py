@@ -189,21 +189,25 @@ def vhdx(disk: bytes, block_size: int = 1024 * 1024) -> bytes:
     return bytes(out + blocks)
 
 
-def ntfs(files: dict[str, bytes], directories: tuple[str, ...] = ()) -> bytes:
+def ntfs(files: dict[str, bytes], directories: tuple[str, ...] = (), sector: int = 512,
+         sparse: tuple[str, ...] = ()) -> bytes:
     """A small NTFS volume: its master file table holds `directories` and
-    `files` (paths with "/"), small files resident, larger ones in clusters."""
-    sector, cluster, record_size, mft_lcn, mft_records = 512, 4096, 1024, 4, 64
+    `files` (paths with "/"), small files resident, larger ones in clusters.
+    `sparse` files carry the sparse flag. Records are fixed up in 512-byte
+    strides whatever the sector size, as NTFS writes them."""
+    cluster, record_size, mft_lcn, mft_records = 4096, 1024, 4, 64
     data_lcn = mft_lcn + mft_records * record_size // cluster
     clusters: list[bytes] = []
 
-    def attribute(kind: int, body: bytes, resident: bool = True, runs: bytes = b"", size: int = 0) -> bytes:
+    def attribute(kind: int, body: bytes, resident: bool = True, runs: bytes = b"", size: int = 0,
+                  flags: int = 0) -> bytes:
         if resident:
             header = struct.pack("<IIBBHHHIHBB", kind, 0, 0, 0, 0, 0, 0, len(body), 24, 0, 0)
             whole = header + body
         else:
             allocated = -(-size // cluster) * cluster
             last_vcn = max(0, allocated // cluster - 1)
-            header = struct.pack("<IIBBHHHQQHHIQQQ", kind, 0, 1, 0, 0, 0, 0, 0, last_vcn, 64, 0, 0,
+            header = struct.pack("<IIBBHHHQQHHIQQQ", kind, 0, 1, 0, 0, flags, 0, 0, last_vcn, 64, 0, 0,
                                  allocated, size, size)
             whole = header + runs
         whole = whole.ljust(-(-len(whole) // 8) * 8, b"\0")
@@ -247,7 +251,7 @@ def ntfs(files: dict[str, bytes], directories: tuple[str, ...] = ()) -> bytes:
         else:
             count = -(-len(content) // cluster)
             data = attribute(0x80, b"", resident=False, runs=runs_for(data_lcn + len(clusters), count),
-                             size=len(content))
+                             size=len(content), flags=0x8000 if path in sparse else 0)
             clusters += [content[i * cluster:(i + 1) * cluster].ljust(cluster, b"\0") for i in range(count)]
         table[next_record * record_size:(next_record + 1) * record_size] = \
             record(0x01, file_name(numbers[parent], name) + data)
@@ -455,6 +459,27 @@ def seven_zip_packed(files: dict[str, bytes], bcj: bool = False, header_coder: s
     names_blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in names)
     header += b"\x05" + _7z_number(len(names)) + b"\x11" + _7z_number(len(names_blob)) + names_blob + b"\x00"
     header += b"\x00"
+    start = struct.pack("<QQI", len(packed), len(header), binascii.crc32(header))
+    return b"7z\xbc\xaf\x27\x1c\x00\x04" + struct.pack("<I", binascii.crc32(start)) + start + packed + header
+
+
+def seven_zip_folders(folders: list[tuple[bytes, bytes, int]], names: list[str], sections: int = 1) -> bytes:
+    """A 7z archive of raw folders, each (coder id, packed bytes, declared
+    unpack size) with one coder and one file, for hostile shapes: a size that
+    lies, data that breaks off, the stream section written `sections` times."""
+    packed = b"".join(data for _, data, _ in folders)
+    streams = b"\x06" + _7z_number(0) + _7z_number(len(folders)) + b"\x09" \
+        + b"".join(_7z_number(len(data)) for _, data, _ in folders) + b"\x00"
+    coders = b""
+    for coder_id, _, _ in folders:
+        props = bytes([16]) if coder_id == b"\x21" else b""  # LZMA2: a 1 MB dictionary
+        coders += _7z_number(1) + bytes([len(coder_id) | (0x20 if props else 0)]) + coder_id \
+            + (_7z_number(len(props)) + props if props else b"")
+    streams += b"\x07\x0b" + _7z_number(len(folders)) + b"\x00" + coders + b"\x0c" \
+        + b"".join(_7z_number(size) for _, _, size in folders) + b"\x00" + b"\x00"
+    blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in names)
+    header = b"\x01" + (b"\x04" + streams) * sections
+    header += b"\x05" + _7z_number(len(names)) + b"\x11" + _7z_number(len(blob)) + blob + b"\x00" + b"\x00"
     start = struct.pack("<QQI", len(packed), len(header), binascii.crc32(header))
     return b"7z\xbc\xaf\x27\x1c\x00\x04" + struct.pack("<I", binascii.crc32(start)) + start + packed + header
 

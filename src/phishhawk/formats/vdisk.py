@@ -37,10 +37,14 @@ class DiskView:
         if offset < 0 or length < 0:
             raise ValueError("negative disk offset")
         length = max(0, min(length, self.size - offset))
+        self.charge(length)
+        return self._read(offset, length) if length else b""
+
+    def charge(self, length: int) -> None:
+        """Count bytes produced from this disk, read or not (a hole in a file)."""
         self.budget -= length
         if self.budget < 0:
             raise ValueError("virtual disk read budget exhausted")
-        return self._read(offset, length) if length else b""
 
     def _read(self, offset: int, length: int) -> bytes:
         raise NotImplementedError
@@ -222,8 +226,8 @@ def partitions(view: DiskView) -> list[Volume]:
     for entry in entries:
         kind = entry[4]
         start, count = struct.unpack_from("<II", entry, 8)
-        if kind in _BASIC_DATA_TYPES and count:
-            out.append(Volume(view, start * SECTOR, count * SECTOR))
+        if kind in _BASIC_DATA_TYPES and count:  # counted in the disk's own sectors (4096 bytes on 4K disks)
+            out.append(Volume(view, start * view.sector, count * view.sector))
     return out
 
 
@@ -282,28 +286,40 @@ def _runs(data: bytes, offset: int) -> list[tuple[int | None, int]]:
     return out
 
 
-def _fixup(record: bytes, sector: int) -> bytes | None:
-    """Undo the update sequence: the last two bytes of each sector were
-    swapped for a check value when the record was written."""
+FIXUP_STRIDE = 512  # update sequences step in 512 bytes, whatever the sector size
+
+
+def _fixup(record: bytes) -> bytes | None:
+    """Undo the update sequence: the last two bytes of each 512-byte stride
+    were swapped for a check value when the record was written."""
     usa_offset, usa_count = struct.unpack_from("<HH", record, 4)
     if usa_count < 2 or usa_offset + 2 * usa_count > len(record):
         return None
     fixed = bytearray(record)
     check = record[usa_offset:usa_offset + 2]
     for index in range(1, usa_count):
-        end = index * sector
+        end = index * FIXUP_STRIDE
         if end > len(fixed) or fixed[end - 2:end] != check:
             return None
         fixed[end - 2:end] = record[usa_offset + 2 * index:usa_offset + 2 * index + 2]
     return bytes(fixed)
 
 
-def _parse_record(raw: bytes, sector: int) -> _Record | None:
-    if raw[:4] != b"FILE":
+def _parse_record(raw: bytes) -> _Record | None:
+    """A file record, or None when it is unused or damaged: one torn record
+    must not hide the rest of the volume."""
+    if raw[:4] != b"FILE" or len(raw) < 48:
         return None
-    record = _fixup(raw, sector)
+    record = _fixup(raw)
     if record is None:
         return None
+    try:
+        return _read_attributes(record)
+    except (struct.error, IndexError):
+        return None
+
+
+def _read_attributes(record: bytes) -> _Record | None:
     flags = struct.unpack_from("<H", record, 22)[0]
     if not flags & 0x01:  # not in use
         return None
@@ -342,10 +358,13 @@ def _parse_record(raw: bytes, sector: int) -> _Record | None:
                 runs_at = struct.unpack_from("<H", attribute, 32)[0]
                 if start_vcn == 0:
                     out.size = struct.unpack_from("<Q", attribute, 48)[0]
-                    out.runs = _runs(attribute, runs_at)
+                    try:
+                        out.runs = _runs(attribute, runs_at)
+                    except ValueError:
+                        out.unreadable = True
                 else:
                     out.unreadable = True
-                if attribute_flags & 0xC001:  # compressed, encrypted or sparse-compressed
+                if attribute_flags & 0x4001:  # encrypted or compressed; a sparse file reads, holes as zeros
                     out.unreadable = True
         position += length
     return out
@@ -357,7 +376,11 @@ def _read_runs(volume: Volume, runs: list[tuple[int | None, int]], cluster: int,
         if len(out) >= size:
             break
         take = min(length * cluster, size - len(out))
-        out += bytes(take) if lcn is None else volume[lcn * cluster:lcn * cluster + take].ljust(take, b"\0")
+        if lcn is None:  # a hole: zeros, which cost what reading them would
+            volume.view.charge(take)
+            out += bytes(take)
+        else:
+            out += volume[lcn * cluster:lcn * cluster + take].ljust(take, b"\0")
     return bytes(out[:size])
 
 
@@ -376,7 +399,7 @@ def list_ntfs(volume: Volume, budget: int | None = None) -> list[DiskFile]:
     if sector not in (512, 1024, 2048, 4096) or not 0 < cluster <= 2 * 1024 * 1024 or \
             record_size not in (1024, 2048, 4096):
         raise ValueError("implausible NTFS boot sector")
-    first = _parse_record(volume[mft_lcn * cluster:mft_lcn * cluster + record_size], sector)
+    first = _parse_record(volume[mft_lcn * cluster:mft_lcn * cluster + record_size])
     if first is None or not first.runs:
         raise ValueError("unreadable NTFS master file table")
     records: dict[int, _Record] = {}
@@ -388,7 +411,7 @@ def list_ntfs(volume: Volume, budget: int | None = None) -> list[DiskFile]:
             continue
         for index in range(min(count, MAX_MFT_RECORDS - number)):
             at = lcn * cluster + index * record_size
-            parsed = _parse_record(volume[at:at + record_size], sector)
+            parsed = _parse_record(volume[at:at + record_size])
             if parsed is not None and parsed.name:
                 records[number + index] = parsed
         number += count
@@ -429,42 +452,60 @@ def list_ntfs(volume: Volume, budget: int | None = None) -> list[DiskFile]:
 
 # ----------------------------------------------------------------- listing --
 
+@dataclass
+class VirtualDisk:
+    files: list[DiskFile]
+    read: int  # bytes read from the disk (or made up for its holes)
+    damaged: list[str] = field(default_factory=list)  # "partition 2: why", for each volume not read
+
+
 def list_vhd(data: bytes) -> list[DiskFile]:
     """The files on every FAT or NTFS volume of a VHD or VHDX disk. A
     damaged disk raises ValueError."""
+    return read_vhd(data).files
+
+
+def read_vhd(data: bytes, budget: int = MAX_READ) -> VirtualDisk:
+    """The files on every FAT or NTFS volume of a VHD or VHDX disk, what
+    reading them cost (at most `budget` bytes), and the volumes that could
+    not be read. A disk none of whose volumes can be read raises ValueError."""
     try:
-        return _list_vhd(data)
+        return _read_vhd(data, min(budget, MAX_READ))
     except (struct.error, IndexError, OverflowError) as exc:
         raise ValueError("damaged virtual disk (%s)" % type(exc).__name__) from exc
 
 
-def _list_vhd(data: bytes) -> list[DiskFile]:
+def _read_vhd(data: bytes, budget: int) -> VirtualDisk:
     view = open_disk(data)
+    view.budget = budget
     volumes = partitions(view)
-    files: list[DiskFile] = []
+    disk = VirtualDisk([], 0)
     # One budget for the whole disk: every partition entry could name the same
     # volume, and a file's holes read as zeros without touching the disk.
-    budget = MAX_TOTAL_BYTES
+    content = min(MAX_TOTAL_BYTES, budget)
     failure: Exception | None = None
     read_one = False
     for number, volume in enumerate(volumes, 1):
         try:
             boot = volume[0:512]
             if boot[3:11] == b"NTFS    ":
-                found = list_ntfs(volume, budget)
+                found = list_ntfs(volume, content)
             elif boot[54:59] in (b"FAT12", b"FAT16") or boot[82:87] == b"FAT32":
-                found = list_fat(volume, budget)  # type: ignore[arg-type]  # a Volume slices like bytes
+                found = list_fat(volume, content)  # type: ignore[arg-type]  # a Volume slices like bytes
             else:
                 continue
         except (ValueError, struct.error, IndexError, OverflowError) as exc:
             failure = exc  # a damaged volume does not hide the others
+            disk.damaged.append("partition %d: %s" % (number, str(exc)[:80] or type(exc).__name__))
             continue
         read_one = True
-        budget -= sum(len(item.data) for item in found if item.data is not None)
+        content -= sum(len(item.data) for item in found if item.data is not None)
         prefix = "partition %d/" % number if len(volumes) > 1 else ""
-        files += [DiskFile(prefix + item.name, item.size, item.data) for item in found]
-        if len(files) >= MAX_FILES:
+        disk.files += [DiskFile(prefix + item.name, item.size, item.data) for item in found]
+        if len(disk.files) >= MAX_FILES:
             break
+    disk.read = budget - view.budget
     if failure is not None and not read_one:
         raise failure
-    return files[:MAX_FILES]
+    disk.files = disk.files[:MAX_FILES]
+    return disk

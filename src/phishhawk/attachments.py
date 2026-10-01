@@ -35,6 +35,10 @@ MAX_MEMBER_BYTES = 25 * 1024 * 1024
 MAX_ARCHIVE_TOTAL = 100 * 1024 * 1024
 MAX_GUNZIP = 50 * 1024 * 1024
 MAX_DECOMPRESS = 64 * 1024 * 1024  # bytes a 7z or RAR archive may decompress to
+# Bytes every archive and disk image of one message may decompress or read
+# between them, kept or thrown away: one large archive, or many small ones.
+MAX_UNPACKED = 256 * 1024 * 1024
+UNPACK_SPENT = "not opened: this message's budget for unpacking archives and disk images is spent"
 OOXML_EXTENSIONS = {".docx", ".docm", ".dotx", ".dotm", ".xlsx", ".xlsm", ".xltx", ".xltm", ".xlam", ".pptx",
                     ".pptm", ".potx", ".potm", ".ppsx", ".ppsm", ".sldx"}
 HTML_EXTENSIONS = {".html", ".htm", ".shtml", ".xhtml", ".svg", ".mht", ".mhtml"}
@@ -90,6 +94,7 @@ class Inspector:
         self.passwords = passwords
         self.files = 0
         self.bytes = 0
+        self.unpacked = 0  # bytes decompressed or read by container readers (MAX_UNPACKED)
         self.extra_text: list[str] = []  # body text found inside winmail.dat
 
     # ------------------------------------------------------------ plumbing --
@@ -146,14 +151,14 @@ class Inspector:
         elif kind == "lnk":
             self._lnk(ioc, data)
         elif kind == "iso":
-            self._disk(ioc, "ISO disk image", lambda: disk.list_iso(data), depth)
+            self._disk(ioc, "ISO disk image", lambda budget: _read(disk.list_iso(data, budget)), depth)
         elif kind == "fatimg":
-            self._disk(ioc, "FAT disk image", lambda: disk.list_fat(data), depth)
+            self._disk(ioc, "FAT disk image", lambda budget: _read(disk.list_fat(data, budget)), depth)
         elif kind == "vhd":
             label = "VHDX disk image" if data[:8] == b"vhdxfile" else "VHD disk image"
             ioc.details["container"] = {"kind": label}
             ioc.flagged = True  # mounts with a double-click, even when it cannot be read here
-            self._disk(ioc, label, lambda: vdisk.list_vhd(data), depth)
+            self._disk(ioc, label, lambda budget: vdisk.read_vhd(data, budget), depth)
         elif kind in ("rar", "7z"):
             self._listing(ioc, data, kind, depth)
         elif kind == "gzip":
@@ -229,12 +234,26 @@ class Inspector:
         ioc.archive = summary
         return summary
 
-    def _disk(self, ioc: FileIoc, kind: str, lister: Callable[[], list[disk.DiskFile]], depth: int) -> None:
+    def _unpack_budget(self, ioc: FileIoc) -> int:
+        left = MAX_UNPACKED - self.unpacked
+        if left <= 0 and UNPACK_SPENT not in ioc.notes:
+            ioc.notes.append(UNPACK_SPENT)
+        return max(0, left)
+
+    def _disk(self, ioc: FileIoc, kind: str, lister: Callable[[int], vdisk.VirtualDisk], depth: int) -> None:
+        budget = self._unpack_budget(ioc)
+        if not budget:
+            return
         try:
-            files = lister()
+            found = lister(budget)
         except (ValueError, struct.error, IndexError) as exc:
             ioc.notes.append("unreadable %s (%s)" % (kind, str(exc)[:60]))
             return
+        self.unpacked += found.read
+        files = found.files
+        for damage in found.damaged:
+            where, _, why = damage.partition(": ")
+            ioc.notes.append("%s could not be read (%s)" % (where, why))
         summary = self._summary(ioc, kind, [f.name for f in files], truncated=len(files) >= disk.MAX_FILES)
         ioc.details["container"] = {"kind": kind, "files": len(files)}
         ioc.flagged = True
@@ -245,12 +264,16 @@ class Inspector:
             self.child(ioc, item.name, item.data, depth)
 
     def _listing(self, ioc: FileIoc, data: bytes, kind: str, depth: int) -> None:
-        budget = min(MAX_DECOMPRESS, max(0, MAX_TOTAL_BYTES - self.bytes))
+        left = self._unpack_budget(ioc)
+        if not left:
+            return
+        budget = max(0, min(MAX_DECOMPRESS, MAX_TOTAL_BYTES - self.bytes, left))
         try:
             listing = archives.list_rar(data, budget) if kind == "rar" else archives.list_7z(data, budget)
         except (ValueError, struct.error, IndexError) as exc:
             ioc.notes.append("unreadable %s archive (%s)" % (kind.upper(), str(exc)[:60]))
             return
+        self.unpacked += listing.unpacked
         summary = self._summary(ioc, "%s archive" % kind.upper(), listing.names, listing.encrypted,
                                 listing.truncated, listing.names_hidden)
         if listing.encrypted and self.passwords:
@@ -377,3 +400,8 @@ class Inspector:
 
 def is_ole(data: bytes) -> bool:
     return data[:8] == OLE_SIGNATURE
+
+
+def _read(files: list[disk.DiskFile]) -> vdisk.VirtualDisk:
+    """An ISO or FAT image's files, costed at the content they hand over."""
+    return vdisk.VirtualDisk(files, sum(len(f.data) for f in files if f.data is not None))

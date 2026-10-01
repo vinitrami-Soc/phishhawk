@@ -63,8 +63,9 @@ def _iso_records(data: bytes, extent: int, size: int):
         offset += length
 
 
-def list_iso(data: bytes) -> list[DiskFile]:
-    """Files in an ISO 9660 image, by their Joliet names when present."""
+def list_iso(data: bytes, budget: int | None = None) -> list[DiskFile]:
+    """Files in an ISO 9660 image, by their Joliet names when present.
+    `budget` caps the bytes of file content read (MAX_TOTAL_BYTES by default)."""
     root, joliet = None, False
     for index in range(16, 64):
         descriptor = data[index * BLOCK:(index + 1) * BLOCK]
@@ -81,7 +82,7 @@ def list_iso(data: bytes) -> list[DiskFile]:
         raise ValueError("no ISO 9660 volume descriptor")
     files: list[DiskFile] = []
     seen: set[int] = set()
-    budget, directory_budget = MAX_TOTAL_BYTES, MAX_DIRECTORY_BYTES
+    budget, directory_budget = MAX_TOTAL_BYTES if budget is None else budget, MAX_DIRECTORY_BYTES
     stack = [(struct.unpack_from("<I", root, 2)[0], struct.unpack_from("<I", root, 10)[0], "", 0)]
     while stack and len(files) < MAX_FILES and directory_budget > 0:
         extent, size, prefix, depth = stack.pop()
