@@ -45,9 +45,44 @@ jobs:
           phishhawk doctor --no-color
           phishhawk techniques --json > /dev/null
           phishhawk cache stats --no-color
+          phishhawk campaign samples/ --no-color --json campaigns.json
+          python -c "import json; assert json.load(open('campaigns.json'))['messages'] == 5"
+          phishhawk scan samples/sample_phish.eml --offline --quiet --no-color \
+            --evidence evidence --sandbox packs || test $? -eq 1
+          phishhawk evidence verify evidence --no-color
+          unzip -P infected -t packs/*.zip
           ./phishhawk --version
       - name: Evaluation report (synthetic corpus)
         run: python eval/run_eval.py --synthetic
+
+  supply-chain:
+    name: dependencies and secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # every commit is searched for secrets, not just the last
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Known vulnerabilities in everything PhishHawk installs (pip-audit)
+        run: |
+          python -m venv "$RUNNER_TEMP/runtime"
+          "$RUNNER_TEMP/runtime/bin/pip" install ".[qr]"
+          "$RUNNER_TEMP/runtime/bin/pip" freeze --exclude-editable | grep -v '^phishhawk' > "$RUNNER_TEMP/runtime.txt"
+          cat "$RUNNER_TEMP/runtime.txt"
+          python -m pip install pip-audit
+          pip-audit --requirement "$RUNNER_TEMP/runtime.txt" --no-deps --disable-pip --strict
+      - name: Secrets in the code and its history (gitleaks)
+        env:
+          VERSION: 8.18.4
+          SHA256: ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tgz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v$VERSION/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" detect --source . --redact --no-banner --verbose
 
   installer:
     runs-on: ubuntu-latest
