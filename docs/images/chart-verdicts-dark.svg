@@ -10,22 +10,22 @@
 <circle cx="289.5" cy="86.0" r="5" fill="#898781"/>
 <text x="300.5" y="90.0" fill="#c3c2b7" font-size="12" font-weight="400" text-anchor="start">Not flagged</text>
 <text x="28.0" y="126.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Unseen phishing (5,714)</text>
-<path d="M200.0 110.0 h160.0 v24 h-160.0 z" fill="#9ec5f4"/>
-<text x="210.0" y="126.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">1740</text>
-<path d="M362.0 110.0 h260.8 v24 h-260.8 z" fill="#256abf"/>
-<text x="372.0" y="126.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">2823 suspicious</text>
-<path d="M624.8 110.0 h103.2 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-103.2 z" fill="#898781"/>
-<text x="634.8" y="126.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">1151</text>
+<path d="M200.0 110.0 h247.4 v24 h-247.4 z" fill="#9ec5f4"/>
+<text x="210.0" y="126.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">2679 likely phishing</text>
+<path d="M449.4 110.0 h181.0 v24 h-181.0 z" fill="#256abf"/>
+<text x="459.4" y="126.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">1965 suspicious</text>
+<path d="M632.4 110.0 h95.6 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-95.6 z" fill="#898781"/>
+<text x="642.4" y="126.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">1070</text>
 <text x="28.0" y="172.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Phishing 2005-07 (2,279)</text>
-<path d="M200.0 156.0 h139.9 v24 h-139.9 z" fill="#9ec5f4"/>
-<text x="210.0" y="172.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">608</text>
-<path d="M341.9 156.0 h163.3 v24 h-163.3 z" fill="#256abf"/>
-<text x="351.9" y="172.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">708 suspicious</text>
-<path d="M507.2 156.0 h220.8 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-220.8 z" fill="#898781"/>
-<text x="517.2" y="172.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">963 not flagged</text>
+<path d="M200.0 156.0 h156.3 v24 h-156.3 z" fill="#9ec5f4"/>
+<text x="210.0" y="172.5" fill="#0b0b0b" font-size="12" font-weight="600" text-anchor="start">678 likely phishing</text>
+<path d="M358.3 156.0 h142.3 v24 h-142.3 z" fill="#256abf"/>
+<text x="368.3" y="172.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">618 suspicious</text>
+<path d="M502.5 156.0 h225.5 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-225.5 z" fill="#898781"/>
+<text x="512.5" y="172.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">983 not flagged</text>
 <text x="28.0" y="218.5" fill="#c3c2b7" font-size="13" font-weight="400" text-anchor="start">Legitimate mail (5,945)</text>
-<path d="M200.0 202.0 h-1.6 v24 h--1.6 z" fill="#9ec5f4"/>
-<path d="M200.4 202.0 h2.4 v24 h-2.4 z" fill="#256abf"/>
-<path d="M204.8 202.0 h523.2 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-523.2 z" fill="#898781"/>
-<text x="214.8" y="218.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">5891 not flagged</text>
+<path d="M200.0 202.0 h-1.5 v24 h--1.5 z" fill="#9ec5f4"/>
+<path d="M200.5 202.0 h1.6 v24 h-1.6 z" fill="#256abf"/>
+<path d="M204.1 202.0 h523.9 a4 4 0 0 1 4 4 v16.0 a4 4 0 0 1 -4 4 h-523.9 z" fill="#898781"/>
+<text x="214.1" y="218.5" fill="#ffffff" font-size="12" font-weight="600" text-anchor="start">5899 not flagged</text>
 </svg>

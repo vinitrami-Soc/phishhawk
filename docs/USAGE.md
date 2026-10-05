@@ -12,6 +12,7 @@ installation, see the [README](../README.md#installation).
   - [Enrichment options](#enrichment-options)
   - [Cache options](#cache-options)
 - [imap: triage a mailbox folder](#imap-triage-a-mailbox-folder)
+- [graph and gmail: triage a mailbox through its API](#graph-and-gmail-triage-a-mailbox-through-its-api)
 - [The config file](#the-config-file)
 - [YARA rules](#yara-rules)
 - [doctor: check your setup](#doctor-check-your-setup)
@@ -30,6 +31,8 @@ phishhawk [-h] [-V] <command> ...
 
   scan         triage .eml, .msg or .mbox files, folders or stdin (the default command)
   imap         triage messages straight from an IMAP folder, read-only
+  graph        triage messages from a Microsoft 365 mailbox through Microsoft Graph, read-only
+  gmail        triage messages from a Gmail or Google Workspace mailbox through the Gmail API, read-only
   doctor       check dependencies, API keys, cache and network
   cache        show or clear the lookup cache
   techniques   list the MITRE ATT&CK techniques PhishHawk can evidence
@@ -127,6 +130,7 @@ free-mail providers are never exported as domain-level blocks.
 | `--trusted-authserv ID` | Your mail server's authserv-id, the first word of the `Authentication-Results` headers it writes (for example `mx.google.com`). Repeat for several; also read from `PHISHHAWK_TRUSTED_AUTHSERV`. Without it, only the block of headers at the top (the receiving server's) is believed, and a pass claimed further down is ignored and flagged as forged. |
 | `--no-qr` | Do not decode QR codes. Decoding needs the optional extra, `pip install 'phishhawk[qr]'` (included by `install.sh` and the Docker image); `phishhawk doctor` shows whether it is available. |
 | `--max-size MB` | Skip messages larger than this (default 50) |
+| `--psl FILE` | A copy of the [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat), used instead of the built-in approximation to find each host's registrable domain. With it, a lookalike on shared hosting (`paypal-billing.github.io`) is judged as its own domain rather than as `github.io`. Also read from the config file (`public_suffix_list`) and `PHISHHAWK_PSL`. A file that cannot be read, or holds no rules, is an error. |
 | `--allow DOMAIN` | A partner's domain: never reported as a lookalike, never exported as an indicator. Repeat for several. |
 | `--block DOMAIN` | A domain your organisation has already judged hostile: a message that uses it as sender, Reply-To, Return-Path or link host raises a high signal. Repeat for several. |
 | `--yara PATH` | Your [YARA rules](#yara-rules), a file or a folder of them |
@@ -200,6 +204,53 @@ phishhawk imap --host mail.example.com --user soc --folder "Phish reports" --uns
 phishhawk imap --host mail.example.com --user soc --folder "Phish reports" --watch 300 --quiet
 ```
 
+## graph and gmail: triage a mailbox through its API
+
+```text
+phishhawk graph [--mailbox USER] [--folder FOLDER] [options]
+phishhawk gmail [--mailbox USER] [--label LABEL] [--query TERMS] [options]
+```
+
+Many Microsoft 365 and Google Workspace tenants no longer allow IMAP. These
+two commands read the same "report phishing" mailbox through Microsoft Graph
+or the Gmail API instead, and triage each message as `scan` would. They only
+ever send `GET` requests: Graph's `$value` and Gmail's `format=raw` return a
+message's MIME without touching it, so nothing is marked read, moved or deleted.
+
+| Option | Meaning |
+|---|---|
+| `--mailbox USER` | A user id or address. The default, `me`, is the mailbox of the token's own account; another mailbox needs a token allowed to read it (an app permission, or delegated access). |
+| `--folder FOLDER` (graph) | A folder name or id. The default is the Inbox. Well-known names (`inbox`, `junkemail`, `archive` …) work in every language; a folder you made is found by its display name at the top level or inside the Inbox. |
+| `--label LABEL` (gmail) | A label. The default is the inbox. |
+| `--query TERMS` (gmail) | More terms, as typed in Gmail's search box, e.g. `has:attachment` |
+| `--since YYYY-MM-DD` | Only messages received on or after this date |
+| `--unread` | Only messages nobody has read yet |
+| `--limit N` | The newest N messages (default 50) |
+| `--out DIR` | Also write a JSON and an HTML report per message, named after its message id (plus a short hash when the id has characters a file name cannot hold) |
+| `--watch SECONDS` | Keep running: every SECONDS, triage the messages not seen yet. A message the API throttled, or that failed to download, is asked for again on the next round. |
+
+Every `scan` option for reports, detection and enrichment works here too.
+
+The access token is read from `PHISHHAWK_GRAPH_TOKEN` or `PHISHHAWK_GMAIL_TOKEN`,
+never from the command line. It travels only in the `Authorization` header and
+is only ever sent to the API's own host: a Graph `@odata.nextLink` pointing
+anywhere else is not followed. It needs `Mail.Read` (Graph) or
+`gmail.readonly` (Gmail); getting one is left to your identity platform. For a
+quick test with Microsoft Graph, `az account get-access-token --resource-type
+ms-graph` prints one. A refused token is reported with the permission it needs.
+A message larger than `--max-size` is skipped, never cut short; Gmail's size
+is checked before anything is downloaded.
+
+```bash
+export PHISHHAWK_GRAPH_TOKEN='...'
+phishhawk graph --mailbox soc@example.com --folder "Phish reports" --unread --out reports/
+phishhawk graph --mailbox soc@example.com --watch 300 --quiet
+
+export PHISHHAWK_GMAIL_TOKEN='...'
+phishhawk gmail --label "Phish reports" --since 2026-09-01
+phishhawk gmail --query "has:attachment" --out reports/
+```
+
 ## The config file
 
 Settings a SOC sets once live in a TOML (Python 3.11+) or JSON file. It is read
@@ -218,6 +269,7 @@ fail_on = "likely"                               # as --fail-on
 tlp = "amber"                                    # MISP events
 offline = false
 max_size = 50                                    # MB
+public_suffix_list = "~/soc/public_suffix_list.dat"  # as --psl
 vt_rate = 4                                      # VirusTotal lookups per minute
 vt_budget = 20                                   # VirusTotal lookups per message
 
@@ -263,8 +315,9 @@ phishhawk doctor [--network]
 ```
 
 Checks the Python version, the `requests` library, QR decoding, YARA, the
-config file in use, each API key (shown masked), the protected domains and the
-cache. `--network` also calls each reputation
+config file in use, the Public Suffix List if one is set (loaded, so a broken
+path shows up here rather than in the next scan), each API key (shown masked),
+the protected domains and the cache. `--network` also calls each reputation
 service once to show it can be reached from this machine, which is useful behind
 a corporate proxy. Run it after installing and whenever enrichment seems not to work.
 
@@ -300,6 +353,9 @@ phishhawk techniques --json    # the same, machine-readable
 | `PHISHHAWK_IMAP_USER` | The IMAP login for `phishhawk imap` |
 | `PHISHHAWK_IMAP_PASSWORD` | The IMAP password (never pass it on the command line) |
 | `PHISHHAWK_IMAP_TOKEN` | An OAuth access token for IMAP (`XOAUTH2`), instead of a password |
+| `PHISHHAWK_GRAPH_TOKEN` | The access token for `phishhawk graph` (`Mail.Read`) |
+| `PHISHHAWK_GMAIL_TOKEN` | The access token for `phishhawk gmail` (`gmail.readonly`) |
+| `PHISHHAWK_PSL` | A copy of the Public Suffix List, as `--psl` |
 | `PHISHHAWK_NO_BANNER` | Any value turns the banner off |
 | `NO_COLOR` | Any value turns colour off ([no-color.org](https://no-color.org)) |
 | `XDG_CACHE_HOME` | Where the cache folder goes (default `~/.cache`) |
@@ -350,7 +406,7 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 |---|---|
 | `verdict`, `score` | The verdict and the risk score |
 | `summary` | The plain-language summary lines, e.g. `"6 URLs found."` |
-| `signals[]` | `severity`, `label` and `techniques` for every finding |
+| `signals[]` | `severity`, `label`, `techniques` and, since 2.1, `family`: the part of the message the finding is about (`auth`, `sender`, `link`, `attachment`, `content`, `evasion`, `intel` or `policy`; empty for a finding added outside PhishHawk's checks) |
 | `techniques[]` | `id`, `name`, ATT&CK `url` and the `evidence` behind it |
 | `iocs[]` | `type` (url, domain, ipv4, ipv6, email, sha256, crypto-wallet, phone), `value`, `context`. Only indicators worth blocking. |
 | `recommendations[]` | The actions to take, in order |
