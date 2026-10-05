@@ -109,8 +109,8 @@ def _urls(analysis: Analysis) -> list[str]:
     return [ioc.url for ioc in analysis.urls if not analysis.is_trusted_domain(ioc.host)][:500]
 
 
-def pack(directory: str, data: bytes, analysis: Analysis) -> str:
-    """Write DIR/<sha256>.zip for one analysed message; returns its path."""
+def build(data: bytes, analysis: Analysis) -> tuple[str, bytes]:
+    """(file name, ZIP bytes) of the pack for one analysed message."""
     from .evidence import fingerprint  # noqa: PLC0415 - shared with the evidence log
 
     prints = fingerprint(data)
@@ -139,8 +139,14 @@ def pack(directory: str, data: bytes, analysis: Analysis) -> str:
                                 verdict=analysis.verdict, score=analysis.score),
                 "files": entries, "not_packed": not_packed, "urls": len(urls)}
     members.append(("manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False).encode("utf-8")))
+    return prints["sha256"] + ".zip", _zip(members)
+
+
+def pack(directory: str, data: bytes, analysis: Analysis) -> str:
+    """Write DIR/<sha256>.zip for one analysed message; returns its path."""
+    name, content = build(data, analysis)
     os.makedirs(directory, mode=0o700, exist_ok=True)
-    path = os.path.join(directory, prints["sha256"] + ".zip")
+    path = os.path.join(directory, name)
     try:
         # Non-blocking: a FIFO planted under this name fails at once instead of hanging the run.
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | _NOFOLLOW | _BINARY | getattr(os, "O_NONBLOCK", 0), 0o600)
@@ -152,5 +158,5 @@ def pack(directory: str, data: bytes, analysis: Analysis) -> str:
         if hasattr(os, "fchmod"):
             os.fchmod(handle.fileno(), 0o600)  # also when an older pack was there
         handle.truncate(0)
-        handle.write(_zip(members))
+        handle.write(content)
     return path
