@@ -5,7 +5,7 @@
 <h1 align="center">PhishHawk</h1>
 
 <p align="center">
-  <b>Sharp-eyed phishing triage for the SOC.</b><br>
+  <b>Phishing email triage tool for SOC analysts.</b><br>
   Give it a reported email. It pulls out every indicator, checks the ones that matter,<br>
   maps what it finds to MITRE ATT&amp;CK and tells the analyst what to do next.
 </p>
@@ -29,6 +29,29 @@
   <a href="eval/README.md">Evaluation</a> ·
   <a href="CHANGELOG.md">Changelog</a>
 </p>
+
+| | |
+|---|---|
+| **What** | A command-line tool that triages reported phishing emails: a verdict, every indicator (defanged), the ATT&CK techniques and the next steps, in under a second |
+| **For** | SOC analysts, incident responders and threat-intelligence teams working a "report phishing" queue |
+| **Reads** | `.eml`, Outlook `.msg`, `.mbox`, folders and stdin; report mailboxes over IMAP, Microsoft Graph and the Gmail API, read-only |
+| **Finds** | Lookalike and spoofed senders, credential-phishing links, QR-code phishing, malicious attachments (opened in memory, never run), BEC and callback scams |
+| **Writes** | Terminal, HTML, Markdown, JSON, CSV, STIX 2.1 and MISP reports; campaign and mailbox-sweep results; an evidence custody log; sandbox packs |
+
+```text
+$ phishhawk scan samples/sample_benign.eml samples/sample_phish.eml --quiet --offline
+== samples/sample_benign.eml
+  1 URL found.
+  Verdict: NO STRONG INDICATORS (risk score 0)
+
+== samples/sample_phish.eml
+  6 URLs found.
+  1 attachment found.
+  1 lookalike domain detected.
+  9 high-severity signals raised.
+  Maps to 10 MITRE ATT&CK techniques.
+  Verdict: LIKELY PHISHING (risk score 35)
+```
 
 <p align="center">
   <img src="docs/images/banner.svg" width="560" alt="The PhishHawk start-up banner in a terminal: the hawk emblem, the PHISHHAWK lettering and the command overview">

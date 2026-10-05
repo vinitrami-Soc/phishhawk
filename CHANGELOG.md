@@ -16,9 +16,9 @@ groups a folder of reports into campaigns by what they share, and
 report names the exact bytes it analysed and explains, in sentences for a
 ticket, whether the sender's domain is authenticated. `--evidence` keeps
 each message with a hash-chained custody log, and `--sandbox` writes a
-password-protected pack for any sandbox. PhishHawk stays read-only and
-offline by default: nothing new is sent anywhere unless you run `sweep`,
-and that only to your own mail host. No verdict changed on the 5,373
+password-protected pack for any sandbox. PhishHawk stays read-only, and
+none of this sends anything anywhere except `sweep`, which only asks your
+own mail host. No verdict changed on the 5,373
 tuning messages; @@HELD@@
 
 ### Added
