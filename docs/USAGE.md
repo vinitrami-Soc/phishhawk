@@ -13,6 +13,9 @@ installation, see the [README](../README.md#installation).
   - [Cache options](#cache-options)
 - [imap: triage a mailbox folder](#imap-triage-a-mailbox-folder)
 - [graph and gmail: triage a mailbox through its API](#graph-and-gmail-triage-a-mailbox-through-its-api)
+- [Evidence and sandbox packs](#evidence-and-sandbox-packs)
+- [campaign: group reports into campaigns](#campaign-group-reports-into-campaigns)
+- [sweep: find the other copies of a reported message](#sweep-find-the-other-copies-of-a-reported-message)
 - [The config file](#the-config-file)
 - [YARA rules](#yara-rules)
 - [doctor: check your setup](#doctor-check-your-setup)
@@ -33,6 +36,9 @@ phishhawk [-h] [-V] <command> ...
   imap         triage messages straight from an IMAP folder, read-only
   graph        triage messages from a Microsoft 365 mailbox through Microsoft Graph, read-only
   gmail        triage messages from a Gmail or Google Workspace mailbox through the Gmail API, read-only
+  campaign     group reported messages into campaigns by what they share, offline
+  sweep        find the other copies of a reported message in mailboxes, read-only
+  evidence     verify the messages and custody log kept with --evidence
   doctor       check dependencies, API keys, cache and network
   cache        show or clear the lookup cache
   techniques   list the MITRE ATT&CK techniques PhishHawk can evidence
@@ -251,6 +257,102 @@ phishhawk gmail --label "Phish reports" --since 2026-09-01
 phishhawk gmail --query "has:attachment" --out reports/
 ```
 
+## Evidence and sandbox packs
+
+Every report names the exact bytes it analysed: their SHA-256, SHA-1, MD5 and
+size (for a reported message, the report as it arrived, not the original
+unwrapped from it). Two options of `scan`, `imap`, `graph` and `gmail` keep
+more:
+
+| Option | What it writes |
+|---|---|
+| `--evidence DIR` | Each message, exactly as read, as `DIR/<sha256>.eml` (or `.msg`), read-only; and one record per analysis appended to `DIR/custody.jsonl`: hashes, size, source (file, `mbox#n`, `imap://`, `graph://`, `gmail://`), time, analyst (`$PHISHHAWK_ANALYST`, else the login name), tool version, verdict and score. Each record includes the hash of the one before it; the record's own hash (`custody` in the report's `evidence` block) is shown in every report. A message seen again is kept once and recorded again. |
+| `--sandbox DIR` | `DIR/<message sha256>.zip`, encrypted with the password `infected`: `message.eml`, every file pulled out of it under `files/` (archive members too, so a payload behind a password PhishHawk guessed arrives unpacked), `urls.txt` (the links worth detonating: not defanged, not trusted brands) and `manifest.json` (each file's name, hashes, type, parent and notes; the message's hashes and verdict). Up to 50 MB of files per pack; the rest is listed in the manifest. Nothing is sent anywhere: upload the pack to your sandbox. |
+
+```bash
+phishhawk scan reported/ --quiet --evidence /cases/4711 --sandbox /cases/4711/sandbox
+phishhawk evidence verify /cases/4711
+```
+
+`phishhawk evidence verify DIR` recomputes the chain and every kept message's
+hash, reports any record changed, removed or reordered and any message changed
+or missing, and prints the chain's last link (`head`). Put the head, or the
+`custody` value of a report, in the ticket: it pins the log as it was then.
+Exit code `0` when everything checks out, `1` when something does not.
+
+## campaign: group reports into campaigns
+
+```bash
+phishhawk campaign reported/                        which reports belong together
+phishhawk campaign reported/ --md campaigns.md      a ticket note per campaign
+phishhawk campaign a.mbox b.mbox --json - | jq '.clusters[0].recipients'
+```
+
+Reads `.eml`, `.msg` and `.mbox` files and folders like `scan`, analyses each
+message offline, and groups them. Two messages belong together when they share
+one strong trait or two weak ones, and links are followed: A with B and B with
+C make one campaign.
+
+| Strong (one is enough) | Weak (two are needed) |
+|---|---|
+| an attachment (by SHA-256), a phishing domain, a link (without its query), a host on free hosting or a platform, a cloud-storage bucket, a QR payload, a sender or reply-to address, a sender domain, a crypto wallet, a phone number | a subject that differs only in numbers and `Re:`/`Fwd:` prefixes, a display name, an originating IP |
+
+What would glue unrelated mail together never links: known brands and your
+protected and allowed domains, shorteners, free-mail providers (one free-mail
+address does link: it is one person), bulk-mail and click-tracking services
+and mail-security gateways that rewrite links (only the very same link
+counts), web plumbing such as fonts and XML namespaces, a mailing list's own
+links, embedded images, and weak traits shared by more than 200 messages. A
+domain under which the messages use many different host names is a platform
+(Cloud Run, a registry zone such as `sa.com`, a help desk) and links by host;
+the report lists the platforms it found. A web address (link, domain or host)
+links only messages at least half of which PhishHawk judged suspicious or
+worse, because ordinary sites turn up in ordinary mail.
+
+Each campaign shows what links it, how many messages share each trait, its
+recipients (from each message's To line, the original's for a reported
+message), its senders, its first and last sighting (from the Date lines) and
+its verdicts. Output: the terminal summary, `--json`, `--csv` (one row per
+message with its campaign) and `--md` (a note per campaign), each `-` for
+stdout. `--min-size N` sets the smallest group reported (default 2). The
+detection options (`--protect`, `--allow`, `--psl`, `--config` ...) apply.
+
+## sweep: find the other copies of a reported message
+
+```bash
+export PHISHHAWK_GRAPH_TOKEN='...'   # an application token with Mail.Read for every mailbox swept
+phishhawk sweep graph --like reported.eml --mailboxes staff.txt
+phishhawk sweep graph --from billing@1nvoice-desk.top --mailbox alice@example.com --mailbox bob@example.com
+export PHISHHAWK_GMAIL_TOKEN='...'   # gmail.readonly, for the token's own mailbox
+phishhawk sweep gmail --like reported.eml --since 2026-09-01 --csv copies.csv
+```
+
+| Option | Meaning |
+|---|---|
+| `--like FILE` | The reported `.eml` or `.msg`. Its Message-ID, sender and reply-to addresses, subject and phishing domains are searched for; a brand's own domain or address, free-mail providers and other shared services never are. |
+| `--from`, `--subject`, `--domain`, `--message-id` | Search for these too (each repeatable) |
+| `--mailbox ADDRESS` | A mailbox to search (repeatable; default `me`, the token's own) |
+| `--mailboxes FILE` | One mailbox per line; `#` starts a comment |
+| `--since YYYY-MM-DD` | Only copies received on or after this date |
+| `--limit N` | Results per search and mailbox (default 100, at most 1000) |
+| `--json PATH`, `--csv PATH` | Every copy found, and which searches found it (`-` for stdout) |
+
+Each copy is listed with its mailbox, received time, folder (Graph's folder
+name; Gmail's Inbox, Spam, Trash or Archive), whether it was read, whether
+the mailbox's owner replied in its thread, and what matched. Gmail searches
+`in:anywhere`, spam and trash included; Graph searches every folder. Graph's
+search matches loosely, so its hits are checked against what was asked (the
+sender's address, the subject, the domain in the body) before they count;
+the body is read for that check and never kept.
+
+Only GET requests are sent, the token is read from the environment and only
+sent to the API's host, and a mailbox that is refused or not found is reported
+without stopping the others. A Gmail token belongs to one mailbox (with
+domain-wide delegation, mint one per mailbox). Exit code `0` when no copy was
+found, `1` when copies were, `3` when a mailbox could not be searched. Whether
+anyone clicked a link or opened an attachment is not in the mailbox: search
+your proxy and EDR logs for the domains and hashes in the scan report.
+
 ## The config file
 
 Settings a SOC sets once live in a TOML (Python 3.11+) or JSON file. It is read
@@ -356,6 +458,7 @@ phishhawk techniques --json    # the same, machine-readable
 | `PHISHHAWK_GRAPH_TOKEN` | The access token for `phishhawk graph` (`Mail.Read`) |
 | `PHISHHAWK_GMAIL_TOKEN` | The access token for `phishhawk gmail` (`gmail.readonly`) |
 | `PHISHHAWK_PSL` | A copy of the Public Suffix List, as `--psl` |
+| `PHISHHAWK_ANALYST` | The analyst named in `--evidence` custody records (default: the login name) |
 | `PHISHHAWK_NO_BANNER` | Any value turns the banner off |
 | `NO_COLOR` | Any value turns colour off ([no-color.org](https://no-color.org)) |
 | `XDG_CACHE_HOME` | Where the cache folder goes (default `~/.cache`) |
@@ -384,6 +487,11 @@ In a batch, the exit code reflects the worst message. With `--fail-on LEVEL`
 the verdict codes become `1` when a message reaches that level and `0`
 otherwise; `3` still means an error.
 
+`campaign` exits `0`, or `3` when an input could not be read. `sweep` exits
+`0` when no copy was found, `1` when copies were and `3` when a mailbox could
+not be searched. `evidence verify` exits `0` when everything checks out and
+`1` when it does not.
+
 ## stdout, stderr and piping
 
 - **stdout** carries the report, or the one machine-readable export sent to `-`.
@@ -405,6 +513,9 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | Field | Contents |
 |---|---|
 | `verdict`, `score` | The verdict and the risk score |
+| `evidence` | Since 2.2: `sha256`, `sha1`, `md5` and `size` of the bytes analysed; with `--evidence`, the kept `file` and the `custody` record's chain value |
+| `authentication` | Since 2.2: `status` (`pass`, `fail` or `unknown`) for the From domain; `checks[]` with each of SPF, DKIM and DMARC's `result`, `domain` and whether it is `aligned` with From; `identities[]` (From, Reply-To, Return-Path, each with `same_organisation`); `explanation[]`, sentences for a ticket |
+| `auth_checks[]` | Since 2.2: every SPF, DKIM and DMARC result in the receiving server's headers, with the `domain` it checked |
 | `summary` | The plain-language summary lines, e.g. `"6 URLs found."` |
 | `signals[]` | `severity`, `label`, `techniques` and, since 2.1, `family`: the part of the message the finding is about (`auth`, `sender`, `link`, `attachment`, `content`, `evasion`, `intel` or `policy`; empty for a finding added outside PhishHawk's checks) |
 | `techniques[]` | `id`, `name`, ATT&CK `url` and the `evidence` behind it |

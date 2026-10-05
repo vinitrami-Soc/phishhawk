@@ -94,7 +94,7 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 | Area | What PhishHawk checks |
 |---|---|
 | **Reported mail** | Reads `.eml` and Outlook `.msg` files, folders, `.mbox` exports, and report mailboxes directly, read-only: over IMAP (`phishhawk imap`) or through Microsoft Graph and the Gmail API (`phishhawk graph`, `phishhawk gmail`). A phish forwarded as an attachment is unwrapped, up to three layers deep; every layer is analysed too, and emails attached deeper or beside it are still read, so a phish cannot hide behind a harmless attached message. For an inline forward, the original `From:` is recovered from the quoted header block in six languages. The mail path (every Received hop, with delays) is shown. |
-| **Sender** | Reply-To diversion; a brand in the display name that the domain does not back up, even when written `Trust-Wallet`, `PayPaI` or with Cyrillic letters; a brand's own domain in the From line without the authentication to back it (a forged sender); a From address hidden in quotes; senders on free web hosting; organisation-style names on free-mail; SPF, DKIM and DMARC believed only from your own mail server, with a pass forged further down flagged. |
+| **Sender** | Reply-To diversion; a brand in the display name that the domain does not back up, even when written `Trust-Wallet`, `PayPaI` or with Cyrillic letters; a brand's own domain in the From line without the authentication to back it (a forged sender); a From address hidden in quotes; senders on free web hosting; organisation-style names on free-mail; SPF, DKIM and DMARC believed only from your own mail server, with a pass forged further down flagged. Every report explains, in sentences for a ticket, whether the From domain is authenticated: which domain each check vouched for and whether it is the sender the reader sees. |
 | **Lookalike domains** | Homoglyphs (`micros0ft`, Cyrillic `а`, `rn` for `m`), punycode, typosquats, combosquats, TLD swaps and brands used as subdomains. Checked against 187 brands, any you add, and **your own domains**, read from the recipients automatically. With `--psl`, the full Public Suffix List decides what a registrable domain is, so a lookalike on shared hosting (`paypal-billing.github.io`) is its own domain. |
 | **Links** | Taken from text, HTML `href`/`src`, form actions, `meta refresh`, JavaScript redirects, headers, PDFs, Office relationships, shortcuts, calendar invitations and QR codes, read the way a browser reads them. Microsoft Safe Links, Proofpoint and Barracuda rewrites are unwrapped, and Google, Bing, Facebook, YouTube and LinkedIn redirectors are decoded. Also flagged: link text that shows a different domain, raw and disguised IPs (`http://3232235777/`), `@` tricks, `javascript:` and `data:` links, downloads of runnable files, shorteners, free hosting, tunnels, IPFS, file-sharing drops and credential-harvesting paths. |
 | **Attachments** | Every file is typed by its magic bytes, so a `.pdf` that is really HTML is caught. ZIP, gzip and tar are opened; 7z is decompressed in memory and RAR's stored files read, and both are listed even with encrypted headers; ISO, FAT and VHD/VHDX disk images are opened, partitions, FAT and NTFS volumes and all (their files skip the Mark of the Web); a password-protected ZIP is opened when the message gives the password. Office macros, XLM, DDE, remote templates and Follina-style links, PDF launch and JavaScript actions, RTF exploits, OneNote payloads, dangerous shortcuts, `winmail.dat` and calendar invitations are all read, in memory, and nothing is ever run. |
@@ -104,6 +104,8 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 | **Language and money** | Lure phrases in seven languages (credentials, delivery, payment, prizes, advance fee, extortion, crypto recovery, casino bonuses); callback phishing, with the number to call exported; crypto wallets (checksum-verified) and payment asks; business email compromise from free-mail or from a lookalike of your own domain; QR-code lure wording; letter-spaced text; hash-busting tokens. |
 | **Your rules** | A config file for your domains, partners (never flagged), a block list, your own brands and lure phrases, and your YARA rules, run on the message and every file inside it. |
 | **Reputation** *(optional)* | VirusTotal for URLs and file hashes, urlscan.io for hosts, RDAP for domain age, AbuseIPDB for the sending IP. All cached, rate-limited and switched off by `--offline`. |
+| **After triage** | `phishhawk campaign` groups a folder of reports into campaigns by shared attachments, phishing domains, links, QR payloads and senders, with each campaign's recipients and first and last sighting, offline. `phishhawk sweep` finds a reported message's other copies in Microsoft 365 or Gmail mailboxes, with whether each was read or replied to, read-only. `--sandbox` writes a pack for any sandbox: the message, every file in it and the links to detonate, encrypted with the password `infected`. |
+| **Evidence** | Every report names the SHA-256 of the exact bytes it analysed. `--evidence` keeps each message, read-only, with a hash-chained custody log, and `phishhawk evidence verify` proves it unchanged. |
 
 The full list of signals, their severities and the ATT&CK techniques behind
 each is in [docs/DETECTIONS.md](docs/DETECTIONS.md).
@@ -379,12 +381,15 @@ phishhawk reported/ticket-4821.eml --html ticket-4821.html --md ticket-4821.md
 
 ### 2. A campaign that hit many inboxes
 
-Fifty people report the same lure. Scan the folder: the cache means each unique
-URL and hash is looked up only once, and the batch summary lists every report
-side by side with its verdict and score.
+Fifty people report the same lure. Scan the folder (the cache means each unique
+URL and hash is looked up only once), group the reports into campaigns to see
+what ties them together and who received them, then sweep every mailbox for
+the copies nobody reported, with who read them and who replied.
 
 ```bash
-phishhawk scan reported/2026-09-23/ --quiet --csv campaign-iocs.csv
+phishhawk scan reported/2026-09-23/ --quiet --csv campaign-iocs.csv --evidence /cases/4711
+phishhawk campaign reported/2026-09-23/ --md campaigns.md
+phishhawk sweep graph --like reported/2026-09-23/first.eml --mailboxes staff.txt --csv copies.csv
 ```
 
 ### 3. BEC and lookalikes of your own domain
@@ -441,7 +446,11 @@ MITRE ATT&CK technique.
 - **As an inline mail filter.** It analyses messages after delivery. It does not
   sit in the mail flow or block anything by itself.
 - **For detonating malware.** Attachments are typed, hashed and inspected
-  statically. Use a sandbox for dynamic analysis.
+  statically. Use a sandbox for dynamic analysis: `--sandbox` hands it
+  everything it needs in one password-protected pack.
+- **For quarantining or deleting mail.** PhishHawk only reads. Purge and block
+  with your mail platform, SOAR or EDR, using its indicators and `sweep`'s
+  list of copies.
 - **As a spam filter.** It targets credential theft, malware delivery,
   impersonation and BEC, not casino adverts.
 
@@ -559,6 +568,12 @@ lists only the techniques seen in that message, each linked to the signals behin
 - `phishhawk imap` only reads: the folder is opened read-only and messages are
   fetched without marking them read. Its password comes from the environment or
   a prompt, never the command line, and TLS certificates are always verified.
+- `phishhawk graph`, `gmail` and `sweep` only send `GET` requests, to your own
+  mail host. `sweep` sends it what it searches for: the reported message's
+  addresses, subject, Message-ID and phishing domains.
+- `campaign`, `--evidence` and `--sandbox` send nothing. `--evidence` and
+  `--sandbox` write the whole message to the folder you name: keep it where
+  your evidence goes.
 - Answers are cached in SQLite for 24 hours, in a file only you can read;
   errors are never cached. `phishhawk cache clear` empties the cache.
 - VirusTotal is paced to the free tier's 4 requests a minute and capped at 20 per
@@ -664,7 +679,8 @@ For extra isolation, use the Docker image with `--network none` and a read-only 
 ```text
 phishhawk/
 ├── src/phishhawk/
-│   ├── cli.py          scan / imap / graph / gmail / doctor / cache / techniques / help
+│   ├── cli.py          scan / imap / graph / gmail / campaign / sweep / evidence / doctor / cache /
+│   │                   techniques / help
 │   ├── banner.py       start-up banner (_logo_art.py is generated from docs/images/logo.svg)
 │   ├── mailpolicy.py   the email parser, hardened against headers written to break it
 │   ├── parse.py        MIME walk, unwrapping, inline forwards, hidden text, the mail path
@@ -684,9 +700,14 @@ phishhawk/
 │   ├── yararules.py    your YARA rules (optional extra)
 │   ├── imapfetch.py    read-only IMAP
 │   ├── mailapi.py      read-only Microsoft Graph and Gmail API
+│   ├── sweep.py        the other copies of a reported message, read-only
+│   ├── campaign.py     reports grouped into campaigns by what they share
+│   ├── alignment.py    authentication and alignment, explained for a ticket
+│   ├── evidence.py     message hashes, kept messages and the hash-chained custody log
+│   ├── sandbox.py      the password-protected pack for a sandbox
 │   ├── cache.py        SQLite TTL cache
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
-│   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV
+│   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV; campaign and sweep output
 │   └── pipeline.py     parse → detect → enrich
 ├── tests/              528 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
 │                       and the evaluation gate
@@ -731,6 +752,8 @@ explains how to add a detection.
 - [x] Pull reported mail through the Microsoft Graph and Gmail APIs (2.1)
 - [x] Optional full public suffix list (2.1)
 - [x] More brands and lure languages; weigh independent evidence (2.1)
+- [x] Campaign correlation, mailbox sweep, evidence custody log, sandbox handoff, authentication explained (2.2)
+- [ ] Submit a sandbox pack to a self-hosted CAPE through its API
 - [ ] Sign in to Microsoft Graph and Gmail from the command line (device-code flow)
 - [ ] Decompress RAR members, not only the stored ones
 - [ ] Packages on PyPI and GHCR

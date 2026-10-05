@@ -103,12 +103,39 @@ already and were found once that was fixed.
 | 51 | **`graph --unread` alone** sent a filter that Graph refuses next to its sort (InefficientFilter). Found by the review. | The command fails | Low | The filter starts with the date; API errors name their code |
 | 52 | **A long MIME parameter name hung Python's email library.** Writing a part back out (to read the text of a multipart part with no usable boundary) refolds its headers, and Python's folder never finds a split point for a parameter whose name is longer than a line: `_fold_mime_parameters` loops for ever. Recent Python patch releases refold every non-ASCII header even with `refold_source="none"`, so `Content-Type: multipart/mixed; boundar<100 NULs>y="\xc5..."` with an empty body hung the analysis. Also in 2.0. Found by the fuzzer. | The analysis hangs for ever | High | Headers read from a message are written back exactly as they came in, never refolded |
 
+## Round 4: campaigns, sweeps, evidence and sandbox packs (fixed before release)
+
+2.2 groups reports into campaigns, sweeps mailboxes through Graph and Gmail
+for a reported message's other copies, keeps evidence with a hash-chained
+custody log, writes password-protected packs for a sandbox, and explains
+authentication in every report. Each new module was written test-first and
+then mutation-tested: the code was broken on purpose in every way that
+matters (a check skipped, an escape dropped, a limit lifted, a permission
+loosened) and the tests had to fail. All did, once three tests were added
+for the mutants that first survived. The diff was reviewed line by line; the
+regular-expression scan and the fuzzer were run over the new code, the
+fuzzer now also correlating, packing and deriving sweep searches from every
+mutated message; and every installed dependency and every commit were
+checked by pip-audit and gitleaks, which now run in CI.
+
+| # | Finding | Impact | Severity | Fix |
+|---|---|---|---|---|
+| 53 | **Paging never ended when an API kept offering empty pages.** `graph`, `gmail` and `sweep` followed `@odata.nextLink` or `nextPageToken` while they held fewer messages than asked for, so a listing offering empty page after empty page kept them asking for ever. Also in 2.1. Found by the review. | The command hangs; API quota spent | Medium | Every listing stops after 100 pages |
+| 54 | **`sweep` put any mailbox name into the request path.** A name such as `..` or `a/b` in a mailbox list would have addressed another resource of the API, with the token. Found by the review, before release. | A request with the token to the wrong API path | Low | A mailbox must be an address, a user id or a GUID; anything else is refused before a request is sent |
+| 55 | **The authentication-check pattern was quadratic** when searched from every position: over 60 s on 60,000 spaces. Triage only ever matched it at the start of one clause, so no message was slowed, but the pattern was fixed rather than relied on. Found by the ReDoS scan. | None in use | Low | Clauses are stripped and matched at their start |
+
 ## Tested and found safe
 
 | Attack | Result |
 |---|---|
 | Script injection in the HTML report (`<script>`, `onerror`) | Escaped; the report's Content-Security-Policy also blocks scripts and remote requests |
-| Spreadsheet formula injection in the CSV (`=HYPERLINK(...)`) | Every cell starting with `= + - @` or a control character is neutralised |
+| Spreadsheet formula injection in the CSV (`=HYPERLINK(...)`) | Every cell starting with `= + - @` or a control character is neutralised, in the indicator CSV and in the campaign and sweep CSVs |
+| Tampering with the custody log | A record edited, removed or reordered, and a kept message changed or deleted, are each reported by `evidence verify`. A planted file or a symlink under a message's name is refused; the log and every kept message are opened without following symlinks and must be regular files |
+| The sandbox pack | Every member encrypted; the names inside are fixed (`message.eml`, `files/<sha256>-<safe name>`, `urls.txt`, `manifest.json`) and can hold no path; written 0600 without following a symlink or blocking on a FIFO; at most 50 MB of files. Opened by Python's `zipfile` and Info-ZIP `unzip` |
+| Search injection in `sweep` | A Graph `$search` value cannot leave its quotes, and Graph's hits are checked against what was asked before they count; OData filter values double their quotes; Gmail phrases are quoted. Only GET requests, the token only to the API's host |
+| Hostile corpora for `campaign` | Weak traits shared by more than 200 messages are ignored, so pairing cannot grow without bound; 5,125 real messages correlate in 45 s, triage included |
+| Dependencies | pip-audit finds no known vulnerability in anything PhishHawk installs (requests, urllib3, idna, certifi, charset-normalizer, pillow, zxing-cpp); checked in CI on every change |
+| Secrets | gitleaks over every commit finds none; checked in CI on every change |
 | Regular-expression denial of service | All 125 patterns in the package (every literal, and every pattern built at import time) against 204 pathological strings of 60,000 characters each, every pattern searched from every position: worst 0.34 s, after the fixes above (#35, #41) |
 | Mutation fuzzing | Every reader and the pipeline, every report rendered each time, 2 GB memory limit. 2.0: 9.7 million runs in four rounds; the last, 3.6 million runs on 2.0's final code, found nothing. 2.1: more than 1.5 million runs in four more rounds, with the new readers added and the pipeline fuzzed as intended; the last, 378,597 runs on 2.1's final code, found nothing. All 32 findings of both releases are fixed and replay on the final code without error, the slowest in 1.2 s. Hypothesis property tests of the same targets run in CI |
 | Hostile charsets | 247 combinations of 19 hostile charset names and 13 header and body positions, through triage and every report: no errors |
@@ -149,5 +176,19 @@ already and were found once that was fixed.
 - **Python's email package is not written for hostile input.** Every issue
   found in it is worked around in [`mailpolicy.py`](../src/phishhawk/mailpolicy.py),
   and the fuzzer keeps looking for more.
+- **The custody log proves integrity and order, not authorship.** Someone who
+  can rewrite the whole log can recompute every link after a change. The
+  chain value in each report, copied into the ticket, is what pins the log as
+  it was then; keep the evidence folder where only the SOC can write.
+- **The sandbox pack's encryption is ZipCrypto**, which keeps the pack from
+  being opened or quarantined by accident, not from a determined reader. The
+  pack holds the message: treat it like the evidence it is.
+- **`sweep` sends search terms to your mail host**: the reported message's
+  addresses, subject, Message-ID and phishing domains, to Microsoft or Google,
+  which already hold the mail. Sweeping many Graph mailboxes needs an
+  application token with `Mail.Read` for all of them; scope it with an
+  application access policy.
+- **Clicks and opened attachments are not in a mailbox.** `sweep` reports
+  copies, read state and replies; who clicked is in your proxy and EDR logs.
 
 Report anything new privately: see [SECURITY.md](../SECURITY.md).

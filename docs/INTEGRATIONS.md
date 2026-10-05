@@ -258,6 +258,45 @@ Because users usually report the phish **as an attachment** (an `.eml`, or an
 `.msg` from Outlook's button), PhishHawk analyses the attached original and
 records who reported it in `reported_by`.
 
+## Scoping and response: campaigns, sweeps, evidence and sandboxes
+
+PhishHawk reads and reports; your mail platform, SOAR and EDR act. A typical
+incident runs like this:
+
+```bash
+CASE=/cases/4711
+phishhawk scan reported/ --quiet --evidence "$CASE" --sandbox "$CASE/sandbox" --json "$CASE/triage.json"
+phishhawk campaign reported/ --json "$CASE/campaigns.json" --md "$CASE/campaigns.md"
+phishhawk sweep graph --like reported/first.eml --mailboxes staff.txt --json "$CASE/copies.json"
+phishhawk evidence verify "$CASE"
+```
+
+- **Purge and block** with `copies.json` (each copy's mailbox and message id)
+  and `triage.json`'s `iocs[]`: a SOAR playbook can delete the copies through
+  Graph or the Gmail API with its own, separately approved, write permission.
+- **Who clicked** is not in a mailbox: search your proxy, DNS and EDR logs for
+  the domains and SHA-256 values in `iocs[]`.
+- **Detonate** with the pack in `$CASE/sandbox`: CAPE, Joe Sandbox, ANY.RUN
+  and Hybrid Analysis all accept a ZIP with the password `infected`, and
+  `urls.txt` inside lists the links to submit as URL tasks.
+- **Keep the chain of custody**: put `evidence verify`'s `head`, or each
+  report's `evidence.custody`, in the ticket.
+
+**Sweeping many Microsoft 365 mailboxes** needs an application (not delegated)
+token with the `Mail.Read` application permission. Grant it to an app
+registration and restrict it to the mailboxes you sweep with an
+[application access policy](https://learn.microsoft.com/graph/auth-limit-mailbox-access);
+`az account get-access-token --resource-type ms-graph` is enough for your own
+mailbox. **Gmail tokens belong to one mailbox**: with domain-wide delegation
+and the `gmail.readonly` scope, mint one per mailbox and run `sweep gmail
+--mailbox user@example.com` for each.
+
+```bash
+# exit 0: no other copy; 1: copies found; 3: a mailbox could not be searched
+phishhawk sweep graph --like "$EML" --mailboxes staff.txt --json - > copies.json
+case $? in 0) echo "contained" ;; 1) echo "purge $(jq .found copies.json) copies" ;; *) echo "sweep incomplete" ;; esac
+```
+
 ## Scheduled runs
 
 A script that triages each new file in a drop folder, keeps one HTML and CSV

@@ -7,6 +7,95 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-06
+
+PhishHawk now follows a phish past the first report: `phishhawk campaign`
+groups a folder of reports into campaigns by what they share, and
+`phishhawk sweep` finds the other copies of a reported message in Microsoft
+365 or Gmail mailboxes, with whether each was read or replied to. Every
+report names the exact bytes it analysed and explains, in sentences for a
+ticket, whether the sender's domain is authenticated. `--evidence` keeps
+each message with a hash-chained custody log, and `--sandbox` writes a
+password-protected pack for any sandbox. PhishHawk stays read-only and
+offline by default: nothing new is sent anywhere unless you run `sweep`,
+and that only to your own mail host. No verdict changed on the 5,373
+tuning messages; @@HELD@@
+
+### Added
+
+- **`phishhawk campaign PATH...`** groups reported messages into campaigns,
+  offline. Messages link by one strong trait (an attachment, a phishing
+  domain, link or host, a QR payload, a sender or reply-to address, a
+  wallet, a phone number) or two weak ones (a subject that differs only in
+  numbers, a display name, an originating IP), followed transitively. Each
+  campaign lists what links it, its recipients (blast radius), senders and
+  first and last sighting, in the terminal, JSON, CSV and Markdown.
+  Shared infrastructure never glues campaigns together: known brands and
+  your protected and allowed domains, shorteners, free-mail, bulk-mail
+  services and mail-gateway link rewrites, web plumbing (fonts, schemas,
+  CDNs), mailing lists' own links and embedded images; platforms whose
+  customers each get a host name (Cloud Run, registry zones such as
+  `sa.com`, help desks) link by that host; and web addresses link only
+  messages most of which were judged suspicious. On the 2,500 real phishing
+  messages of the tuning set the largest campaign is 86 messages, and mixed
+  with 2,625 legitimate ones no campaign mixes the two.
+- **`phishhawk sweep graph|gmail`** finds the other copies of a reported
+  message: `--like reported.eml` searches for its Message-ID, its sender and
+  reply-to addresses, its subject and the phishing domains it links to (or
+  give `--from`, `--subject`, `--domain`, `--message-id`), in the mailboxes
+  named by `--mailbox` or `--mailboxes FILE`. Each copy is listed with its
+  folder, whether it was read and whether the mailbox's owner replied in its
+  thread; JSON and CSV too. Read-only like `graph` and `gmail`: GET requests
+  only, the token from `PHISHHAWK_GRAPH_TOKEN` or `PHISHHAWK_GMAIL_TOKEN` and
+  only to the API's host. Graph's loose search results are checked against
+  what was asked before they count. Exit 1 when copies are found.
+- **An authentication block in every report**: pass, fail or unknown for the
+  domain the reader sees in From; which domain SPF, DKIM and DMARC each
+  vouched for and whether it is aligned with From; the Reply-To and
+  Return-Path organisations; and plain sentences to paste into a ticket
+  ("SPF passed for a bulk mailer's bounce domain: it vouches for the bounce
+  address, not the sender the reader sees"). The receiver's DMARC result
+  always wins. In JSON as `authentication` and, per check, `auth_checks`.
+  Explanation only: no signal or verdict changes.
+- **Evidence.** Every report names the SHA-256, SHA-1, MD5 and size of the
+  bytes it analysed (for a reported message, the report as it arrived), in
+  JSON as `evidence`. `--evidence DIR` keeps each message there, read-only and
+  named by its SHA-256, and appends a hash-chained record to
+  `DIR/custody.jsonl` (hashes, source, time, analyst, tool version, verdict);
+  the report carries the record's chain value. `phishhawk evidence verify DIR`
+  finds a record changed, removed or reordered and a kept message changed or
+  missing.
+- **`--sandbox DIR`** writes, per message, a ZIP for your sandbox: the message
+  as read, every file pulled out of it (archive members included), the links
+  to detonate and a manifest, every member encrypted with the password
+  `infected`. Nothing is sent anywhere.
+- **CI** audits every dependency PhishHawk installs with pip-audit and
+  searches every commit for secrets with gitleaks.
+
+### Fixed
+
+- Without `--psl`, every site under a country registry's second-level name
+  (`com.ar`, `gob.ar`, `co.th`, `ne.jp`, `or.at`, `gouv.fr` and the like) was
+  one organisation named after the registry: lookalike checks read
+  `paypal-login.com.ar` as `com`. Common registry names under a two-letter
+  country code are now suffixes. Found by campaign correlation.
+- Exchange Online's Authentication-Results header has no authserv-id; its
+  first check's domain is now read too.
+
+### Security
+
+Found by a fourth security review, mutation testing of every new module, a
+regular-expression scan and fuzzing; the full list is in
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) (#53 to #55).
+
+- `graph`, `gmail` (also in 2.1) and `sweep` kept paging for ever when an API
+  offered empty page after empty page: every listing stops after 100 pages.
+- `sweep` refuses a mailbox that is not an address, user id or GUID (`..`,
+  `a/b`) before anything is sent for it.
+- The new authentication-check pattern was quadratic when searched from
+  every position; clauses are now matched at their start.
+- @@FUZZ@@
+
 ## [2.1.0] - 2026-10-05
 
 PhishHawk now weighs independent evidence instead of counting high-severity

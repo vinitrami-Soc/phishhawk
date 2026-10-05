@@ -7,7 +7,8 @@ matter. Thank you for reporting them responsibly.
 
 | Version | Supported |
 |---|---|
-| 2.1.x | Yes |
+| 2.2.x | Yes |
+| 2.1.x | Upgrade: 2.2.0 stops `graph` and `gmail` paging for ever when an API keeps offering empty pages (#53 in [the security review](docs/SECURITY-REVIEW.md)) |
 | 2.0.x | No: upgrade, 2.1.0 fixes two crashes and a hang on hostile mail that 2.0 has (#32, #34 and #52 in [the security review](docs/SECURITY-REVIEW.md)) |
 | 1.x | No: upgrade, 2.0.0 fixes the issues in [the security review](docs/SECURITY-REVIEW.md) |
 | Earlier prototypes (`phishtriage`, the single-file extractor) | No |
