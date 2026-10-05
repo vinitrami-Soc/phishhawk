@@ -23,17 +23,17 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator
 
-from . import __version__, banner, config, evidence, extract, imapfetch, mailapi, yararules
+from . import __version__, banner, campaign, config, evidence, extract, imapfetch, mailapi, yararules
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
 from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
 from .pipeline import Options, triage_bytes
-from .report import console, csvout, html, markdown, misp, stix
+from .report import campaignout, console, csvout, html, markdown, misp, stix
 from .report.common import printable, to_dict
 
-COMMANDS = ("scan", "imap", "graph", "gmail", "evidence", "doctor", "cache", "techniques", "help")
+COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "evidence", "doctor", "cache", "techniques", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -110,6 +110,21 @@ Only GET requests are sent: each message is read in raw form, and nothing is
 marked read, moved or deleted. The token is read from $PHISHHAWK_GMAIL_TOKEN,
 never the command line."""
 
+CAMPAIGN_EPILOG = """\
+examples:
+  phishhawk campaign reported/                        which reports belong together
+  phishhawk campaign reported/ --md campaigns.md      a ticket note per campaign
+  phishhawk campaign a.mbox b.mbox --json - | jq '.clusters[0].recipients'
+
+Messages are linked by one strong trait (an attachment, a phishing domain or
+link, a QR payload, a sender or reply-to address, a wallet, a phone number)
+or two weak ones (a subject differing only in numbers, a display name, an
+originating IP), and links are followed: A-B and B-C make one campaign. Known
+brands, your protected and allowed domains, shorteners, free-mail and bulk-mail
+services never link at domain level. Nothing is looked up: correlation is
+offline. Recipients come from each message's To line (the original's, for a
+reported message)."""
+
 EVIDENCE_EPILOG = """\
 examples:
   phishhawk scan reported/ --evidence /cases/4711    keep each message and log its custody
@@ -171,24 +186,8 @@ def _display_options() -> _Parser:
     return common
 
 
-def _triage_options(command: argparse.ArgumentParser) -> None:
-    """Report, detection, enrichment and cache options shared by scan and imap."""
-    command.add_argument("--config", metavar="PATH",
-                         help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
-    out = command.add_argument_group("reports")
-    out.add_argument("--json", metavar="PATH", help="full structured report ('-' for stdout)")
-    out.add_argument("--html", metavar="PATH", help="self-contained HTML report for tickets and L2")
-    out.add_argument("--stix", metavar="PATH", help="STIX 2.1 bundle for OpenCTI and Sentinel ('-' for stdout)")
-    out.add_argument("--misp", metavar="PATH", help="MISP event JSON, one event per message ('-' for stdout)")
-    out.add_argument("--md", metavar="PATH", help="Markdown ticket note ('-' for stdout)")
-    out.add_argument("--csv", metavar="PATH", help="CSV indicator list for blocklists ('-' for stdout)")
-    out.add_argument("--tlp", choices=("clear", "green", "amber", "amber+strict", "red"),
-                     help="TLP tag for the MISP event (default amber)")
-    out.add_argument("-q", "--quiet", action="store_true", help="one summary block per message")
-    out.add_argument("-v", "--verbose", action="store_true", help="every signal, MD5 hashes and all actions")
-    out.add_argument("--fail-on", choices=("never", "suspicious", "likely", "malicious"),
-                     help="exit 0 unless a verdict reaches this level (for pipelines; default: exit codes below)")
-
+def _detection_options(command: argparse.ArgumentParser) -> None:
+    """How messages are read and judged; shared by the triage commands and campaign."""
     det = command.add_argument_group("detection")
     det.add_argument("-p", "--protect", action="append", default=[], metavar="DOMAIN",
                      help="your organisation's domain (repeatable); lookalikes of it are flagged "
@@ -215,6 +214,27 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     det.add_argument("--psl", metavar="FILE",
                      help="a copy of the Public Suffix List (public_suffix_list.dat from publicsuffix.org), used "
                           "instead of the built-in approximation (default $PHISHHAWK_PSL)")
+
+
+def _triage_options(command: argparse.ArgumentParser) -> None:
+    """Report, detection, enrichment and cache options shared by scan and imap."""
+    command.add_argument("--config", metavar="PATH",
+                         help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
+    out = command.add_argument_group("reports")
+    out.add_argument("--json", metavar="PATH", help="full structured report ('-' for stdout)")
+    out.add_argument("--html", metavar="PATH", help="self-contained HTML report for tickets and L2")
+    out.add_argument("--stix", metavar="PATH", help="STIX 2.1 bundle for OpenCTI and Sentinel ('-' for stdout)")
+    out.add_argument("--misp", metavar="PATH", help="MISP event JSON, one event per message ('-' for stdout)")
+    out.add_argument("--md", metavar="PATH", help="Markdown ticket note ('-' for stdout)")
+    out.add_argument("--csv", metavar="PATH", help="CSV indicator list for blocklists ('-' for stdout)")
+    out.add_argument("--tlp", choices=("clear", "green", "amber", "amber+strict", "red"),
+                     help="TLP tag for the MISP event (default amber)")
+    out.add_argument("-q", "--quiet", action="store_true", help="one summary block per message")
+    out.add_argument("-v", "--verbose", action="store_true", help="every signal, MD5 hashes and all actions")
+    out.add_argument("--fail-on", choices=("never", "suspicious", "likely", "malicious"),
+                     help="exit 0 unless a verdict reaches this level (for pipelines; default: exit codes below)")
+
+    _detection_options(command)
 
     enr = command.add_argument_group("enrichment")
     enr.add_argument("-o", "--offline", action="store_true", help="no network access at all")
@@ -316,6 +336,26 @@ def build_parser() -> _Parser:
         box.add_argument("--watch", type=_seconds, default=0, metavar="SECONDS",
                          help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
         _triage_options(api)
+
+    camp = commands.add_parser(
+        "campaign", parents=[display], formatter_class=_Formatter, epilog=CAMPAIGN_EPILOG,
+        help="group reported messages into campaigns by what they share, offline",
+        description="Group reported messages that share attachments, phishing domains, links, QR payloads, "
+                    "senders or other traits into campaigns, with who received them and when. Offline: "
+                    "nothing is looked up.")
+    camp.add_argument("inputs", nargs="+", metavar="PATH",
+                      help=".eml, .msg or .mbox files, directories (searched recursively) or '-' for stdin")
+    camp.add_argument("--config", metavar="PATH",
+                      help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
+    camp_out = camp.add_argument_group("reports")
+    camp_out.add_argument("--json", metavar="PATH",
+                          help="campaigns, what links them and their messages ('-' for stdout)")
+    camp_out.add_argument("--csv", metavar="PATH", help="one row per message with its campaign ('-' for stdout)")
+    camp_out.add_argument("--md", metavar="PATH", help="Markdown note per campaign ('-' for stdout)")
+    camp_out.add_argument("--min-size", type=int, default=2, metavar="N",
+                          help="smallest group reported as a campaign (default 2)")
+    _detection_options(camp)
+    camp.set_defaults(offline=True, vt_rate=None, vt_budget=None, fail_on=None, tlp=None)
 
     kept = commands.add_parser(
         "evidence", parents=[display], formatter_class=_Formatter, epilog=EVIDENCE_EPILOG,
@@ -922,6 +962,53 @@ def cmd_techniques(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_campaign(args: argparse.Namespace, parser: _Parser) -> int:
+    command = parser.commands["campaign"]
+    outputs = {"json": args.json, "csv": args.csv, "md": args.md}
+    if list(outputs.values()).count("-") > 1:
+        command.error("only one report can go to stdout ('-')")
+    if args.min_size < 2:
+        command.error("--min-size must be 2 or more")
+    colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
+    err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    try:
+        options, _ = _settings(args, lambda message: print(err("[!] %s" % printable(message), "red"),
+                                                           file=sys.stderr))
+    except (config.ConfigError, yararules.YaraError):
+        return EXIT_ERROR
+    items: list[tuple[str, Analysis]] = []
+    failed = False
+    for path, data in iter_messages(expand_inputs(args.inputs), args.max_size * 1024 * 1024):
+        label = "<stdin>" if path == "-" else path
+        try:
+            if isinstance(data, Exception):
+                raise data
+            items.append((label, triage_bytes(data, label, options, None)))
+        except FileNotFoundError:
+            print(err("[!] %s: file not found" % printable(path), "red"), file=sys.stderr)
+            failed = True
+        except Exception as exc:  # one malformed mail must not stop the correlation
+            print(err("[!] %s: could not analyse (%s: %s)" % (printable(path), type(exc).__name__,
+                                                              printable(str(exc))), "red"), file=sys.stderr)
+            failed = True
+    result = campaign.correlate(items, args.min_size)
+    if "-" not in outputs.values():
+        print(campaignout.render_console(result, colour))
+    renderers = {"json": lambda: json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                 "csv": lambda: campaignout.render_csv(result), "md": lambda: campaignout.render_markdown(result)}
+    for kind, path in outputs.items():
+        if not path:
+            continue
+        try:
+            _write(path, renderers[kind]())
+            if path != "-":
+                print(err("[i] %s written to %s" % (kind.upper(), path), "dim"), file=sys.stderr)
+        except OSError as exc:
+            print(err("[!] could not write %s: %s" % (path, exc), "red"), file=sys.stderr)
+            failed = True
+    return EXIT_ERROR if failed else 0
+
+
 def cmd_evidence(args: argparse.Namespace) -> int:
     colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
     result = evidence.verify(args.directory)
@@ -963,6 +1050,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_imap(args, parser)
     if args.command in ("graph", "gmail"):
         return cmd_mail_api(args, parser)
+    if args.command == "campaign":
+        return cmd_campaign(args, parser)
     if args.command == "evidence":
         return cmd_evidence(args)
     if args.command == "doctor":
