@@ -1142,6 +1142,8 @@ def cmd_sweep(args: argparse.Namespace, parser: _Parser) -> int:
         except OSError as exc:
             command.error("--mailboxes: %s" % exc)
     mailboxes = list(dict.fromkeys(mailboxes or ["me"]))
+    if len(mailboxes) > sweep.MAX_MAILBOXES:
+        command.error("--mailboxes: at most %d mailboxes per sweep; split the list" % sweep.MAX_MAILBOXES)
     search = sweep.sweep_graph if args.service == "graph" else sweep.sweep_gmail
     try:
         boxes = search(token, mailboxes, criteria, since=since, limit=args.limit, timeout=args.timeout)
@@ -1157,7 +1159,7 @@ def cmd_sweep(args: argparse.Namespace, parser: _Parser) -> int:
         print(sweepout.render_console(result, colour))
     renderers = {"json": lambda: json.dumps(result, indent=2, ensure_ascii=False) + "\n",
                  "csv": lambda: sweepout.render_csv(result)}
-    failed = bool(count["errors"])
+    failed = bool(count["errors"] or count["incomplete"])
     for kind, path in outputs.items():
         if not path:
             continue

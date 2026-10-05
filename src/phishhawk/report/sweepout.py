@@ -28,7 +28,8 @@ def totals(result: dict[str, Any]) -> dict[str, int]:
     matches = [m for box in result["mailboxes"] for m in box["matches"]]
     return {"copies": len(matches), "mailboxes": sum(1 for box in result["mailboxes"] if box["matches"]),
             "unread": sum(1 for m in matches if not m["read"]), "replied": sum(1 for m in matches if m["replied"]),
-            "errors": sum(1 for box in result["mailboxes"] if box["error"])}
+            "errors": sum(1 for box in result["mailboxes"] if box["error"]),
+            "incomplete": sum(1 for box in result["mailboxes"] if box.get("warnings"))}
 
 
 def render_console(result: dict[str, Any], colour: Palette) -> str:
@@ -41,9 +42,11 @@ def render_console(result: dict[str, Any], colour: Palette) -> str:
         if box["error"]:
             out.append(colour("  %s: %s" % (printable(box["mailbox"]), printable(box["error"])), "red"))
             continue
-        if not box["matches"]:
+        if not box["matches"] and not box.get("warnings"):
             continue
         out += ["", colour("  %s" % printable(box["mailbox"]), "cyan")]
+        out += [colour("    incomplete: %s" % printable(warning)[:200], "amber")
+                for warning in box.get("warnings", [])]
         for m in box["matches"]:
             state = colour("unread", "amber") if not m["read"] else "read"
             replied = colour("  REPLIED", "red") if m["replied"] else ""

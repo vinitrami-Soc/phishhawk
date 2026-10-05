@@ -6,6 +6,7 @@ API's own host, and every value an attacker wrote is treated as data."""
 
 import json
 
+import pytest
 import requests
 
 from phishhawk import sweep
@@ -52,7 +53,8 @@ def _graph_routes(base):
         (base + "/mailFolders/f-inbox", ()): Response(payload={"id": "f-inbox", "displayName": "Inbox"}),
         (base + "/mailFolders/f-junk", ()): Response(payload={"id": "f-junk", "displayName": "Junk Email"}),
         (base + "/mailFolders/sentitems/messages", (("$filter", "conversationId eq 'conv-1'"),)):
-            Response(payload={"value": [{"id": "sent-1"}]}),
+            Response(payload={"value": [{"id": "sent-1", "toRecipients": [
+                {"emailAddress": {"address": "alerts@m1crosoft-security.top"}}]}]}),
         (base + "/mailFolders/sentitems/messages", (("$filter", "conversationId eq 'conv-2'"),)):
             Response(payload={"value": []}),
     }
@@ -143,9 +145,10 @@ def _gmail_routes(base):
             Response(payload={"messages": [{"id": "m1", "threadId": "t1"}]}),
         (base + "/messages", ()): Response(payload={}),
         (base + "/messages/m1", (("format", "metadata"),)): Response(payload=meta),
-        (base + "/threads/t1", (("format", "minimal"),)):
+        (base + "/threads/t1", (("format", "metadata"),)):
             Response(payload={"messages": [{"id": "m1", "labelIds": ["SPAM"]},
-                                           {"id": "m2", "labelIds": ["SENT"]}]}),
+                                           {"id": "m2", "labelIds": ["SENT"], "payload": {"headers": [
+                                               {"name": "To", "value": "alerts@m1crosoft-security.top"}]}}]}),
     }
 
 
@@ -244,3 +247,178 @@ def test_a_mailbox_that_is_not_an_address_or_id_is_refused_unsent():
     boxes = sweep.sweep_graph("t0k3n", ["..", "a/b", "alice@corp.example"], criteria, session=api)
     assert [bool(box["error"]) for box in boxes] == [True, True, False]
     assert all("/users/alice@corp.example/" in url for _, url, *_ in api.calls)
+
+
+# ------------------------------------------------- 2.2 independent review --
+
+def test_a_platform_customer_is_searched_by_host_never_by_the_platform():
+    shop = build_eml(subject="Your order is on hold", sender="<orders@evil-store.myshopify.com>",
+                     text="Pay now: https://evil-store.myshopify.com/pay and https://pay.x.co.com/now")
+    c = sweep.criteria_from(triage_bytes(shop, "r.eml"))
+    assert "myshopify.com" not in c.domains and "co.com" not in c.domains
+    assert "evil-store.myshopify.com" in c.domains
+
+
+def test_graph_domain_hits_must_name_the_domain_itself():
+    base = GRAPH + "/users/alice@corp.example"
+
+    def item(i, body):
+        message = _graph_message(i, conversation="c%d" % i)
+        message["internetMessageId"] = "<other.%d@corp.example>" % i
+        message["from"] = {"emailAddress": {"address": "someone@corp.example"}}
+        message["subject"] = "Unrelated %d" % i
+        message["body"] = {"content": body}
+        return message
+    bodies = ["<a href='https://login.evil.example/x'>go</a>", "visit notevil.example today",
+              "evil.example.attacker.net is not it", "EVIL.EXAMPLE in capitals"]
+    routes = {(base + "/messages", (("$search", '"body:evil.example"'),)):
+              Response(payload={"value": [item(i, b) for i, b in enumerate(bodies)]})}
+    routes.update(_empty_search(base))
+    criteria = sweep.Criteria(domains=["evil.example"])
+    [box] = sweep.sweep_graph("t0k3n", ["alice@corp.example"], criteria, session=Api(routes))
+    assert sorted(m["subject"] for m in box["matches"]) == ["Unrelated 0", "Unrelated 3"]
+
+
+def test_one_failing_search_keeps_the_rest_of_the_mailbox():
+    base = GRAPH + "/users/alice@corp.example"
+    routes = {(base + "/messages", (("$search", '"Unusual sign-in activity on your account"'),)):
+              Response(400, {"error": {"code": "BadRequest"}})}
+    routes.update(_graph_routes(base))
+    routes.update(_empty_search(base))
+    [box] = sweep.sweep_graph("t0k3n", ["alice@corp.example"], _criteria(), session=Api(routes))
+    assert box["error"] == "" and len(box["matches"]) == 2
+    assert any("subject" in warning and "BadRequest" in warning for warning in box["warnings"])
+
+
+def test_a_gmail_copy_deleted_during_the_sweep_is_skipped_not_fatal():
+    base = GMAIL + "/users/me"
+    routes = _gmail_routes(base)
+    routes[(base + "/messages", (("q", "in:anywhere from:alerts@m1crosoft-security.top"),))] = Response(
+        payload={"messages": [{"id": "gone", "threadId": "t9"}, {"id": "m1", "threadId": "t1"}]})
+    [box] = sweep.sweep_gmail("t0k3n", ["me"], _criteria(), session=Api(routes))
+    assert [m["id"] for m in box["matches"]] == ["m1"] and box["error"] == ""
+
+
+def test_a_forward_to_the_soc_is_not_a_reply_to_the_attacker():
+    base = GRAPH + "/users/alice@corp.example"
+    routes = _graph_routes(base)
+    sent = {"id": "s1", "toRecipients": [{"emailAddress": {"address": "soc@corp.example"}}], "ccRecipients": []}
+    routes[(base + "/mailFolders/sentitems/messages", (("$filter", "conversationId eq 'conv-1'"),))] = Response(
+        payload={"value": [sent]})
+    routes.update(_empty_search(base))
+    [box] = sweep.sweep_graph("t0k3n", ["alice@corp.example"], _criteria(), session=Api(routes))
+    assert [m["replied"] for m in box["matches"]] == [False, False]
+
+
+def test_a_reply_to_the_attackers_reply_to_address_counts():
+    base = GRAPH + "/users/alice@corp.example"
+    routes = _graph_routes(base)
+    hit = _graph_message(1)
+    hit["replyTo"] = [{"emailAddress": {"address": "collect@payout-desk.top"}}]
+    routes[(base + "/messages", (("$search", '"from:alerts@m1crosoft-security.top"'),))] = Response(
+        payload={"value": [hit]})
+    sent = {"id": "s1", "toRecipients": [{"emailAddress": {"address": "Collect@Payout-Desk.top"}}]}
+    routes[(base + "/mailFolders/sentitems/messages", (("$filter", "conversationId eq 'conv-1'"),))] = Response(
+        payload={"value": [sent]})
+    routes.update(_empty_search(base))
+    [box] = sweep.sweep_graph("t0k3n", ["alice@corp.example"], _criteria(), session=Api(routes))
+    assert box["matches"][0]["replied"] is True
+
+
+def test_gmail_replies_are_judged_by_who_they_went_to():
+    base = GMAIL + "/users/me"
+    routes = _gmail_routes(base)
+    thread = {"messages": [{"id": "m1", "labelIds": ["SPAM"]},
+                           {"id": "m2", "labelIds": ["SENT"],
+                            "payload": {"headers": [{"name": "To", "value": "SOC <soc@corp.example>"}]}}]}
+    routes[(base + "/threads/t1", (("format", "metadata"),))] = Response(payload=thread)
+    [box] = sweep.sweep_gmail("t0k3n", ["me"], _criteria(), session=Api(routes))
+    assert box["matches"][0]["replied"] is False
+    assert box["matches"][0]["from"] == "alerts@m1crosoft-security.top"  # the address, as Graph gives it
+
+
+def test_gmail_domain_hits_say_they_were_not_checked_again():
+    base = GMAIL + "/users/me"
+    routes = {(base + "/messages", (("q", 'in:anywhere "m1crosoft-security.top"'),)): Response(
+        payload={"messages": [{"id": "m1", "threadId": "t1"}]})}
+    routes.update(_gmail_routes(base))
+    [box] = sweep.sweep_gmail("t0k3n", ["me"], sweep.Criteria(domains=["m1crosoft-security.top"]),
+                              session=Api(routes))
+    assert box["matches"][0]["matched"] == ["domain m1crosoft-security.top (Gmail's search, not checked again)"]
+
+
+def test_answers_of_the_wrong_shape_are_an_error_not_a_crash():
+    base = GRAPH + "/users/alice@corp.example"
+    odd = [{"value": 5}, {"value": [{"id": "x", "from": "a string", "body": 7, "receivedDateTime": 3}]},
+           {"value": [{"id": "y", "from": {"emailAddress": "nope"}, "replyTo": "x"}]}]
+    for payload in odd:
+        routes = {(base + "/messages", ()): Response(payload=payload),
+                  (base + "/mailFolders/sentitems/messages", ()): Response(payload={"value": "x"})}
+        [box] = sweep.sweep_graph("t0k3n", ["alice@corp.example"], _criteria(), session=Api(routes))
+        assert isinstance(box["matches"], list)
+    gbase = GMAIL + "/users/me"
+    weird = {(gbase + "/messages", ()): Response(payload={"messages": [{"id": "m1"}]}),
+             (gbase + "/messages/m1", ()): Response(payload={"payload": "x", "labelIds": "UNREAD",
+                                                             "internalDate": "soon"})}
+    [box] = sweep.sweep_gmail("t0k3n", ["me"], _criteria(), session=Api(weird))
+    assert isinstance(box["matches"], list)
+
+
+def test_graph_times_with_seven_fraction_digits_are_read():
+    assert sweep._iso("2026-10-05T08:00:00.1234567Z") == "2026-10-05T08:00:00Z"
+    assert sweep._iso("2026-10-05T08:00:00.5Z") == "2026-10-05T08:00:00Z"
+
+
+def test_search_words_cannot_act_as_operators_and_lengths_are_capped():
+    criteria = sweep.Criteria(subjects=["NOT a test OR x AND y " + "z" * 600], senders=["a" * 400 + "@x.example"])
+    api = Api({(GRAPH + "/me/messages", ()): Response(payload={"value": []})})
+    sweep.sweep_graph("t0k3n", ["me"], criteria, session=api)
+    searches = [params["$search"] for _, _, params, _ in api.calls if "$search" in params]
+    assert searches and all(" OR " not in s and " AND " not in s and "NOT " not in s for s in searches)
+    assert all(len(s) <= sweep.MAX_TERM + 10 for s in searches)
+
+
+def test_lookups_past_the_cap_are_said_not_dropped_silently(monkeypatch):
+    monkeypatch.setattr(sweep, "MAX_LOOKUPS", 1)
+    base = GRAPH + "/users/alice@corp.example"
+    routes = _graph_routes(base)
+    routes.update(_empty_search(base))
+    [box] = sweep.sweep_graph("t0k3n", ["alice@corp.example"], _criteria(), session=Api(routes))
+    assert any("folder" in w and "first 1" in w for w in box["warnings"])
+
+
+def test_an_incomplete_sweep_exits_3(monkeypatch, tmp_path, capsys):
+    base = GRAPH + "/users/alice@corp.example"
+    routes = {(base + "/messages", (("$search", '"from:x@evil.example"'),)): Response(429, {})}
+    routes.update(_empty_search(base))
+    monkeypatch.setattr(requests, "Session", lambda: Api(routes))
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
+    assert main(["sweep", "graph", "--from", "x@evil.example", "--mailbox", "alice@corp.example",
+                 "--no-color"]) == 3
+    assert "throttling" in capsys.readouterr().out
+
+
+def test_a_partly_failed_mailbox_is_shown_and_exits_3(monkeypatch, tmp_path, capsys):
+    reported = tmp_path / "reported.eml"
+    reported.write_bytes(PHISH)
+    base = GRAPH + "/users/alice@corp.example"
+    routes = {(base + "/messages", (("$search", '"Unusual sign-in activity on your account"'),)):
+              Response(429, {})}
+    routes.update(_graph_routes(base))
+    routes.update(_empty_search(base))
+    monkeypatch.setattr(requests, "Session", lambda: Api(routes))
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
+    assert main(["sweep", "graph", "--like", str(reported), "--mailbox", "alice@corp.example", "--no-color"]) == 3
+    out = capsys.readouterr().out
+    assert "throttling" in out and "2 copies" in out
+
+
+def test_too_many_mailboxes_are_refused_not_cut_silently(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(sweep, "MAX_MAILBOXES", 2)
+    boxes = tmp_path / "boxes.txt"
+    boxes.write_text("a@corp.example\nb@corp.example\nc@corp.example\n")
+    monkeypatch.setattr(requests, "Session", lambda: Api({}))
+    monkeypatch.setenv("PHISHHAWK_GRAPH_TOKEN", "t0k3n")
+    with pytest.raises(SystemExit):
+        main(["sweep", "graph", "--from", "x@evil.example", "--mailboxes", str(boxes)])
+    assert "at most 2 mailboxes" in capsys.readouterr().err

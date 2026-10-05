@@ -33,6 +33,10 @@ class MailApiError(Exception):
     pass
 
 
+class NotFound(MailApiError):
+    """HTTP 404: the mailbox, folder or message is not (or no longer) there."""
+
+
 @dataclass
 class ApiSource:
     token: str
@@ -68,7 +72,7 @@ class _Client:
             raise MailApiError("%s refused the token (HTTP %d): it needs %s"
                                % (self.service, status, PERMISSION[self.service]))
         if status == 404:
-            raise MailApiError("%s: nothing at %s" % (self.service, url))
+            raise NotFound("%s: nothing at %s" % (self.service, url))
         if status == 429:
             raise MailApiError("%s is throttling requests: try again later" % self.service)
         if status >= 400:
