@@ -61,7 +61,7 @@ report; `report_version` stays `2.0`.
   exchanges (OKX, Bitget, Bitpanda, Crypto.com) and national post offices. Lure
   phrases in Dutch and Italian, and more in German, Portuguese, Spanish and
   French (268 phrases in seven languages).
-- 527 tests (2.0: 403), including one for every finding of the security and
+- 528 tests (2.0: 403), including one for every finding of the security and
   code reviews that fails on the old code, and `phishhawk doctor` reports the
   Public Suffix List in use.
 
@@ -125,7 +125,9 @@ the new readers; the full list is in
 - Three quadratic patterns, new in this release, are linear (one only with
   `--psl`).
 - The fuzzer itself sent most mail to the wrong reader in 2.0; it now fuzzes
-  the pipeline as intended, and @@FUZZ@@
+  the pipeline as intended. More than 1.5 million runs in four rounds over the
+  new readers and the whole pipeline found #32 to #34 and #52; the last round,
+  378,597 runs on the final code, found nothing.
 
 ## [2.0.0] - 2026-09-30
 

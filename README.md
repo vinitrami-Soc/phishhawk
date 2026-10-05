@@ -42,7 +42,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-kpis-dark.svg">
-  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 81.3% of 5,714 unseen real phishing emails flagged, up from 79.9% in 2.0. 46.9% of the same emails called likely phishing, up from 30.5% in 2.0. 0.8% false positives: 46 of 5,945 held-out real legitimate emails, down from 0.9% in 2.0. 527 automated tests, up from 403 in 2.0.">
+  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 81.3% of 5,714 unseen real phishing emails flagged, up from 79.9% in 2.0. 46.9% of the same emails called likely phishing, up from 30.5% in 2.0. 0.8% false positives: 46 of 5,945 held-out real legitimate emails, down from 0.9% in 2.0. 528 automated tests, up from 403 in 2.0.">
 </picture>
 
 <sub>Measured offline, with no reputation lookups, on held-out real mail scored once after all tuning: 5,714
@@ -625,8 +625,8 @@ works in memory with caps: 400 files and 200 MB per message, 256 MB for
 everything its archives and disk images decompress or read, 200 members and
 100 MB per archive, 25 MB per file, 20 MB of inflated PDF streams, and a read
 budget per file so that entries pointing at the same bytes cannot multiply
-them. The readers were fuzzed for 9.7 million runs, and every crash, hang and
-memory blow-up found was fixed ([the security review](docs/SECURITY-REVIEW.md)).
+them. The readers were fuzzed for more than 11 million runs, and every crash,
+hang and memory blow-up found was fixed ([the security review](docs/SECURITY-REVIEW.md)).
 For extra isolation, use the Docker image with `--network none` and a read-only mount.
 </details>
 
@@ -688,7 +688,7 @@ phishhawk/
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              527 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
+├── tests/              528 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
 │                       and the evaluation gate
 ├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetchers, results.json
@@ -706,7 +706,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 527 tests, offline, under a minute
+pytest                                       # 528 tests, offline, under a minute
 ruff check src tests samples eval tools phishhawk
 mypy                                         # the package is fully typed
 coverage run -m pytest && coverage report    # CI requires 85%

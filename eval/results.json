@@ -666,8 +666,8 @@
     "median_parse_ms_2_0_0": 6.0,
     "worst_case_parse_seconds_2_0_0": 1.102,
     "emails_2_0_0": 19511,
-    "synthetic_strict_recall_2_0_0": 0.7157,
+    "synthetic_strict_recall_2_0_0": 0.6471,
     "tests_2_0_0": 403
   },
-  "tests": 527
+  "tests": 528
 }
