@@ -32,19 +32,29 @@ def printable(text: str) -> str:
     return _BIDI_RE.sub(lambda m: "<U+%04X>" % ord(m.group()), text)
 
 
-def display_copy(value: Any) -> Any:
-    """A copy of an analysis (or any part of one) with every string printable."""
+def display_copy(value: Any, _copies: dict[int, Any] | None = None) -> Any:
+    """A copy of an analysis (or any part of one) with every string printable.
+    Each object is copied once, and the links that are not fields (a file's
+    parent, see children_of) point at the copies, as in the original."""
+    copies = {} if _copies is None else _copies
     if isinstance(value, str):
         return printable(value)
     if isinstance(value, list):
-        return [display_copy(item) for item in value]
+        return [display_copy(item, copies) for item in value]
     if isinstance(value, tuple):
-        return tuple(display_copy(item) for item in value)
+        return tuple(display_copy(item, copies) for item in value)
     if isinstance(value, dict):
-        return {display_copy(key): display_copy(item) for key, item in value.items()}
+        return {display_copy(key, copies): display_copy(item, copies) for key, item in value.items()}
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return dataclasses.replace(value, **{f.name: display_copy(getattr(value, f.name))
-                                             for f in dataclasses.fields(value) if f.init})
+        if id(value) in copies:
+            return copies[id(value)]
+        fields = [f.name for f in dataclasses.fields(value) if f.init]
+        copy = dataclasses.replace(value, **{name: display_copy(getattr(value, name), copies) for name in fields})
+        copies[id(value)] = copy
+        for name, extra in value.__dict__.items():
+            if name.startswith("_") and name not in fields:
+                copy.__dict__[name] = display_copy(extra, copies)
+        return copy
     return value
 
 
@@ -131,7 +141,14 @@ def top_level_files(analysis: Analysis) -> list[FileIoc]:
 
 
 def children_of(analysis: Analysis, parent: FileIoc) -> list[FileIoc]:
-    return [f for f in analysis.attachments if f.parent == parent.filename and f is not parent]
+    """The files opened out of `parent`. Names repeat (every message attached
+    to a message is "attached-message.eml"), so a file the inspector opened
+    names its parent object; for others, the name decides. A child always
+    comes after its parent, so no file can be its own descendant."""
+    files = analysis.attachments
+    start = next((index for index, f in enumerate(files) if f is parent), len(files)) + 1
+    return [f for f in files[start:]
+            if f.parent == parent.filename and f.__dict__.get("_parent_file", parent) is parent]
 
 
 def unopened_members(analysis: Analysis, parent: FileIoc) -> list[str]:

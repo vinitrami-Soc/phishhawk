@@ -2,10 +2,11 @@
 
 PhishHawk reads hostile input for a living, so it was tested the way a
 bug-bounty hunter would test it: as a target, not as a detector. It was tested
-twice before 2.0.0: once against 1.2.0, and again after 2.0 added a dozen
-file-format readers of its own. Every finding below was reproduced, fixed, and
-turned into a test in [`tests/test_security.py`](../tests/test_security.py)
-that fails on the old code.
+twice before 2.0.0, once against 1.2.0 and again after 2.0 added a dozen
+file-format readers of its own, and a third time before 2.1.0, which added
+7z decompression, virtual disks and NTFS, and two mail APIs. Every finding
+below was reproduced, fixed, and turned into a test that fails on the old code
+(most in [`tests/test_security.py`](../tests/test_security.py)).
 
 ## Threat model
 
@@ -64,16 +65,54 @@ report rendered, under a 2 GB memory limit), by a ReDoS scan, and by running
 | 28 | **A dropped IMAP connection** during `SELECT` or `SEARCH` raised `imaplib`'s abort out of the command, ending a `--watch` run. | Monitoring stops | Low | Reported as an error; `--watch` retries on the next round |
 | 29 | **The address search in base64 bodies** retried up to 64 characters from every position: 1.7 s for one real 2 MB phish. | Slow triage | Low | Matches start only where a run of address characters starts: 0.3 s |
 
+## Round 3: the 2.1 readers and mail APIs attacked (fixed before release)
+
+2.1 decompresses 7z members, reads RAR's stored members, opens VHD and VHDX
+disks down to their FAT and NTFS volumes, reads mailboxes through Microsoft
+Graph and the Gmail API, and loads a Public Suffix List. The branch was
+reviewed line by line, then by an independent reviewer given only the diff
+and the requirements, and the fuzzer was given the new readers. Fixing the
+fuzzer itself came first: in 2.0 it sent most mail seeds to the compound-file
+reader instead of the pipeline, so the pipeline was fuzzed less than its run
+count suggested. Three of the findings below (#32, #34 and #52) were in 2.0
+already and were found once that was fixed.
+
+| # | Finding | Impact | Severity | Fix |
+|---|---|---|---|---|
+| 30 | **A virtual disk's file contents were budgeted per partition.** Sixteen GPT entries can name one NTFS volume, and a file made of holes reads as zeros without touching the disk, so a small `.vhdx` could hand over 1.6 GB of zeros. | Memory exhaustion | Medium | One content budget for the whole disk, holes included |
+| 31 | **A damaged volume hid the others.** An error in any partition made the whole disk "unreadable", so a payload in partition 1 went uninspected behind a broken partition 2. The disk itself was still flagged. | A missed payload | Medium | Each volume is read on its own; the disk is unreadable only when no volume could be read |
+| 32 | **Attached messages sharing a name looped the reports.** Files were linked to their parent by name, and every attached message is called `attached-message.eml`, so two of them became each other's child: the console and HTML reports recursed until Python gave up. Found by the fuzzer. | No report for the message | High | Each file records the object that opened it; a child always comes after its parent |
+| 33 | **The reports' printable copy lost those links**, so siblings fell back to name matching and every one became the parent of the next: twelve siblings drew 2^11 rows, and a fuzzed message with 400 of them ran the HTML report out of memory. Found by the fuzzer. | No report; memory exhaustion | High | The copy keeps non-field attributes, copies each object once, and points copied links at the copies |
+| 34 | **A Received date with a year too large for C** raised `OverflowError` (not `ValueError`) out of the date parser and ended the analysis. Found by the fuzzer. | The phish is reported as an error | High | The date is ignored |
+| 35 | **Grouping weak findings by kind was quadratic.** The label normaliser's `\S+\[\.\]\S+` pattern took 44 s on a 200 kB label. | Slow triage | Medium | Linear replacements with identical output on every label of the evaluation scans |
+| 36 | **`--watch` dropped a throttled message.** A message Graph or Gmail answered with HTTP 429 was marked as seen and never asked for again. | A reported phish never triaged | Medium | Only messages that were read, or skipped for good (too big, undecodable), are marked as seen |
+| 37 | **`--out` report names could collide.** Graph message ids contain `/`, `+` and `=` and differ by case; made file-safe, or on a disk that ignores case, two ids shared one file name and one report overwrote the other. | A lost report | Low | Ids that are not plain lowercase get a hash of the full id in the name |
+| 38 | **A 7z member whose data the archive does not hold** was handed on as an empty file. | A misleading result | Low | It is listed as unread |
+| 39 | **Unicode host names missed the Public Suffix List**, whose rules are kept in ASCII: `shishi.公司.cn` gave `公司.cn`. Three of the list's 52 official test vectors failed. | Wrong registrable domain with `--psl` | Low | Hosts are matched through their ASCII form and given back as they came; all 52 vectors pass |
+| 40 | **A carrier email's findings lost their family** when copied to the reported message, so they could not corroborate. | A weaker verdict | Low | The family is copied too |
+| 41 | **The new quoted-From pattern backtracked quadratically.** Two whitespace runs back to back split a long run of spaces every possible way before failing: 11 s for 50,000 spaces. Found by the regular-expression scan. | Slow triage | Medium | One whitespace run, anchored on the quote |
+| 42 | **A 7z folder declaring 0 bytes inflated without limit.** zlib reads a `max_length` of 0 as "no limit", so a Deflate folder that declared no output decompressed everything: 300 MB from a 305 kB archive. Found by an independent review. | Memory exhaustion | High | Nothing is decoded for a folder that declares no output |
+| 43 | **7z output was charged only when it decoded, and per section.** Folders that broke off just before their end decompressed for free, and each repeated stream section got the whole budget again: 10,000 such folders, or one section repeated 170,000 times, meant minutes to hours of CPU. Found by the review. | CPU exhaustion | High | A folder is paid for before it is decoded; header sections must come once and in order, as 7-Zip reads them |
+| 44 | **Containers were budgeted one at a time.** Each 7z had a fresh 64 MB and each virtual disk 256 MB, never counted when the output was thrown away, so a message of many small ones could cost gigabytes. Found by the review. | CPU and memory exhaustion | Medium | One 256 MB budget for everything a message's archives and disk images decompress or read; once spent, further containers are noted and not opened |
+| 45 | **A RAR5 extra area could reach back before its header**, so each of 4,000 headers re-read the archive: quadratic, about 800 s for 1 MB. Found by the review. | CPU exhaustion | High | The extra area must lie inside its own header |
+| 46 | **With `--psl`, a host's lookup was quadratic in its labels**: 0.26 s for one 4,000-label host, 5 s for a message with five such links. Found by the review. | Slow triage | Medium | Only as many labels as the longest rule can match are looked at |
+| 47 | **One torn NTFS file record hid its whole volume**, so the shortcut next to it was never inspected, though Windows would mount the volume. Found by the review. | A missed payload | Medium | A damaged record is skipped; sparse files, 4K-sector disks and NTFS on 4096-byte sectors are read too |
+| 48 | **A download that broke off** raised out of `graph` and `gmail` with a traceback and ended `--watch`. Found by the review. | Monitoring stops | Medium | The message is skipped and asked for again next round |
+| 49 | **A token with a space or control character** made `requests` refuse the header with an error that quoted it, and the error was printed. Found by the review. | The token in the terminal or a log | Medium | Refused before any request, without being echoed |
+| 50 | **`--watch` walked back through the mailbox**, triaging older mail each round when nothing new came, contrary to its help. Found by the review. | Old mail re-triaged; API quota spent | Low | Each round looks at the newest `--limit` messages only |
+| 51 | **`graph --unread` alone** sent a filter that Graph refuses next to its sort (InefficientFilter). Found by the review. | The command fails | Low | The filter starts with the date; API errors name their code |
+| 52 | **A long MIME parameter name hung Python's email library.** Writing a part back out (to read the text of a multipart part with no usable boundary) refolds its headers, and Python's folder never finds a split point for a parameter whose name is longer than a line: `_fold_mime_parameters` loops for ever. Recent Python patch releases refold every non-ASCII header even with `refold_source="none"`, so `Content-Type: multipart/mixed; boundar<100 NULs>y="\xc5..."` with an empty body hung the analysis. Also in 2.0. Found by the fuzzer. | The analysis hangs for ever | High | Headers read from a message are written back exactly as they came in, never refolded |
+
 ## Tested and found safe
 
 | Attack | Result |
 |---|---|
 | Script injection in the HTML report (`<script>`, `onerror`) | Escaped; the report's Content-Security-Policy also blocks scripts and remote requests |
 | Spreadsheet formula injection in the CSV (`=HYPERLINK(...)`) | Every cell starting with `= + - @` or a control character is neutralised |
-| Regular-expression denial of service | All 117 patterns in the package (every literal, and every pattern built at import time) against 204 pathological strings of 60,000 characters each: worst 0.12 s, after the fixes above |
-| Mutation fuzzing | 9.7 million runs in four rounds over every reader and the pipeline, every report rendered each time, 2 GB memory limit. Every finding of the first three rounds is fixed and replays in under 0.5 s; the last round, 3.6 million runs on the final code, found nothing. Hypothesis property tests of the same targets run in CI |
+| Regular-expression denial of service | All 125 patterns in the package (every literal, and every pattern built at import time) against 204 pathological strings of 60,000 characters each, every pattern searched from every position: worst 0.34 s, after the fixes above (#35, #41) |
+| Mutation fuzzing | Every reader and the pipeline, every report rendered each time, 2 GB memory limit. 2.0: 9.7 million runs in four rounds; the last, 3.6 million runs on 2.0's final code, found nothing. 2.1: more than 1.5 million runs in four more rounds, with the new readers added and the pipeline fuzzed as intended; the last, 378,597 runs on 2.1's final code, found nothing. All 32 findings of both releases are fixed and replay on the final code without error, the slowest in 1.2 s. Hypothesis property tests of the same targets run in CI |
 | Hostile charsets | 247 combinations of 19 hostile charset names and 13 header and body positions, through triage and every report: no errors |
-| Real mail | 19,917 real messages through triage and all seven report formats, the JSON validated against the schema: no errors, no schema violations. The 5,373 tuning messages were rescanned after every fix, and all 19,511 scored ones after the last: no verdict changed |
+| Real mail | 19,917 real messages through triage and all seven report formats, the JSON validated against the schema: no errors, no schema violations, with 2.0's code and again with 2.1's final code. The 5,373 tuning messages were rescanned after every 2.1 security fix: no verdict changed |
 | Archive bombs and tricks | A 200 MB member is capped, 20,000 members stop at 200, 12 levels of nesting stop at 2, corrupt and path-traversal archives are listed and never extracted to disk |
 | PDF bombs | Stream inflation is capped at 20 MB in total |
 | Image bombs (QR decoding) | Images over 25 megapixels are refused from their header, before any pixel is decoded |
@@ -100,6 +139,13 @@ report rendered, under a 2 GB memory limit), by a ReDoS scan, and by running
 - **An IMAP server is trusted** to send what it says it sends: `imaplib` reads
   a whole message literal into memory whatever its declared size. Point
   `phishhawk imap` only at your own mail server.
+- **A Graph or Gmail token can do what its permission allows.** PhishHawk
+  only sends `GET` requests, but it cannot stop a token with `Mail.ReadWrite`
+  from being used elsewhere: give it a read-only one (`Mail.Read`,
+  `gmail.readonly`). Tokens are read from the environment, which other
+  processes of the same user can see.
+- **Logical partitions** (inside an MBR extended partition) and RAR's
+  compressed members are listed or skipped, not read.
 - **Python's email package is not written for hostile input.** Every issue
   found in it is worked around in [`mailpolicy.py`](../src/phishhawk/mailpolicy.py),
   and the fuzzer keeps looking for more.

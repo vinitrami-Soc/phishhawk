@@ -7,6 +7,128 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-05
+
+PhishHawk now weighs independent evidence instead of counting high-severity
+signals: a lookalike sender that also links to a raw IP is likely phishing even
+when only one of them is high. It decompresses 7z attachments, reads RAR's
+stored files, opens VHD and VHDX disk images down to their FAT and NTFS
+volumes, and reads report mailboxes through Microsoft Graph and the Gmail API
+where IMAP is switched off. The 2.0 false positives found in its own
+evaluation are fixed. On held-out real mail, scored once after all tuning:
+81.3% of 5,714 phishing emails from 2022 to 2026 flagged (2.0: 79.9%), and
+46.9% called likely phishing (2.0: 30.5%), while false positives fell to 0.8%
+of 5,945 legitimate emails (2.0: 0.9%). No field was removed from the JSON
+report; `report_version` stays `2.0`.
+
+### Added
+
+- **`phishhawk graph` and `phishhawk gmail`** triage a Microsoft 365 or Gmail
+  mailbox through its API, read-only: only `GET` requests, so nothing is marked
+  read, moved or deleted. `--mailbox`, `--folder` (Graph) or `--label` and
+  `--query` (Gmail), `--since`, `--unread`, `--limit`, `--out` and `--watch`,
+  like `phishhawk imap`. The access token comes from `PHISHHAWK_GRAPH_TOKEN` or
+  `PHISHHAWK_GMAIL_TOKEN`, travels only in the `Authorization` header and is
+  never sent off the API's own host; a refused token is reported with the
+  permission it needs (`Mail.Read`, `gmail.readonly`).
+- **7z members are decompressed in memory**: LZMA, LZMA2, Deflate, BZip2 and
+  stored folders, behind x86, ARM, PowerPC, IA-64 and SPARC branch filters or a
+  delta filter, up to 64 MB per archive within the message's budget. Every
+  member is then inspected like an attachment. Encrypted folders are listed
+  only.
+- **RAR's stored members are read** (RAR 4 and 5). RAR's compression is
+  proprietary, so compressed members are still listed from the headers.
+- **VHD and VHDX disk images are opened**: fixed, dynamic and differencing VHD,
+  and VHDX; MBR and GPT partitions, or a disk with no partition table; FAT12,
+  FAT16 and **FAT32** volumes (FAT images mailed on their own gain FAT32 too);
+  and **NTFS** volumes through the master file table. A block table pointing
+  every entry at one block, sixteen partitions naming one volume or a file made
+  of holes costs no more than the disk's budget.
+- **`--psl FILE`**: a copy of the Public Suffix List, used instead of the
+  built-in approximation, so a lookalike on shared hosting
+  (`paypal-billing.github.io`) is judged as its own domain. Also
+  `public_suffix_list` in the config file and `PHISHHAWK_PSL`; `phishhawk
+  doctor` loads it and shows its rule count.
+- **Signal families.** Every signal says what part of the message it is about
+  (`auth`, `sender`, `link`, `attachment`, `content`, `evasion`, `intel`,
+  `policy`), in the JSON report as `signals[].family` and in the schema.
+- New signals: a From address that is a whole address in quotes with no
+  domain of its own (`<"service@adac.de">`), or a quoted address in front of
+  the real domain; a sender on free web hosting (`x.firebaseapp.com`).
+- 53 more brands (187 in all), among them Temu, SHEIN, the US Social Security
+  Administration, Banco do Brasil, Receita Federal, Mercado Pago, Lidl, IKEA,
+  Deutsche Bahn, Klarna, N26, the Exodus and Electrum wallets, crypto
+  exchanges (OKX, Bitget, Bitpanda, Crypto.com) and national post offices. Lure
+  phrases in Dutch and Italian, and more in German, Portuguese, Spanish and
+  French (268 phrases in seven languages).
+- 528 tests (2.0: 403), including one for every finding of the security and
+  code reviews that fails on the old code, and `phishhawk doctor` reports the
+  Public Suffix List in use.
+
+### Changed
+
+- **Independent evidence decides `LIKELY PHISHING`.** Besides two high signals,
+  or one with a score of 8: one high signal backed by a medium or high signal
+  from another family, or medium signals from three families with a score of 8.
+  DKIM and DMARC failing together are one finding, not two.
+- **Weak findings of one kind count once.** A newsletter's links to a dozen
+  sign-in pages add one point, not three; low signals still add at most three.
+- A brand's own name on a country domain (`paypal.de`, `amazon.co.jp`,
+  `lidl.fr`) is not an impersonation, unless the TLD is sold as a generic one
+  (`.co`, `.io`) or is a high-abuse one.
+- The HTML report explains which rule decided the verdict, and its score ring
+  counts low signals one per kind.
+
+### Fixed
+
+The false positives found in 2.0's own evaluation:
+
+- A Russian (or any non-Latin) display name typed with one Latin letter is a
+  typo, not a disguise; words that pass for Latin with borrowed letters
+  (`МеtaМask`, Cherokee `Ꮮеdgеr`) are still flagged.
+- A subject in another charset decoded as Latin-1 (soft hyphens between
+  symbols) is not filter evasion; soft hyphens and zero-width characters inside
+  a word still are.
+- Free-mail domains in any country (`yahoo.com.tw`, `hotmail.fr`) and the
+  documentation domains `example.com`, `.net` and `.org` are never guessed as
+  the recipient's own domain.
+- A sign-in word in the address of an image or a style sheet is not a
+  credential-harvesting link.
+
+### Security
+
+Found by a third security review, an independent code review and fuzzing of
+the new readers; the full list is in
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) (#30 to #52).
+
+- Messages attached inside messages, which all share the name
+  `attached-message.eml`, no longer loop the console and HTML reports or blow
+  the HTML report up exponentially (in 2.0 they raised `RecursionError`).
+- A `Received` date with a year too large for C no longer ends the analysis
+  with `OverflowError` (also in 2.0).
+- A MIME parameter whose name is longer than a line no longer hangs the
+  analysis for ever inside Python's header folding (also in 2.0, on recent
+  Python patch releases): headers are written back exactly as they came in.
+- A damaged partition no longer hides the files of the others on a disk image.
+- Decompression bombs and amplifiers in the new readers are defused: a 7z
+  folder declaring 0 bytes, folders that break off near their end, repeated
+  header sections, RAR5 headers reaching back over the archive, and many
+  small containers in one message. Every archive and disk image of a message
+  shares one 256 MB budget.
+- One torn NTFS record no longer hides its volume; sparse files, 4K-sector
+  disks and NTFS on 4096-byte sectors are read.
+- `graph` and `gmail`: a download that breaks off, or a throttled message, is
+  asked for again on the next `--watch` round instead of ending it or being
+  dropped; a round looks at the newest `--limit` messages only; a malformed
+  token is refused without being echoed; `--unread` alone works with Graph;
+  `--out` report names can no longer collide.
+- Three quadratic patterns, new in this release, are linear (one only with
+  `--psl`).
+- The fuzzer itself sent most mail to the wrong reader in 2.0; it now fuzzes
+  the pipeline as intended. More than 1.5 million runs in four rounds over the
+  new readers and the whole pipeline found #32 to #34 and #52; the last round,
+  378,597 runs on the final code, found nothing.
+
 ## [2.0.0] - 2026-09-30
 
 PhishHawk now reads nearly every format phish arrive in, finds the evasions
@@ -299,7 +421,8 @@ repository: a single-file IOC extractor (20 September 2026) and the
 `phishtriage` package (versioned 2.0.0, 23 September 2026). Version numbering
 restarted at 1.0.0 with the new name.
 
-[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.1.0
 [2.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.0.0
 [1.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.2.0
 [1.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.1.0

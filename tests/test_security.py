@@ -18,9 +18,10 @@ from phishhawk.cache import Cache
 from phishhawk.cli import main
 from phishhawk.enrich import redact_recipients
 from phishhawk.lookalike import find_lookalikes
-from phishhawk.parse import parse_bytes
+from phishhawk.parse import MAX_UNWRAP_DEPTH, parse_bytes
 from phishhawk.pipeline import Options, triage_bytes, triage_file
 from phishhawk.report import console, csvout, html, markdown
+from phishhawk.report.common import children_of, display_copy
 
 from conftest import build_eml, sample
 
@@ -119,6 +120,73 @@ def test_a_phish_carrying_a_harmless_attached_message_is_still_caught():
     assert a.verdict != "NO STRONG INDICATORS"  # ...but the carrier's findings count
     assert any(s.label.startswith("carrier email: ") for s in a.signals)
     assert any("micros0ft-verify.top" in u.url for u in a.urls)
+
+
+def test_a_long_parameter_name_does_not_hang_the_email_library():
+    """Python's header refolding never finds a split point for a MIME parameter
+    whose name is longer than a line (email._header_value_parser.
+    _fold_mime_parameters), and recent patch releases refold every non-ASCII
+    header even with refold_source="none". Writing such a part back out, to
+    read its text, hung the analysis for ever. Found by the fuzzer."""
+    import subprocess
+
+    raw = (b"From: a@b.example\r\nTo: c@acme-labs.example\r\nSubject: s\r\nMIME-Version: 1.0\r\n"
+           b"Content-Type: multipart/mixed; boundar" + b"\x00" * 100 + b'y="====\xc5\xfbv8E"\r\n\r\n')
+    script = ("import sys; from phishhawk.pipeline import triage_bytes; "
+              "print(triage_bytes(sys.stdin.buffer.read()).subject)")
+    done = subprocess.run([sys.executable, "-c", script], input=raw, capture_output=True, timeout=60)
+    assert done.returncode == 0 and done.stdout.strip() == b"s", done.stderr[-500:]
+
+
+def test_an_impossible_date_in_a_received_header_is_ignored():
+    # parsedate_to_datetime raises OverflowError, not ValueError, for a year
+    # too large for C; that ended the whole analysis.
+    hop = "from mail.evil.top (mail.evil.top [203.0.113.9]) by mx.acme-labs.example; Mon, 1 Jan %s 00:00:00 +0000"
+    a = triage_bytes(build_eml(headers=[("Received", hop % ("9" * 30))]))
+    assert a.hops and a.hops[0]["time"] == "" and a.hops[0]["ip"] == "203.0.113.9"
+
+
+def test_a_carriers_findings_keep_their_family():
+    # 2.1 weighs independent evidence by family; the carrier's findings are
+    # copied across, and must say what part of the message they are about.
+    inner = EmailMessage()
+    inner["From"], inner["Subject"] = "colleague@acme-labs.example", "Lunch?"
+    inner.set_content("Lunch on Friday?")
+    outer = EmailMessage()
+    outer["From"] = '"Microsoft 365" <no-reply@micros0ft-verify.top>'
+    outer["To"], outer["Subject"] = "victim@acme-labs.example", "Your password expires today"
+    outer.set_content("Your password expires today. Keep it: https://micros0ft-verify.top/login")
+    outer.add_attachment(inner)
+    carried = [s for s in triage_bytes(outer.as_bytes()).signals if s.label.startswith("carrier email: ")]
+    assert carried and all(s.family for s in carried)
+
+
+def test_files_that_share_a_name_still_form_a_tree():
+    # Messages attached inside a message all get the default name
+    # "attached-message.eml". Matched by name alone, siblings became each
+    # other's children: the reports recursed for ever (2.1 fuzzing), and once
+    # that was stopped, the printable copy the reports draw from still lost
+    # the link, so twelve siblings drew 2^11 rows.
+    def message(subject, *attached):
+        m = EmailMessage()
+        m["From"], m["To"], m["Subject"] = "a@acme-labs.example", "b@acme-labs.example", subject
+        m.set_content("see attached")
+        for part in attached:
+            m.add_attachment(part)
+        return m
+
+    raw = message("A", message("B", *[message("C%d" % i) for i in range(12)]))
+    for level in range(MAX_UNWRAP_DEPTH):  # past the forwarding layers PhishHawk unwraps
+        raw = message("forward %d" % level, raw)
+    a = triage_bytes(raw.as_bytes())
+    assert a.subject == "A" and [f.filename for f in a.attachments] == ["attached-message.eml"] * 13
+    for analysis in (a, display_copy(a)):  # the reports draw from the printable copy
+        assert sorted(len(children_of(analysis, f)) for f in analysis.attachments) == [0] * 12 + [12]
+    page = html.render([a])
+    assert page.count('<span class="ioc">attached-message.eml</span>') == 13
+    text = console.render(a, console.Palette(False), True)
+    assert text.count("attached-message.eml") == 13
+    assert markdown.render(a).count("attached-message.eml") <= 13
 
 
 def test_a_genuine_report_gains_nothing_from_the_reporters_note():
@@ -379,6 +447,150 @@ def test_7z_header_dictionary_is_sized_to_the_header(monkeypatch):
     monkeypatch.setattr(archives.lzma, "LZMADecompressor", spy)
     assert archives.list_7z(data).names == ["invoice.js"]
     assert seen and seen[0] <= 4 * 1024 * 1024
+
+
+def test_7z_contents_ask_for_no_more_memory_than_they_produce(monkeypatch):
+    """2.1 decompresses 7z members. A folder whose coder asks for a 4 GB
+    dictionary gets one no larger than its own output, and a folder bigger
+    than the budget is listed, never decompressed."""
+    import lzma
+
+    import filebuild as fb
+    from phishhawk.formats import archives
+
+    files = {"invoice.js": b"WScript.Shell" * 100}
+    data = fb.seven_zip_packed(files)
+    data = data.replace(b"\x21\x21\x01\x10", b"\x21\x21\x01\x28")  # LZMA2 dictionary 16 -> 40: 4 GB
+    seen = []
+    real = lzma.LZMADecompressor
+
+    def spy(**kw):
+        seen.append(kw["filters"][-1]["dict_size"])
+        return real(**kw)
+
+    monkeypatch.setattr(archives.lzma, "LZMADecompressor", spy)
+    assert archives.list_7z(data, budget=1 << 20).contents == [files["invoice.js"]]
+    assert seen == [4096]
+    seen.clear()
+    assert archives.list_7z(data, budget=100).contents == [None]
+    assert seen == []
+
+
+def _lzma2(data):
+    import lzma
+
+    return lzma.compress(data, format=lzma.FORMAT_RAW, filters=[{"id": lzma.FILTER_LZMA2, "dict_size": 1 << 20}])
+
+
+def _spy_on_7z_decoding(monkeypatch):
+    from phishhawk.formats import archives
+
+    calls = []
+    real = archives._decode
+
+    def spy(packed, chain, size):
+        calls.append(size)
+        return real(packed, chain, size)
+
+    monkeypatch.setattr(archives, "_decode", spy)
+    return calls
+
+
+def test_a_7z_folder_declaring_no_output_decompresses_nothing():
+    """zlib reads max_length=0 as "no limit", so a Deflate folder that declared
+    0 bytes inflated without one (300 MB from a 305 kB archive)."""
+    import tracemalloc
+    import zlib
+
+    import filebuild as fb
+    from phishhawk.formats import archives
+
+    packer = zlib.compressobj(9, zlib.DEFLATED, -15)
+    bomb = packer.compress(bytes(32 << 20)) + packer.flush()
+    data = fb.seven_zip_folders([(b"\x04\x01\x08", bomb, 0)], ["a.txt"])
+    tracemalloc.start()
+    try:
+        listing = archives.list_7z(data, budget=64 << 20)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert listing.contents == [b""] and peak < 4 << 20
+
+
+def test_7z_output_is_paid_for_before_it_is_decompressed(monkeypatch):
+    """Only folders that decoded were charged: folders that break off just
+    before their end decompressed without limit, all of it thrown away."""
+    import filebuild as fb
+    from phishhawk.formats import archives
+
+    calls = _spy_on_7z_decoding(monkeypatch)
+    broken = _lzma2(bytes(1 << 20))[:-1] + b"\x05"  # 1 MB, then a chunk that is not one
+    data = fb.seven_zip_folders([(b"\x21", broken, 1 << 20)] * 5, ["f%d" % i for i in range(5)])
+    listing = archives.list_7z(data, budget=2 << 20)
+    assert listing.contents == [None] * 5 and len(calls) == 2 and listing.budget == 0
+
+
+def test_a_7z_header_section_written_twice_is_damage(monkeypatch):
+    """Each stream section got the whole budget again: one 60 MB folder and the
+    24-byte section repeated 170,000 times meant hours of decompression. 7-Zip
+    reads each section once, in order, and refuses such a header too."""
+    import filebuild as fb
+    from phishhawk.formats import archives
+
+    calls = _spy_on_7z_decoding(monkeypatch)
+    data = fb.seven_zip_folders([(b"\x21", _lzma2(bytes(1 << 20)), 1 << 20)], ["a.bin"], sections=5)
+    listing = archives.list_7z(data, budget=64 << 20)  # what was decompressed is kept, and paid for
+    assert listing.truncated and listing.unpacked == 1 << 20 and len(calls) == 1
+    with pytest.raises(ValueError):
+        archives.list_7z(data)  # listed only: nothing decompressed, so plainly damaged
+
+
+def test_archives_in_one_message_share_one_decompression_budget(monkeypatch):
+    """Each 7z had a fresh 64 MB that was never counted when its output was
+    thrown away (a member over 25 MB, say), so a message of many small
+    archives could decompress gigabytes."""
+    import filebuild as fb
+    from phishhawk import attachments
+
+    monkeypatch.setattr(attachments, "MAX_UNPACKED", 3 << 20)
+    calls = _spy_on_7z_decoding(monkeypatch)
+    archive = fb.seven_zip_folders([(b"\x21", _lzma2(bytes(1 << 20)), 1 << 20)], ["a.bin"])
+    raw = build_eml(attachments=[(archive, "application", "x-7z-compressed", "a%d.7z" % i) for i in range(6)])
+    a = parse_bytes(raw)
+    assert len(calls) == 3
+    assert sum(1 for f in a.attachments if f.filename == "a.bin") == 3
+
+
+def test_a_rar5_extra_area_stays_inside_its_header():
+    """The size of a header's extra area was never checked against the
+    header, so every header could re-read the whole archive before it:
+    quadratic, minutes for 4,000 headers over 1 MB of filler."""
+    import binascii
+
+    from filebuild import _vint
+    from phishhawk.formats import archives
+
+    def vint4(value):  # a 4-byte vint, so that its width never changes
+        return bytes([(value & 0x7F) | 0x80, ((value >> 7) & 0x7F) | 0x80, ((value >> 14) & 0x7F) | 0x80,
+                      (value >> 21) & 0x7F])
+
+    def block(kind, flags, rest, data=b""):
+        header = _vint(kind) + _vint(flags) + rest
+        size = vint4(len(header))
+        return struct.pack("<I", binascii.crc32(size + header)) + size + header + data
+
+    out = bytearray(b"Rar!\x1a\x07\x01\x00") + block(1, 0, _vint(0))
+    filler = b"\x01\x00" * 100_000
+    out += block(3, 0x02, _vint(len(filler)) + _vint(0) * 3, filler)
+    filler_start = len(out) - len(filler)
+    directory = _vint(0x01) + _vint(0) * 4 + _vint(1) + b"d"
+    for _ in range(300):
+        end = len(out) + 8 + 6 + len(directory)
+        out += block(2, 0x01, vint4(end - filler_start) + directory)  # an extra area reaching back to the filler
+    out += block(5, 0, _vint(0))
+    started = time.perf_counter()
+    listing = archives.list_rar(bytes(out), budget=1 << 20)
+    assert time.perf_counter() - started < 1 and listing.truncated
 
 
 def test_office_parts_are_read_against_one_budget(monkeypatch):

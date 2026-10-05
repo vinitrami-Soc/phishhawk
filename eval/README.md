@@ -8,45 +8,104 @@ detection rate can only go up.
 "Flagged" means a verdict of `SUSPICIOUS` or worse, the point at which a
 human should look. "Strict" means `LIKELY PHISHING` or worse.
 
-## Results (PhishHawk 2.0.0)
+## Results (PhishHawk 2.1.0)
 
 | Data set | Emails | Flagged recall | Strict recall | False-positive rate |
 |---|---|---|---|---|
-| Real phishing, **held out**, 2022 to 2026 (phishing_pot at `49f6377`, seed 2027) | 5,714 | **79.9%** | 30.5% | n/a |
-| Real phishing, **held out**, 2005 to 2007 (Nazario's corpus) | 2,279 | 57.7% | 26.7% | n/a |
-| Real phishing, earlier **held-out** sample (phishing_pot, seed 7) | 200 | 76.0% | 28.0% | n/a |
-| Real phishing, tuning part of the 2022 to 2026 split | 2,500 | 80.4% | 29.3% | n/a |
-| Real phishing, earlier tuning sample (phishing_pot, seed 42) | 200 | 81.5% | 25.0% | n/a |
+| Real phishing, **held out**, 2022 to 2026 (phishing_pot at `49f6377`, seed 2027) | 5,714 | **81.3%** | **46.9%** | n/a |
+| Real phishing, **held out**, 2005 to 2007 (Nazario's corpus) | 2,279 | 56.9% | 29.7% | n/a |
+| Real phishing, earlier **held-out** sample (phishing_pot, seed 7) | 200 | 76.5% | 43.5% | n/a |
+| Real phishing, tuning part of the 2022 to 2026 split | 2,500 | 82.2% | 46.6% | n/a |
+| Real phishing, earlier tuning sample (phishing_pot, seed 42) | 200 | 83.0% | 37.5% | n/a |
 | Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.5%** (7/1,400) |
-| Real legitimate mail, **held out**: SpamAssassin `hard_ham`, seeded half | 125 | n/a | n/a | 17.6% (22/125) |
+| Real legitimate mail, **held out**: SpamAssassin `hard_ham`, seeded half | 125 | n/a | n/a | 13.6% (17/125) |
 | Real legitimate mail, **held out**: Enron | 4,279 | n/a | n/a | **0.2%** (10/4,279) |
-| Legitimate edge cases, **held out**: four mail libraries' test messages | 136 | n/a | n/a | 11.0% (15/136) |
+| Legitimate edge cases, studied (see below): four mail libraries' test messages | 136 | n/a | n/a | 8.8% (12/136) |
 | Outlook `.msg` files, **held out** | 5 | n/a | n/a | 0% (0/5) |
-| Real legitimate mail, tuning set: `easy_ham` + the other half of `hard_ham` | 2,625 | n/a | n/a | 1.1% (30/2,625) |
+| Real legitimate mail, tuning set: `easy_ham` + the other half of `hard_ham` | 2,625 | n/a | n/a | 0.9% (23/2,625) |
 | Legitimate edge-case mail (CPython `test_email` corpus) | 48 | n/a | n/a | 0% (0/48) |
-| Synthetic labelled corpus (`make_corpus.py`, seed 7) | 102 phish + 65 legit | 100% | 64.7% | 0.0% |
+| Synthetic labelled corpus (`make_corpus.py`, seed 7) | 102 phish + 65 legit | 100% | 71.6% | 0.0% |
 
 *n/a* means the measure does not apply: a set of only phishing has no legitimate
 mail to flag by mistake, and a set of only legitimate mail has no phishing to catch.
 
-Every set was also scored with the released 1.2.0, on the same messages:
+Every set was also scored with the released 2.0.0, on the same messages:
 
-| Data set | 1.2.0 | 2.0.0 |
+| Data set | 2.0.0 | 2.1.0 |
 |---|---|---|
-| Phishing 2022 to 2026, held out (5,714) | 75.4% flagged, 25.9% strict | **79.9%** flagged, 30.5% strict |
-| Phishing 2005 to 2007, held out (2,279) | 54.7%, 21.5% strict | 57.7%, 26.7% strict |
-| Earlier held-out phishing sample (200) | 70.5% | 76.0% |
-| Everyday legitimate mail, held out (1,400) | 0.7% false positives | 0.5% |
-| Spam-like legitimate mail, held out (125) | 23.2% | 17.6% |
+| Phishing 2022 to 2026, held out (5,714) | 79.9% flagged, 30.5% strict | **81.3%** flagged, **46.9%** strict |
+| Phishing 2005 to 2007, held out (2,279) | 57.7%, 26.7% strict | 56.9%, 29.7% strict |
+| Earlier held-out phishing sample (200) | 76.0%, 28.0% strict | 76.5%, 43.5% strict |
+| Everyday legitimate mail, held out (1,400) | 0.5% false positives | 0.5% |
+| Spam-like legitimate mail, held out (125) | 17.6% | 13.6% |
 | Enron, held out (4,279) | 0.2% | 0.2% |
-| Mail-library edge cases, held out (136) | 9.6% | 11.0% |
-| All held-out legitimate mail that 1.2.0 can read (5,940) | 1.0% | 0.9% |
-| Median time per message, all 19,506 messages both can read | 7 ms | 6 ms |
-| Slowest message | 1.0 s | 1.1 s |
+| Mail-library edge cases, studied (136) | 11.0% | 8.8% |
+| All held-out legitimate mail (5,945) | 0.9% (54) | 0.8% (46) |
+| Called likely phishing among those 5,945 | 5 | 6 |
+| Median time per message, all 19,511 scored messages | 6 ms | 6 ms |
+| Slowest message | 1.1 s | 0.9 s |
 
-Before 1.2.0: the first real-mail evaluation found a parse that took 60
+Earlier releases: 1.2.0 flagged 75.4% of the held-out 2022 to 2026 phishing and
+1.0% of the held-out legitimate mail it could read; see the 2.0 section below.
+Before 1.2.0, the first real-mail evaluation found a parse that took 60
 seconds, and 1.1.0 flagged 23.3% of everyday legitimate mail; see the sections
 further down.
+
+## The 2.1 evaluation
+
+2.1 changed how a verdict is reached rather than adding many checks: a
+high-severity signal backed by a medium or high one about another part of the
+message is now likely phishing, as are medium signals about three parts with a
+score of 8, and weak findings of one kind count once. It also fixed the false
+positives 2.0's own evaluation had found, added 53 brands and lure phrases in
+two more languages, and two new sender checks. All of it was developed against
+the tuning sets only (the 2,700 tuning phishing emails, the 2,625 tuning
+legitimate emails and the CPython corpus), and then the held-out sets were
+scored once, with the final code, after a security review had been acted on.
+
+One exception, stated up front: the **136 mail-library edge cases are no
+longer a clean held-out set**. 2.0's evaluation published its two false
+positives (a Russian display name typed with one Latin letter, and a subject in
+mis-declared Big5), and 2.1 fixes both on purpose. Its 11.0% → 8.8% is shown,
+but it is not evidence that the changes generalise. The other held-out sets
+were not looked at between 2.0's evaluation and this one.
+
+| Year sent | Emails | Flagged, 2.0.0 → 2.1.0 | Strict, 2.0.0 → 2.1.0 |
+|---|---|---|---|
+| 2022 | 146 | 69.2% → 69.9% | 34.2% → 54.8% |
+| 2023 | 1,425 | 75.9% → 76.0% | 31.4% → 41.4% |
+| 2024 | 1,431 | 86.7% → 86.7% | 32.8% → 43.7% |
+| 2025 | 1,338 | 80.7% → 82.6% | 32.1% → 50.5% |
+| 2026 | 1,307 | 76.5% → 80.6% | 24.9% → 52.4% |
+| **All 5,714** | 5,714 | 79.9% → **81.3%** | 30.5% → **46.9%** |
+
+Message by message, of the 5,714: 96 are flagged now that were not, and 15 are
+no longer flagged. Of those 15, nine lost nothing but a second weak finding of
+the same kind (two sign-in paths now add one point, not two), three are senders
+on a brand's own country domain (`paypal.de`-style), which 2.1 no longer calls
+an impersonation without failed authentication, and three had a sign-in word
+only in an image's address.
+
+**One held-out set got slightly worse.** Of Nazario's 2,279 phishing emails
+from 2005 to 2007, 21 are no longer flagged and one newly is (57.7% → 56.9%).
+Sixteen of the 21 lost only their second weak finding of one kind; five are
+forged eBay and PayPal senders on the brands' own country domains (`ebay.ca`,
+`paypal.us`), and 2005 mail carries no authentication results that could show
+the forgery. Strict recall on the same set still rose, 26.7% → 29.7%. Weak
+findings counting once is also what cut false positives on spam-like
+legitimate mail (17.6% → 13.6%), so the trade was kept.
+
+**Legitimate mail called likely phishing**: six of the 5,945 held-out emails
+(2.0: five). The new one is an issue of a 2002 newsletter that sets Reply-To to
+another company and spells its name in spaced letters (`M E D I A U N S P U N`):
+a high signal and an evasion signal, which 2.1 now adds up. The other five link
+to raw IP addresses, forge `google.com` in a DMARC report sample, or are an
+advance-fee test fixture.
+
+**Every message, every format.** All 19,917 real messages were run again
+through triage and all seven report formats with the final code, the JSON
+checked against the schema: no errors and no schema violations. The median
+message takes 6 ms and the slowest 0.96 s.
 
 ## The 2.0 evaluation
 

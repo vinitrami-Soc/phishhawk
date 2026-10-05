@@ -29,7 +29,7 @@ from importlib.resources import files as package_files
 from .. import __version__
 from ..attack import TACTIC_ORDER, technique_tactic
 from ..extract import defang_host, defang_url
-from ..models import Analysis, FileIoc, vt_is_malicious
+from ..models import Analysis, FileIoc, signal_kind, vt_is_malicious
 from .common import (
     children_of,
     defang_ioc,
@@ -51,7 +51,7 @@ VERDICT_LEVEL = {"MALICIOUS": "critical", "LIKELY PHISHING": "high", "SUSPICIOUS
 TONE_LEVEL = {"red": "high", "amber": "medium", "green": "ok", "dim": "info"}
 SEVERITIES = ("high", "medium", "low")
 POINTS = {"high": 3, "medium": 2, "low": 1}
-LOW_CAP = 3          # low signals add at most 3 points between them (models.Analysis.score)
+LOW_CAP = 3          # low signals add at most 3 points between them (models.Analysis.low_points)
 RING_FULL = 30       # the ring is full at 30 points; most real phish score 5 to 20
 THRESHOLDS = ((4, "suspicious"), (8, "likely phishing"))
 PROVIDERS = {"virustotal": "VirusTotal", "urlscan": "urlscan.io", "rdap": "RDAP", "abuseipdb": "AbuseIPDB"}
@@ -567,7 +567,7 @@ def score_parts(a: Analysis) -> dict[str, int]:
     """Points each severity contributed; they add up to Analysis.score."""
     counts = severity_counts(a)
     return {"high": counts["high"] * POINTS["high"], "medium": counts["medium"] * POINTS["medium"],
-            "low": min(counts["low"], LOW_CAP)}
+            "low": a.low_points}
 
 
 def verdict_reason(a: Analysis) -> str:
@@ -580,8 +580,15 @@ def verdict_reason(a: Analysis) -> str:
     if a.verdict == "LIKELY PHISHING":
         if high >= 2:
             return "<b>%s</b>; two or more make a message likely phishing." % _count(high, "high-severity signal")
-        return ("<b>1 high-severity signal</b> and a risk score of <b>%d</b>; one high signal with a score of 8 "
-                "or more makes a message likely phishing." % a.score)
+        if high and a.score >= 8:
+            return ("<b>1 high-severity signal</b> and a risk score of <b>%d</b>; one high signal with a score "
+                    "of 8 or more makes a message likely phishing." % a.score)
+        if high:
+            return ("<b>1 high-severity signal</b>, backed by a signal about another part of the message; "
+                    "independent evidence makes a message likely phishing.")
+        return ("Signals about <b>%d parts of the message</b> (%s) and a risk score of <b>%d</b>; three "
+                "independent kinds of evidence with a score of 8 or more make a message likely phishing."
+                % (len(a.families), ", ".join(sorted(a.families)), a.score))
     if a.verdict == "SUSPICIOUS":
         if high:
             return "<b>1 high-severity signal</b>; one is enough to call a message suspicious."
@@ -626,7 +633,10 @@ def _legend(a: Analysis) -> str:
     counts, parts = severity_counts(a), score_parts(a)
     rows = []
     for level in SEVERITIES:
-        capped = "<i>capped</i>" if level == "low" and counts["low"] > LOW_CAP else ""
+        capped = ""
+        if level == "low" and counts["low"] > parts["low"]:  # past the cap, or several of one kind
+            kinds = len({signal_kind(s.label) for s in a.signals if s.severity == "low"})
+            capped = "<i>capped</i>" if kinds > LOW_CAP else "<i>one per kind</i>"
         rows.append('<li class="%s"><span class="sw sw-%s">%s</span><span class="lv">%s</span>'
                     '<span class="n">%s</span><span class="pts">%d pts%s</span></li>'
                     % ("zero" if not counts[level] else "", level, _svg(GLYPHS[level]), level.capitalize(),
@@ -655,9 +665,11 @@ def _hero(a: Analysis, level: str) -> str:
                      % (_icon("inbox"), escape(who),
                         " on %s" % escape(a.reported_by["date"]) if a.reported_by.get("date") else ""))
     side = ('<div class="hero-side"><div class="label">Risk score</div><div class="ring-row">%s%s</div>%s'
-            '<p class="ring-note">Ticks on the ring mark the thresholds; it is full at %d points. Likely phishing '
-            'at %d also needs a high-severity signal, and low signals add at most %d points.</p></div>'
-            % (_ring(a), _scale(), _legend(a), RING_FULL, THRESHOLDS[1][0], LOW_CAP))
+            '<p class="ring-note">Ticks on the ring mark the thresholds; it is full at %d points. One '
+            'high-severity signal makes a message suspicious, and likely phishing with a score of %d, a second '
+            'high signal or evidence of another kind; without one, three kinds of evidence and a score of %d do. '
+            'Low signals add at most %d points, one per kind.</p></div>'
+            % (_ring(a), _scale(), _legend(a), RING_FULL, THRESHOLDS[1][0], THRESHOLDS[1][0], LOW_CAP))
     return ('<div class="card hero lvl-%s"><div><div class="label">Verdict</div>'
             '<div class="verdict">%s<span>%s</span></div><p class="why">%s</p><h1>%s</h1>'
             '<dl class="meta">%s</dl><div class="facts">%s</div></div>%s</div>'

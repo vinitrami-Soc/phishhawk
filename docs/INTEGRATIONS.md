@@ -239,6 +239,21 @@ for label, uid, data in fetch(source, max_bytes=50 * 1024 * 1024):
     print(analysis.verdict, analysis.score, analysis.subject)
 ```
 
+Where IMAP is switched off, as in many Microsoft 365 and Google Workspace
+tenants, `phishhawk graph` and `phishhawk gmail` read the same mailbox through
+Microsoft Graph or the Gmail API, with the same options and the same read-only
+promise: only `GET` requests, so nothing is marked read, moved or deleted.
+
+```bash
+export PHISHHAWK_GRAPH_TOKEN='...'        # a token with Mail.Read; PHISHHAWK_GMAIL_TOKEN (gmail.readonly) for gmail
+phishhawk graph --mailbox soc@example.com --folder "Phish reports" \
+  --watch 300 --quiet --out /srv/phishing/reports --misp /srv/phishing/latest.json
+```
+
+From Python, `phishhawk.mailapi.fetch_graph()` and `fetch_gmail()` yield
+`(label, message id, raw bytes or the reason it was skipped)` like
+`imapfetch.fetch()`. See [the usage guide](USAGE.md#graph-and-gmail-triage-a-mailbox-through-its-api).
+
 Because users usually report the phish **as an attachment** (an `.eml`, or an
 `.msg` from Outlook's button), PhishHawk analyses the attached original and
 records who reported it in `reported_by`.

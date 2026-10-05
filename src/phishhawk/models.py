@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -10,6 +11,7 @@ from .hosting import hosting_kind
 from .knowledge import FREEMAIL, SHORTENERS, known_legit_domains
 
 SEVERITY_WEIGHT = {"high": 3, "medium": 2, "low": 1}
+LOW_CAP = 3  # low-severity signals add at most this many points between them
 # One engine is noise; two independent engines is the usual SOC bar.
 VT_MALICIOUS_MIN = 2
 
@@ -25,11 +27,44 @@ def vt_is_suspicious(report: dict[str, Any] | None) -> bool:
     return report.get("malicious", 0) > 0 or report.get("suspicious", 0) > 0
 
 
+def _blank_parentheses(label: str) -> str:
+    """What re.sub(r"\\([^)]*\\)", "()", label) gives, in linear time: that
+    pattern rescans to the end from every "(" once no ")" is left."""
+    out, start = [], 0
+    while True:
+        opening = label.find("(", start)
+        closing = label.find(")", opening + 1) if opening >= 0 else -1
+        if closing < 0:
+            out.append(label[start:])
+            return "".join(out)
+        out.append(label[start:opening] + "()")
+        start = closing + 1
+
+
+def signal_kind(label: str) -> str:
+    """A signal's label without the particulars: "credential-harvesting path
+    on a[.]com" and "... on b[.]net" are one kind of finding. Labels quote
+    the message, so every step here is linear in the label's length."""
+    label = _blank_parentheses(label)
+    label = re.sub(r"'[^']*'", "''", label)
+    # A defanged domain or address ("a[.]com", "x@b[.]net"): "[.]" inside a word.
+    label = re.sub(r"\S+", lambda word: "D" if "[.]" in word.group()[1:-1] else word.group(), label)
+    label = re.sub(r"\d+", "N", label)
+    return label.split(":", 1)[0] + ":" if ":" in label else label
+
+
+# What part of a message a signal is about. Two signals from different
+# families are independent evidence; two from the same family (DKIM fail and
+# DMARC fail, say) are one finding seen twice.
+FAMILIES = ("auth", "sender", "link", "attachment", "content", "evasion", "intel", "policy")
+
+
 @dataclass
 class Signal:
     severity: str  # high | medium | low
     label: str
     techniques: tuple[str, ...] = ()
+    family: str = ""  # one of FAMILIES; "" for signals added outside the heuristics
 
     @property
     def weight(self) -> int:
@@ -137,7 +172,7 @@ class Analysis:
     errors: list[str] = field(default_factory=list)
 
     # ----------------------------------------------------------- signals --
-    def add_signal(self, severity: str, label: str, techniques: tuple[str, ...] = ()) -> None:
+    def add_signal(self, severity: str, label: str, techniques: tuple[str, ...] = (), family: str = "") -> None:
         labels = self.__dict__.setdefault("_signal_labels", set())  # not a field: never exported
         if len(labels) != len(self.signals):  # the list was edited directly
             labels.clear()
@@ -145,16 +180,22 @@ class Analysis:
         if label in labels:
             return
         labels.add(label)
-        self.signals.append(Signal(severity, label, tuple(techniques)))
+        # The heuristics say which family they are checking; see heuristics.analyse.
+        family = family or self.__dict__.get("_family", "")
+        self.signals.append(Signal(severity, label, tuple(techniques), family))
 
     @property
     def score(self) -> int:
         """Weighted sum of the signals. Low-severity signals add at most 3
-        points between them: things like a missing Authentication-Results
-        header or a bounce address at an ESP are common in legitimate mail
-        and must not add up to a verdict on their own."""
-        low = sum(1 for signal in self.signals if signal.severity == "low")
-        return sum(s.weight for s in self.signals if s.severity != "low") + min(low, 3)
+        points between them, and several of one kind count once: a
+        newsletter's links to a dozen sign-in pages are one weak finding,
+        not a dozen, and weak findings must not add up to a verdict alone."""
+        return sum(s.weight for s in self.signals if s.severity != "low") + self.low_points
+
+    @property
+    def low_points(self) -> int:
+        kinds = {signal_kind(s.label) for s in self.signals if s.severity == "low"}
+        return min(len(kinds), LOW_CAP)
 
     @property
     def techniques(self) -> list[str]:
@@ -171,11 +212,26 @@ class Analysis:
            any(vt_is_malicious(a.vt) for a in self.attachments):
             return "MALICIOUS"
         high = sum(1 for signal in self.signals if signal.severity == "high")
-        if high >= 2 or (high and self.score >= 8):
+        if high >= 2 or (high and self.score >= 8) or (high and self.corroborated):
+            return "LIKELY PHISHING"
+        if len(self.families) >= 3 and self.score >= 8:  # three independent kinds of medium evidence
             return "LIKELY PHISHING"
         if high or self.score >= 4:
             return "SUSPICIOUS"
         return "NO STRONG INDICATORS"
+
+    @property
+    def families(self) -> set[str]:
+        """The parts of the message that medium or high signals are about."""
+        return {s.family for s in self.signals if s.severity != "low" and s.family}
+
+    @property
+    def corroborated(self) -> bool:
+        """A high-severity signal backed by a medium or high one about another
+        part of the message: a lookalike sender that also links to a raw IP,
+        say, rather than two views of the same forged header."""
+        families = self.families
+        return any(s.severity == "high" and s.family and families - {s.family} for s in self.signals)
 
     # -------------------------------------------------------------- IOCs --
     def is_protected(self, domain: str) -> bool:

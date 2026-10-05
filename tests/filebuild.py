@@ -98,6 +98,179 @@ def fat12(files: dict[str, bytes]) -> bytes:
     return image.ljust(total * sector, b"\0")
 
 
+# ------------------------------------------------------ virtual hard disks --
+
+def mbr_disk(volumes: list[tuple[int, bytes]], start: int = 2048) -> bytes:
+    """A raw disk with an MBR: (partition type, volume bytes) from sector `start`."""
+    table, body, lba = bytearray(), bytearray(start * 512), start
+    for kind, volume in volumes:
+        sectors = -(-len(volume) // 512)
+        table += bytes([0, 0, 0, 0, kind, 0, 0, 0]) + struct.pack("<II", lba, sectors)
+        body += volume.ljust(sectors * 512, b"\0")
+        lba += sectors
+    body[446:446 + len(table)] = table
+    body[510:512] = b"\x55\xaa"
+    return bytes(body)
+
+
+def _vhd_footer(size: int, kind: int, data_offset: int) -> bytes:
+    footer = bytearray(512)
+    footer[0:8] = b"conectix"
+    struct.pack_into(">IIQ", footer, 8, 2, 0x10000, data_offset)
+    footer[28:32] = b"qem2"
+    struct.pack_into(">QQ", footer, 40, size, size)
+    struct.pack_into(">I", footer, 60, kind)
+    struct.pack_into(">I", footer, 64, (~sum(footer)) & 0xFFFFFFFF)
+    return bytes(footer)
+
+
+def vhd_fixed(disk: bytes) -> bytes:
+    """A fixed VHD: the disk, then a 512-byte footer."""
+    return disk + _vhd_footer(len(disk), 2, 0xFFFFFFFFFFFFFFFF)
+
+
+def vhd_dynamic(disk: bytes, block_size: int = 2 * 1024 * 1024) -> bytes:
+    """A dynamic VHD: footer copy, sparse header, block table, then only the
+    blocks that hold something, each after its sector bitmap."""
+    size = -(-len(disk) // block_size) * block_size
+    entries = size // block_size
+    table_at = 512 + 1024
+    table_size = -(-entries * 4 // 512) * 512
+    header = bytearray(1024)
+    header[0:8] = b"cxsparse"
+    struct.pack_into(">QQIII", header, 8, 0xFFFFFFFFFFFFFFFF, table_at, 0x10000, entries, block_size)
+    bitmap = -(-block_size // 512 // 8 // 512) * 512
+    table, blocks = bytearray(b"\xff" * table_size), bytearray()
+    at = table_at + table_size
+    for index in range(entries):
+        block = disk[index * block_size:(index + 1) * block_size]
+        if block.strip(b"\0"):
+            struct.pack_into(">I", table, 4 * index, (at + len(blocks)) // 512)
+            blocks += b"\xff" * bitmap + block.ljust(block_size, b"\0")
+    footer = _vhd_footer(size, 3, 512)
+    return footer + bytes(header) + bytes(table) + bytes(blocks) + footer
+
+
+def vhdx(disk: bytes, block_size: int = 1024 * 1024) -> bytes:
+    """A VHDX: file identifier, region table, metadata, block table and the
+    payload blocks that hold something, each at a 1 MB boundary."""
+    import uuid
+
+    guid = lambda text: uuid.UUID(text).bytes_le  # noqa: E731
+    mb = 1024 * 1024
+    size = len(disk)
+    payload = -(-size // block_size)
+    chunk = (1 << 23) * 512 // block_size
+    out = bytearray(3 * mb)
+    out[0:8] = b"vhdxfile"
+    regions = b"regi" + struct.pack("<III", 0, 2, 0)
+    regions += guid("2DC27766-F623-4200-9D64-115E9BFD4A08") + struct.pack("<QII", mb, mb, 1)
+    regions += guid("8B7CA206-4790-4B9A-B8FE-575F050F886E") + struct.pack("<QII", 2 * mb, mb, 1)
+    out[0x30000:0x30000 + len(regions)] = regions
+    items = [(guid("CAA16737-FA36-4D43-B3B6-33F0AA44E76B"), struct.pack("<II", block_size, 0)),
+             (guid("2FA54224-CD1B-4876-B211-5DBED83BF4B8"), struct.pack("<Q", size)),
+             (guid("8141BF1D-A96F-4709-BA47-F233A8FAAB5F"), struct.pack("<I", 512))]
+    meta = bytearray(b"metadata" + struct.pack("<HH", 0, len(items)) + bytes(20))
+    offset = 0x10000
+    for item, value in items:
+        meta += item + struct.pack("<IIII", offset, len(value), 0, 0)
+        offset += len(value)
+    meta = meta.ljust(0x10000, b"\0") + b"".join(value for _, value in items)
+    out[2 * mb:2 * mb + len(meta)] = meta
+    blocks = bytearray()
+    for index in range(payload):
+        block = disk[index * block_size:(index + 1) * block_size]
+        if not block.strip(b"\0"):
+            continue
+        at = len(out) + len(blocks)
+        entry = 6 | ((at // mb) << 20)
+        struct.pack_into("<Q", out, mb + 8 * (index + index // chunk), entry)
+        blocks += block.ljust(block_size, b"\0")
+    return bytes(out + blocks)
+
+
+def ntfs(files: dict[str, bytes], directories: tuple[str, ...] = (), sector: int = 512,
+         sparse: tuple[str, ...] = ()) -> bytes:
+    """A small NTFS volume: its master file table holds `directories` and
+    `files` (paths with "/"), small files resident, larger ones in clusters.
+    `sparse` files carry the sparse flag. Records are fixed up in 512-byte
+    strides whatever the sector size, as NTFS writes them."""
+    cluster, record_size, mft_lcn, mft_records = 4096, 1024, 4, 64
+    data_lcn = mft_lcn + mft_records * record_size // cluster
+    clusters: list[bytes] = []
+
+    def attribute(kind: int, body: bytes, resident: bool = True, runs: bytes = b"", size: int = 0,
+                  flags: int = 0) -> bytes:
+        if resident:
+            header = struct.pack("<IIBBHHHIHBB", kind, 0, 0, 0, 0, 0, 0, len(body), 24, 0, 0)
+            whole = header + body
+        else:
+            allocated = -(-size // cluster) * cluster
+            last_vcn = max(0, allocated // cluster - 1)
+            header = struct.pack("<IIBBHHHQQHHIQQQ", kind, 0, 1, 0, 0, flags, 0, 0, last_vcn, 64, 0, 0,
+                                 allocated, size, size)
+            whole = header + runs
+        whole = whole.ljust(-(-len(whole) // 8) * 8, b"\0")
+        return whole[:4] + struct.pack("<I", len(whole)) + whole[8:]
+
+    def file_name(parent: int, name: str) -> bytes:
+        encoded = name.encode("utf-16-le")
+        body = struct.pack("<Q", parent | (1 << 48)) + bytes(32) + struct.pack("<QQII", 0, 0, 0x20, 0)
+        return attribute(0x30, body + bytes([len(name), 1]) + encoded)
+
+    def record(flags: int, attributes: bytes) -> bytes:
+        body = bytearray(record_size)
+        body[0:4] = b"FILE"
+        struct.pack_into("<HHQHHHHII", body, 4, 48, 3, 0, 1, 1, 56, flags, 56 + len(attributes) + 8, record_size)
+        body[56:56 + len(attributes)] = attributes
+        body[56 + len(attributes):60 + len(attributes)] = b"\xff\xff\xff\xff"
+        body[48:54] = b"\x01\x00" + bytes(body[510:512]) + bytes(body[1022:1024])
+        body[510:512] = body[1022:1024] = b"\x01\x00"
+        return bytes(body)
+
+    def runs_for(lcn: int, count: int) -> bytes:
+        return bytes([0x42]) + struct.pack("<HI", count, lcn) + b"\0"
+
+    table = bytearray(mft_records * record_size)
+    mft_data = attribute(0x80, b"", resident=False, runs=runs_for(mft_lcn, mft_records * record_size // cluster),
+                         size=mft_records * record_size)
+    table[0:record_size] = record(0x01, file_name(5, "$MFT") + mft_data)
+    table[5 * record_size:6 * record_size] = record(0x03, file_name(5, "."))
+    numbers = {"": 5}
+    next_record = 24
+    for path in directories:
+        parent, _, name = path.rpartition("/")
+        table[next_record * record_size:(next_record + 1) * record_size] = \
+            record(0x03, file_name(numbers[parent], name))
+        numbers[path] = next_record
+        next_record += 1
+    for path, content in files.items():
+        parent, _, name = path.rpartition("/")
+        if len(content) <= 600:
+            data = attribute(0x80, content)
+        else:
+            count = -(-len(content) // cluster)
+            data = attribute(0x80, b"", resident=False, runs=runs_for(data_lcn + len(clusters), count),
+                             size=len(content), flags=0x8000 if path in sparse else 0)
+            clusters += [content[i * cluster:(i + 1) * cluster].ljust(cluster, b"\0") for i in range(count)]
+        table[next_record * record_size:(next_record + 1) * record_size] = \
+            record(0x01, file_name(numbers[parent], name) + data)
+        next_record += 1
+    total = data_lcn + len(clusters) + 8
+    boot = bytearray(sector)
+    boot[0:3] = b"\xeb\x52\x90"
+    boot[3:11] = b"NTFS    "
+    struct.pack_into("<HB", boot, 11, sector, cluster // sector)
+    struct.pack_into("<QQQb", boot, 40, total * cluster // sector, mft_lcn, mft_lcn, -10)
+    boot[510:512] = b"\x55\xaa"
+    volume = bytearray(total * cluster)
+    volume[0:sector] = boot
+    volume[mft_lcn * cluster:mft_lcn * cluster + len(table)] = table
+    for index, chunk in enumerate(clusters):
+        volume[(data_lcn + index) * cluster:(data_lcn + index + 1) * cluster] = chunk
+    return bytes(volume)
+
+
 # ----------------------------------------------------------------------- RAR5 --
 
 def _vint(value: int) -> bytes:
@@ -110,20 +283,25 @@ def _vint(value: int) -> bytes:
             return bytes(out)
 
 
-def rar5(names: list[str], encrypted_headers: bool = False) -> bytes:
-    """A RAR5 archive's headers: stored empty files named `names`."""
-    def block(kind: int, body: bytes, flags: int = 0) -> bytes:
-        header = _vint(kind) + _vint(flags) + body
+def rar5(names: list[str], encrypted_headers: bool = False, contents: dict[str, bytes] | None = None,
+         compressed: bool = False) -> bytes:
+    """A RAR5 archive: files named `names`, stored with `contents` (empty by
+    default), or marked as compressed (method 3) with those bytes as data."""
+    def block(kind: int, body: bytes, flags: int = 0, data: bytes = b"") -> bytes:
+        header = _vint(kind) + _vint(flags | (0x02 if data else 0)) + (_vint(len(data)) if data else b"") + body
         size = _vint(len(header))
-        return struct.pack("<I", binascii.crc32(size + header)) + size + header
+        return struct.pack("<I", binascii.crc32(size + header)) + size + header + data
 
     out = b"Rar!\x1a\x07\x01\x00" + block(1, _vint(0))
     if encrypted_headers:
         return out + block(4, _vint(0) + _vint(0) + _vint(15) + b"\0" * 16 + b"\0" * 16)
     for name in names:
         encoded = name.encode()
-        body = _vint(0) + _vint(0) + _vint(0x20) + _vint(0) + _vint(0) + _vint(len(encoded)) + encoded
-        out += block(2, body)
+        data = (contents or {}).get(name, b"")
+        compression = (3 << 7) if compressed else 0
+        body = _vint(0) + _vint(len(data)) + _vint(0x20) + _vint(compression) + _vint(0) + _vint(len(encoded)) \
+            + encoded
+        out += block(2, body, data=data)
     return out + block(5, _vint(0))
 
 
@@ -251,6 +429,59 @@ def _7z_number(value: int) -> bytes:
     if value < 0x200000:
         return bytes([0xC0 | (value >> 16), value & 0xFF, (value >> 8) & 0xFF])
     return bytes([0xE0 | (value >> 24)]) + (value & 0xFFFFFF).to_bytes(3, "little")
+
+
+def seven_zip_packed(files: dict[str, bytes], bcj: bool = False, header_coder: str = "",
+                     unbacked: tuple[str, ...] = ()) -> bytes:
+    """A 7z archive whose files are really compressed: one solid LZMA2 folder,
+    optionally behind the x86 branch filter, as 7-Zip packs executables.
+    `unbacked` names more files with a data stream the archive does not have."""
+    import lzma
+
+    data = b"".join(files.values())
+    filters = ([{"id": lzma.FILTER_X86}] if bcj else []) + [{"id": lzma.FILTER_LZMA2, "dict_size": 1 << 20}]
+    packed = lzma.compress(data, format=lzma.FORMAT_RAW, filters=filters)
+    lzma2 = bytes([0x21]) + b"\x21" + _7z_number(1) + bytes([16])  # 1 MB dictionary
+    if bcj:  # coder 0 (BCJ) reads coder 1's (LZMA2) output; the packed stream feeds LZMA2
+        coders = _7z_number(2) + bytes([0x04]) + b"\x03\x03\x01\x03" + lzma2 + _7z_number(0) + _7z_number(1)
+        unpack = _7z_number(len(data)) * 2
+    else:
+        coders = _7z_number(1) + lzma2
+        unpack = _7z_number(len(data))
+    sizes = list(files.values())
+    header = b"\x01\x04"
+    header += b"\x06" + _7z_number(0) + _7z_number(1) + b"\x09" + _7z_number(len(packed)) + b"\x00"
+    header += b"\x07\x0b" + _7z_number(1) + b"\x00" + coders + b"\x0c" + unpack + b"\x00"
+    header += b"\x08\x0d" + _7z_number(len(files)) + b"\x09" \
+        + b"".join(_7z_number(len(item)) for item in sizes[:-1]) + b"\x00"
+    header += b"\x00"
+    names = list(files) + list(unbacked)
+    names_blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in names)
+    header += b"\x05" + _7z_number(len(names)) + b"\x11" + _7z_number(len(names_blob)) + names_blob + b"\x00"
+    header += b"\x00"
+    start = struct.pack("<QQI", len(packed), len(header), binascii.crc32(header))
+    return b"7z\xbc\xaf\x27\x1c\x00\x04" + struct.pack("<I", binascii.crc32(start)) + start + packed + header
+
+
+def seven_zip_folders(folders: list[tuple[bytes, bytes, int]], names: list[str], sections: int = 1) -> bytes:
+    """A 7z archive of raw folders, each (coder id, packed bytes, declared
+    unpack size) with one coder and one file, for hostile shapes: a size that
+    lies, data that breaks off, the stream section written `sections` times."""
+    packed = b"".join(data for _, data, _ in folders)
+    streams = b"\x06" + _7z_number(0) + _7z_number(len(folders)) + b"\x09" \
+        + b"".join(_7z_number(len(data)) for _, data, _ in folders) + b"\x00"
+    coders = b""
+    for coder_id, _, _ in folders:
+        props = bytes([16]) if coder_id == b"\x21" else b""  # LZMA2: a 1 MB dictionary
+        coders += _7z_number(1) + bytes([len(coder_id) | (0x20 if props else 0)]) + coder_id \
+            + (_7z_number(len(props)) + props if props else b"")
+    streams += b"\x07\x0b" + _7z_number(len(folders)) + b"\x00" + coders + b"\x0c" \
+        + b"".join(_7z_number(size) for _, _, size in folders) + b"\x00" + b"\x00"
+    blob = b"\0" + b"".join(n.encode("utf-16-le") + b"\0\0" for n in names)
+    header = b"\x01" + (b"\x04" + streams) * sections
+    header += b"\x05" + _7z_number(len(names)) + b"\x11" + _7z_number(len(blob)) + blob + b"\x00" + b"\x00"
+    start = struct.pack("<QQI", len(packed), len(header), binascii.crc32(header))
+    return b"7z\xbc\xaf\x27\x1c\x00\x04" + struct.pack("<I", binascii.crc32(start)) + start + packed + header
 
 
 def seven_zip_encoded(names: list[str], coder: str = "lzma", encrypted_content: bool = False,

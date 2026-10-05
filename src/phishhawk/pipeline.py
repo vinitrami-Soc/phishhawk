@@ -36,7 +36,8 @@ def _carriers(analysis: Analysis, options: Options) -> None:
         if wrapper.verdict == "NO STRONG INDICATORS":
             continue
         for signal in wrapper.signals:
-            analysis.add_signal(signal.severity, "carrier email: %s" % signal.label, signal.techniques)
+            analysis.add_signal(signal.severity, "carrier email: %s" % signal.label, signal.techniques,
+                                signal.family)
         known = {ioc.url.rstrip("/").lower() for ioc in analysis.urls}
         for ioc in wrapper.urls:
             if ioc.url.rstrip("/").lower() not in known:

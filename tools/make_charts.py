@@ -67,6 +67,7 @@ def legend(items, x, y, t):
 # ------------------------------------------------------------------ KPIs --
 
 HELD_OUT_LEGIT = ("ham_holdout", "enron", "fixtures", "msg")  # every legitimate set never tuned on
+BEFORE, BEFORE_NAME, AFTER_NAME = "2_0_0", "2.0", "2.1"  # the release compared against, and this one
 REAL_SETS = ("pot_holdout", "pot_tune", "holdout", "tune", "nazario", "ham_holdout", "enron", "fixtures", "msg",
              "ham_tune", "cpython")
 
@@ -76,22 +77,20 @@ def kpis(data: dict, t: dict) -> str:
     holdout = sets["pot_holdout"]["result"]
     fp = sum(sets[k]["result"]["flagged"]["fp"] for k in HELD_OUT_LEGIT)
     legit = sum(sets[k]["result"]["emails"] for k in HELD_OUT_LEGIT)
-    fp_before = sum(round(base["%s_false_positive_rate_1_2_0" % k] * sets[k]["result"]["emails"])
-                    for k in HELD_OUT_LEGIT if k != "msg")  # 1.2.0 could not read .msg files
-    legit_before = sum(sets[k]["result"]["emails"] for k in HELD_OUT_LEGIT if k != "msg")
-    worst = max(sets[k]["result"]["timing_ms"]["max"] for k in REAL_SETS) / 1000
-    emails = sum(sets[k]["result"]["emails"] for k in REAL_SETS)
+    fp_before = sum(round(base["%s_false_positive_rate_%s" % (k, BEFORE)] * sets[k]["result"]["emails"])
+                    for k in HELD_OUT_LEGIT)
     tiles = [
-        ("Real phishing flagged", pct(round(100 * holdout["flagged"]["recall"], 1)),
+        ("Real phishing flagged", pct(exact(holdout["flagged"])),
          "of {:,} unseen emails".format(holdout["emails"]),
-         "▲ from %s in 1.2.0" % pct(round(100 * base["pot_holdout_flagged_recall_1_2_0"], 1))),
+         "▲ from %s in %s" % (pct(round(100 * base["pot_holdout_flagged_recall_%s" % BEFORE], 1)), BEFORE_NAME)),
+        ("Called likely phishing", pct(exact(holdout["strict"])),
+         "of the same emails",
+         "▲ from %s in %s" % (pct(round(100 * base["pot_holdout_strict_recall_%s" % BEFORE], 1)), BEFORE_NAME)),
         ("False positives", "%.1f%%" % (100 * fp / legit),
          "%d of %s legit emails" % (fp, "{:,}".format(legit)),
-         "▼ from %.1f%% in 1.2.0" % (100 * fp_before / legit_before)),
-        ("Median parse time", "%.0f ms" % base["median_parse_ms"],
-         "%s emails, max %.1f s" % ("{:,}".format(emails), worst),
-         "▼ from %.0f ms in 1.2.0" % base["median_parse_ms_1_2_0"]),
-        ("Automated tests", str(data["tests"]), "Python 3.10 to 3.13", "incl. property tests"),
+         "▼ from %.1f%% in %s" % (100 * fp_before / legit, BEFORE_NAME)),
+        ("Automated tests", str(data["tests"]), "Python 3.10 to 3.13",
+         "▲ from %d in %s" % (base["tests_%s" % BEFORE], BEFORE_NAME)),
     ]
     body, gap, top = [], 12, 84
     tile_w = (WIDTH - 56 - gap * 3) / 4
@@ -147,6 +146,13 @@ def dumbbell_panel(rows, y0, x0, x1, maximum, ticks, fmt, t, heading):
     return out, bottom + 18
 
 
+def exact(counts: dict, measure: str = "recall") -> float:
+    """A rate from its counts, to one decimal: the stored rates are rounded twice."""
+    if measure == "recall":
+        return round(100 * counts["tp"] / (counts["tp"] + counts["fn"]), 1)
+    return round(100 * counts["fp"] / (counts["fp"] + counts["tn"]), 1)
+
+
 def pct(value: float) -> str:
     return "%.0f%%" % value if value == int(value) else "%.1f%%" % value
 
@@ -154,19 +160,26 @@ def pct(value: float) -> str:
 def evaluation(data: dict, t: dict) -> str:
     sets, base = data["sets"], data["baseline"]
     x0, x1 = 250, WIDTH - 70
-    body = legend([("1.2.0", t["before"]), ("2.0", t["after"])], 28, 86, t)
+    body = legend([(BEFORE_NAME, t["before"]), (AFTER_NAME, t["after"])], 28, 86, t)
 
-    def row(label: str, key: str, measure: str) -> tuple[str, float, float]:
-        result = sets[key]["result"]["flagged"][measure]
-        baseline = base["%s_%s_1_2_0" % (key, "flagged_recall" if measure == "recall" else measure)]
+    def row(label: str, key: str, measure: str, strict: bool = False) -> tuple[str, float, float]:
+        counts = sets[key]["result"]["strict" if strict else "flagged"]
+        name = ("strict_recall" if strict else "flagged_recall") if measure == "recall" else measure
+        baseline = base["%s_%s_%s" % (key, name, BEFORE)]
         return "%s (%s)" % (label, "{:,}".format(sets[key]["result"]["emails"])), \
-            round(100 * baseline, 1), round(100 * result, 1)
+            round(100 * baseline, 1), exact(counts, measure)
 
     rows = [row("Unseen phishing, 2022-2026", "pot_holdout", "recall"),
             row("Earlier held-out sample", "holdout", "recall"),
             row("Phishing from 2005-2007", "nazario", "recall")]
     panel, y = dumbbell_panel(rows, 124, x0, x1, 100, [0, 25, 50, 75, 100], pct, t,
                               "Real phishing flagged · higher is better")
+    body += panel
+    rows = [row("Unseen phishing, 2022-2026", "pot_holdout", "recall", strict=True),
+            row("Earlier held-out sample", "holdout", "recall", strict=True),
+            row("Phishing from 2005-2007", "nazario", "recall", strict=True)]
+    panel, y = dumbbell_panel(rows, y + 40, x0, x1, 100, [0, 25, 50, 75, 100], pct, t,
+                              "Called likely phishing, not just suspicious · higher is better")
     body += panel
     rows = [row("Everyday mail", "ham_holdout_easy", "false_positive_rate"),
             row("Spam-like mail", "ham_holdout_hard", "false_positive_rate"),
@@ -175,7 +188,7 @@ def evaluation(data: dict, t: dict) -> str:
     panel, y = dumbbell_panel(rows, y + 40, x0, x1, 30, [0, 10, 20, 30], pct, t,
                               "Legitimate mail flagged by mistake · lower is better")
     body += panel
-    return frame(body, y + 26, t, "PhishHawk 2.0 against 1.2.0 on real mail",
+    return frame(body, y + 26, t, "PhishHawk %s against %s on real mail" % (AFTER_NAME, BEFORE_NAME),
                  "Held-out sets only, scored once after all tuning, both versions on the same messages")
 
 

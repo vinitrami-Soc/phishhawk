@@ -45,11 +45,12 @@ class Config:
     vt_rate: int = 0
     vt_budget: int = 0
     tlp: str = "amber"
+    public_suffix_list: str = ""  # a copy of publicsuffix.org's list, used instead of the approximation
 
 
 _STRING_LISTS = ("protect", "trusted_authserv", "allow_domains", "block_domains")
 _KEYS = set(_STRING_LISTS) | {"brands", "lures", "yara", "fail_on", "offline", "max_size", "vt_rate", "vt_budget",
-                               "tlp"}
+                               "tlp", "public_suffix_list"}
 
 
 def default_path() -> str:
@@ -101,6 +102,7 @@ def parse(data: dict[str, Any], path: str = "") -> Config:
                 cleaned[name.strip().lower()] = phrases
         setattr(config, key, cleaned)
     config.yara = str(data.get("yara", "") or "")
+    config.public_suffix_list = str(data.get("public_suffix_list", "") or "")
     fail_on = str(data.get("fail_on", "") or "").lower()
     if fail_on and fail_on not in FAIL_LEVELS:
         raise ConfigError("fail_on must be one of %s" % ", ".join(FAIL_LEVELS))

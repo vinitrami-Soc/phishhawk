@@ -39,17 +39,28 @@ the ATT&CK techniques it is evidence of. Signals are weighted:
 | Low | 1 | a high-abuse TLD, a link to free hosting, an archive attachment |
 
 The **risk score** is the sum of the weights, except that low signals add
-**at most 3 points between them**. Each low signal is common in legitimate mail
-too, and several of them must not add up to a verdict on their own. Two checks
-1.x scored as low (a Return-Path that differs from the sender, and a message
-with no links) were removed in 2.0: on real mail they fired more often on
-legitimate messages than on phishing.
+**at most 3 points between them, one per kind**. Each low signal is common in
+legitimate mail too, and several of them must not add up to a verdict on their
+own: a newsletter's links to a dozen sign-in pages are one weak finding, not a
+dozen. Two checks 1.x scored as low (a Return-Path that differs from the
+sender, and a message with no links) were removed in 2.0: on real mail they
+fired more often on legitimate messages than on phishing.
+
+Since 2.1 every signal also has a **family**, the part of the message it is
+about: `auth` (SPF, DKIM, DMARC, a forged brand sender), `sender`, `link`,
+`attachment`, `content` (lure wording), `evasion` (tricks aimed at filters),
+`intel` (reputation lookups) and `policy` (your block list, your YARA rules).
+Two findings from different families are independent evidence; DKIM and DMARC
+failing together are one finding seen twice. A high signal **backed by** a
+medium or high signal from another family is enough for `LIKELY PHISHING`, and
+so are medium signals from **three families** with a score of 8 or more. The
+JSON report carries each signal's family.
 
 ```mermaid
 flowchart TD
     A["All signals for the message"] --> B{"Two or more VirusTotal engines<br/>flag a URL or attachment?"}
     B -- yes --> M["MALICIOUS<br/>exit code 2"]
-    B -- no --> C{"Two or more high signals,<br/>or one high signal and a score of 8+?"}
+    B -- no --> C{"Two or more high signals, or one high signal<br/>and a score of 8+ or a signal from another family,<br/>or three families and a score of 8+?"}
     C -- yes --> L["LIKELY PHISHING<br/>exit code 1"]
     C -- no --> D{"At least one high signal,<br/>or a score of 4+?"}
     D -- yes --> S["SUSPICIOUS<br/>exit code 1"]
@@ -62,8 +73,9 @@ the usual SOC threshold for calling something malicious. One engine, or
 "suspicious" votes only, raises a medium signal instead.
 
 **A worked example.** The bundled `samples/sample_phish.eml` raises 9 high signals
-(27 points), 3 medium (6 points) and 3 low (3 points). Its score is
-therefore 36, and with at least two high signals the verdict is `LIKELY PHISHING`.
+(27 points), 3 medium (6 points) and 3 low signals of 2 kinds (2 points). Its
+score is therefore 35, and with at least two high signals the verdict is
+`LIKELY PHISHING`.
 
 ## Signal catalogue
 
@@ -94,7 +106,9 @@ attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 |---|---|---|
 | Reply-To domain differs from the From domain | High; Medium on mailing-list mail | T1656 |
 | Reply-To goes to the mailing list the message came through | Low | none |
-| Display name claims a brand (`Microsoft Account Team`) the domain does not back up | High | T1656 |
+| Display name claims a brand (`Microsoft Account Team`) the domain does not back up. A brand's name on a country domain (`paypal.de`, `amazon.co.jp`, `lidl.fr`) counts as its own, except on a TLD sold as a generic one (`.co`, `.io`) or a high-abuse one | High | T1656 |
+| The From address is a whole address in quotes with no domain of its own (`<"service@adac.de">`), which a mail client shows but no server checked, or a quoted address in front of the real domain (`"billing@bank.example"@evil.top`) | High | T1656, T1036 |
+| The sender's address is on free web hosting (`no-reply@x.firebaseapp.com`), where anyone can pick the name | Medium | T1585.002 |
 | Display name shows a different email address | Medium | T1656 |
 | Display name reads as an organisation, address is free-mail (`HR Payroll <x@gmail.com>`) | Medium | T1656 |
 | Subject poses as a brand's notice, but neither the sender nor any link belongs to that brand | *varies*: High with a credential ask and links, else Medium | T1656 |
@@ -103,10 +117,10 @@ attacker who registers a lookalike domain can pass SPF, DKIM and DMARC.
 | The From address uses a brand's domain, but DKIM does not pass and DMARC fails or is missing: the From line is probably forged | High | T1656, T1036 |
 | Display name imitates a brand with look-alike characters (`PayPaI`, `Amaz0n`, `Iedger`) and the domain is not the brand's | High | T1656, T1036 |
 | The subject or display name spells a brand with look-alike characters | High | T1036, T1656 |
-| Display name mixes alphabets inside a word (Latin with Cyrillic or Greek look-alikes) | High | T1036 |
+| Display name mixes alphabets inside a word (Latin with Cyrillic, Greek, Armenian or Cherokee look-alikes). A word in another alphabet with one stray Latin letter (a Russian name typed with one key on the wrong layout) is a typo, not a disguise, and is not flagged | High | T1036 |
 | Subject mixes alphabets inside a word | Medium | T1036 |
 | Subject written in styled Unicode letters (`𝐔𝐫𝐠𝐞𝐧𝐭`, `Ｖｅｒｉｆｙ`), which keyword filters do not read as text | Medium | T1027 |
-| Two or more invisible characters inside the subject | Medium | T1027 |
+| Two or more invisible characters inside the subject. A soft hyphen only counts inside a word (`Pay\u00adPal`): one also turns up when a subject in another charset is decoded as Latin-1 | Medium | T1027 |
 
 Brand matching ignores punctuation, spaces and case, so `Trust-Wallet`,
 `Trust Wallet` and `TRUSTWALLET` all match `trustwallet`.
@@ -163,7 +177,7 @@ email address in the link text names a mailbox, not a website, and is ignored.
 | Link to a tunnel or IPFS gateway (ngrok, trycloudflare, `ipfs.io` …) | Medium | T1583.006 |
 | Link to free hosting, a form builder or file sharing | Low | T1583.006 |
 | High-abuse TLD (`.top`, `.xyz`, `.zip`, `.click` …) | Low | T1583.001 |
-| Credential-harvesting path (`/login`, `/verify`, `/owa` …) on an untrusted host | Low | T1598.003 |
+| Credential-harvesting path (`/login`, `/verify`, `/owa` …) on an untrusted host, in a link the reader can click (not an image or a style sheet) | Low | T1598.003 |
 | A link that runs JavaScript (`javascript:`) instead of opening a website | Medium | T1027.006 |
 | A link that opens a page built into the link itself (`data:text/html`, `data:image/svg+xml`) | High | T1027.006, T1566.002 |
 
@@ -207,14 +221,21 @@ reader so that entries pointing at the same bytes cannot multiply them.
 
 ### Archives and disk images
 
-ZIP, gzip and tar are opened. RAR (4 and 5) and 7z are listed from their
-headers, including 7z headers packed with LZMA or LZMA2. ISO 9660 (with Joliet
-names) and FAT disk images are listed and their files extracted. A ZIP locked
-with ZipCrypto is opened when the message itself gives the password.
+ZIP, gzip and tar are opened. 7z members are decompressed in memory (LZMA and
+LZMA2 behind any branch or delta filter, Deflate, BZip2 and stored), up to 64
+MB per archive; encrypted 7z folders are listed only. Everything a message's
+archives and disk images decompress or read shares one 256 MB budget. RAR's own compression is proprietary, so a RAR (4 or 5) has its stored
+members read and the rest listed from its headers. ISO 9660 (with Joliet
+names), FAT12, FAT16 and FAT32 images, and VHD (fixed, dynamic and
+differencing) and VHDX virtual disks are opened: their MBR or GPT partitions
+are found, and the files on every FAT or NTFS volume extracted, with every read
+counted against a budget so that a block table pointing at one block cannot
+multiply it. A ZIP locked with ZipCrypto is opened when the message itself
+gives the password. Every extracted file is inspected like an attachment.
 
 | Signal | Severity | ATT&CK |
 |---|---|---|
-| Disk image (`.iso`, `.img`) delivers files without the Mark of the Web, so SmartScreen and Office's block on internet macros never see them. Virtual hard disks (`.vhd`, `.vhdx`) are flagged as risky types; their contents are not listed | High | T1553.005, T1566.001 |
+| Disk image (`.iso`, `.img`, `.vhd`, `.vhdx`) delivers files without the Mark of the Web, so SmartScreen and Office's block on internet macros never see them. A virtual disk is flagged even when it cannot be read | High | T1553.005, T1566.001 |
 | The message gives the password for its archive or file, so no gateway could look inside | High | T1027.013, T1566.001 |
 | Archive encrypts even its file names (RAR `-hp`, 7z with an encrypted header) | High | T1027.013 |
 | Password-protected archive | High | T1027.013 |
@@ -287,7 +308,8 @@ lures hide in preheaders.
 
 ### Body and language
 
-Lure phrases are matched in English, Spanish, Portuguese, French and German,
+Lure phrases are matched in English, Spanish, Portuguese, French, German,
+Dutch and Italian,
 also with whitespace squeezed out so `v e r i f y` still matches.
 
 | Signal | Severity | ATT&CK |
@@ -369,8 +391,10 @@ A protected domain is one that belongs to you. PhishHawk:
 
 Protected domains come from `--protect`, from `PHISHHAWK_PROTECT`, and
 automatically from the recipients' addresses, because a lookalike of the
-recipient's own domain is the classic BEC pattern. `--no-auto-protect` turns
-off the automatic part, for example for mail sent to a free-mail inbox.
+recipient's own domain is the classic BEC pattern. A recipient's free-mail
+domain (any country's `yahoo`, `hotmail` …) and the documentation domains
+`example.com`, `.net` and `.org` are never guessed as yours. `--no-auto-protect`
+turns off the automatic part, for example for mail sent to a free-mail inbox.
 
 ## What gets exported as an indicator
 
@@ -395,8 +419,8 @@ The lists behind the checks live in `src/phishhawk/knowledge.py` and
 
 | List | Size | Used for |
 |---|---|---|
-| Brands | 134, plus any in your config file | Lookalike and display-name checks |
-| Lure phrases | 216 in 11 categories, 5 languages, plus any in your config file | Language signals |
+| Brands | 187, plus any in your config file | Lookalike and display-name checks |
+| Lure phrases | 268 in 11 categories, 7 languages, plus any in your config file | Language signals |
 | High-abuse TLDs | 30 | TLD signal |
 | URL shorteners | 32 | Shortener signal, export policy |
 | Free-mail providers | 22 | BEC and organisation-name checks, export policy |

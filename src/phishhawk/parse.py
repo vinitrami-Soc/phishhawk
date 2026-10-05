@@ -49,7 +49,7 @@ from .extract import (
 )
 from .formats.msg import MsgError, is_msg, msg_to_message
 from .indicators import find_wallets
-from .knowledge import FREEMAIL
+from .knowledge import FREEMAIL, FREEMAIL_LABELS, is_reserved_domain
 from .mailpolicy import POLICY
 from .models import MIME_TOO_DEEP, Analysis, FileIoc, UrlIoc
 
@@ -426,7 +426,7 @@ def _hops(received: list[str]) -> list[dict[str, Any]]:
             when = email.utils.parsedate_to_datetime(stamp.strip()) if stamp.strip() else None
             if when is not None and when.tzinfo is None:
                 when = None
-        except (TypeError, ValueError, IndexError):
+        except (TypeError, ValueError, IndexError, OverflowError):  # a year too large for C: OverflowError
             when = None
         hop: dict[str, Any] = {}
         for key, pattern in (("from", _HOP_FROM_RE), ("by", _HOP_BY_RE), ("with", _HOP_WITH_RE),
@@ -464,6 +464,11 @@ def _mailing_list(msg: Message) -> tuple[bool, list[str]]:
     return True, sorted(d for d in domains if d)
 
 
+# One whitespace run between the quote and the end: two in a row split a long
+# run of spaces every possible way before failing.
+_QUOTED_ADDRESS_RE = re.compile(r'"([^"]{0,200}@[^"]{0,200})"\s*(?:@\s*([^\s@<>"]{1,255})\s*)?$')
+
+
 def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str, ...] = ()) -> None:
     analysis.subject = header(msg, "Subject")
     analysis.date = header(msg, "Date")
@@ -474,6 +479,12 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
     analysis.from_display = display
     analysis.from_address = address.strip("\"' ").lower()
     analysis.from_domain = domain_of_address(address)
+    # <"service@adac.de"> is one quoted local part with no domain at all, and
+    # "a@b.de"@evil.top sends from evil.top: both show a mail client an
+    # address no server ever checked.
+    quoted = _QUOTED_ADDRESS_RE.match(address.strip())
+    if quoted:
+        analysis.__dict__["_quoted_from"] = (quoted.group(1).lower(), (quoted.group(2) or "").lower())
 
     _, reply_to = _parseaddr(header(msg, "Reply-To"))
     analysis.reply_to = reply_to.lower()
@@ -496,19 +507,24 @@ def _protected_domains(msg: Message, analysis: Analysis, explicit, auto: bool) -
     reference set for business-email-compromise lookalike checks."""
     domains: list[str] = []
 
-    def add(domain: str) -> None:
+    def add(domain: str, guessed: bool = False) -> None:
         base = registrable_domain(domain)
-        if base and base not in FREEMAIL and base not in domains:
-            domains.append(base)
+        if not base or base in FREEMAIL or base in domains:
+            return
+        # A guess from the recipients: yahoo.com.tw is free mail, and a
+        # documentation domain (example.net) belongs to nobody.
+        if guessed and (base.split(".", 1)[0] in FREEMAIL_LABELS or is_reserved_domain(base)):
+            return
+        domains.append(base)
 
     for domain in explicit:
         add(domain.strip().lower())
     if auto:
         for name in ("To", "Cc", "Delivered-To"):
             for _, address in _getaddresses(header(msg, name)):
-                add(domain_of_address(address))
+                add(domain_of_address(address), guessed=True)
         if analysis.reported_by:
-            add(domain_of_address(analysis.reported_by.get("from", "")))
+            add(domain_of_address(analysis.reported_by.get("from", "")), guessed=True)
     return domains
 
 

@@ -147,12 +147,102 @@ def is_ip(value: str) -> bool:
     return True
 
 
+# An optional copy of the Public Suffix List (publicsuffix.org). None: the
+# approximation in registrable_domain, which needs no download.
+@dataclass(frozen=True)
+class PublicSuffixes:
+    rules: frozenset[str]  # "co.uk"
+    wildcards: frozenset[str]  # "ck" for "*.ck": every label under it is a suffix
+    exceptions: frozenset[str]  # "www.ck" for "!www.ck"
+    reach: int  # the most labels a matching name can have: no rule looks further left
+
+
+_SUFFIXES: PublicSuffixes | None = None
+MAX_PSL_BYTES = 8 * 1024 * 1024
+
+
+def use_public_suffixes(suffixes: PublicSuffixes | None) -> None:
+    global _SUFFIXES
+    _SUFFIXES = suffixes
+    from . import lookalike  # noqa: PLC0415 - lookalike imports this module
+
+    lookalike.clear_caches()  # brand comparisons were cached per registrable domain
+
+
+def load_public_suffixes(path: str) -> int:
+    """Use the Public Suffix List at `path` (public_suffix_list.dat) from now
+    on, and return how many rules it has. ValueError if it cannot be read or
+    holds no rules."""
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(MAX_PSL_BYTES + 1)
+    except OSError as exc:
+        raise ValueError("cannot read the public suffix list %s: %s" % (path, exc.strerror or exc)) from exc
+    if len(raw) > MAX_PSL_BYTES:
+        raise ValueError("the public suffix list %s is larger than 8 MB" % path)
+    sets: dict[str, set[str]] = {"": set(), "*": set(), "!": set()}
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        words = line.split()
+        if not words or words[0].startswith("//"):
+            continue
+        rule, kind = words[0].lower(), ""
+        if rule.startswith("!"):
+            kind, rule = "!", rule[1:]
+        elif rule.startswith("*."):
+            kind, rule = "*", rule[2:]
+        try:
+            rule = ".".join(label.encode("idna").decode("ascii") for label in rule.split("."))
+        except UnicodeError:
+            continue  # a label Python's IDNA 2003 codec cannot encode
+        if rule:
+            sets[kind].add(rule)
+    count = sum(len(found) for found in sets.values())
+    if not count:
+        raise ValueError("the public suffix list %s holds no rules" % path)
+    reach = max([rule.count(".") + 1 for rule in sets[""] | sets["!"]]
+                + [rule.count(".") + 2 for rule in sets["*"]])
+    use_public_suffixes(PublicSuffixes(frozenset(sets[""]), frozenset(sets["*"]), frozenset(sets["!"]), reach))
+    return count
+
+
+def _ascii_label(label: str) -> str:
+    if label.isascii():
+        return label
+    try:
+        return label.encode("idna").decode("ascii")
+    except UnicodeError:
+        return label
+
+
+def _listed_registrable(labels: list[str], suffixes: PublicSuffixes) -> str:
+    """eTLD+1 by the list's own algorithm: an exception rule wins, else the
+    longest matching rule, else the TLD alone. Rules are kept in ASCII, so a
+    Unicode host is matched through its ASCII form but given back as it came."""
+    size = len(labels)
+    suffix = 1
+    first = max(0, size - suffixes.reach)  # labels further left can match no rule
+    encoded = labels[:first] + [_ascii_label(label) for label in labels[first:]]
+    for start in range(first, size):
+        name = ".".join(encoded[start:])
+        if name in suffixes.exceptions:
+            suffix = size - start - 1
+            break
+        if name in suffixes.rules:
+            suffix = max(suffix, size - start)
+        if start + 1 < size and ".".join(encoded[start + 1:]) in suffixes.wildcards:
+            suffix = max(suffix, size - start)
+    return ".".join(labels[-min(size, suffix + 1):])
+
+
 def registrable_domain(host: str) -> str:
-    """Best-effort eTLD+1 without pulling in a public-suffix dependency."""
+    """eTLD+1: by the Public Suffix List when one is loaded, else a
+    best-effort approximation that needs no download."""
     host = (host or "").lower().strip(".")
     if not host or is_ip(host):
         return host
     labels = host.split(".")
+    if _SUFFIXES is not None:
+        return _listed_registrable(labels, _SUFFIXES)
     if len(labels) < 3:
         return host
     if ".".join(labels[-2:]) in MULTI_TLDS:
