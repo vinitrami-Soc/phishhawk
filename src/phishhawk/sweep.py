@@ -14,18 +14,20 @@ or clicked a link is not in the mailbox: that is in EDR and proxy logs.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote
 
 from .campaign import normalise_subject, traits
-from .mailapi import GMAIL, GRAPH, ApiSource, MailApiError, _Client
+from .mailapi import GMAIL, GRAPH, MAX_PAGES, ApiSource, MailApiError, _Client
 from .models import Analysis
 
 MAX_MAILBOXES = 10_000
 MAX_LOOKUPS = 200  # folder names and reply checks per mailbox
 GRAPH_FIELDS = "id,subject,from,receivedDateTime,isRead,conversationId,internetMessageId,parentFolderId"
+_MAILBOX_RE = re.compile(r"[A-Za-z0-9._%+=@-]{1,320}")  # an address, a user id, a GUID or "me"
 GMAIL_FOLDERS = (("SPAM", "Spam"), ("TRASH", "Trash"), ("INBOX", "Inbox"), ("SENT", "Sent"), ("DRAFT", "Drafts"))
 
 
@@ -100,6 +102,12 @@ def _merge(found: dict[str, dict[str, Any]], match: dict[str, Any], label: str) 
         entry["matched"].append(label)
 
 
+def _checked(mailbox: str) -> str:
+    if not _MAILBOX_RE.fullmatch(mailbox) or set(mailbox) <= {"."}:
+        raise MailApiError("not a mailbox address or id: %r" % mailbox[:80])
+    return mailbox
+
+
 def _mailbox_result(mailbox: str, found: dict[str, dict[str, Any]], error: str = "") -> dict[str, Any]:
     matches = sorted(found.values(), key=lambda m: m["received"], reverse=True)
     for match in matches:
@@ -112,7 +120,9 @@ def _mailbox_result(mailbox: str, found: dict[str, dict[str, Any]], error: str =
 def _graph_hits(client: _Client, url: str, params: dict[str, Any], limit: int) -> list[dict[str, Any]]:
     hits: list[dict[str, Any]] = []
     next_url, query = url, dict(params, **{"$top": min(limit, 100)})
-    while next_url and len(hits) < limit:
+    for _ in range(MAX_PAGES):
+        if not next_url or len(hits) >= limit:
+            break
         page = client.json(next_url, query)
         hits += [item for item in page.get("value") or [] if isinstance(item, dict) and item.get("id")]
         next_url, query = str(page.get("@odata.nextLink") or ""), {}
@@ -187,7 +197,8 @@ def sweep_graph(token: str, mailboxes: list[str], criteria: Criteria, since: dt.
     results = []
     for mailbox in mailboxes[:MAX_MAILBOXES]:
         try:
-            results.append(_mailbox_result(mailbox, _graph_mailbox(client, mailbox, criteria, since, limit)))
+            results.append(_mailbox_result(mailbox, _graph_mailbox(client, _checked(mailbox), criteria, since,
+                                                                   limit)))
         except MailApiError as exc:
             results.append(_mailbox_result(mailbox, {}, str(exc)))
     return results
@@ -207,7 +218,9 @@ def _gmail_mailbox(client: _Client, mailbox: str, criteria: Criteria, since: dt.
     for label, term in searches:
         params: dict[str, Any] = {"q": "in:anywhere %s%s" % (term, after), "maxResults": min(limit, 500)}
         listed = 0
-        while listed < limit:
+        for _ in range(MAX_PAGES):
+            if listed >= limit:
+                break
             page = client.json(base + "/messages", params)
             for item in page.get("messages") or []:
                 if isinstance(item, dict) and item.get("id") and listed < limit:
@@ -253,7 +266,8 @@ def sweep_gmail(token: str, mailboxes: list[str], criteria: Criteria, since: dt.
     results = []
     for mailbox in mailboxes[:MAX_MAILBOXES]:
         try:
-            results.append(_mailbox_result(mailbox, _gmail_mailbox(client, mailbox, criteria, since, limit)))
+            results.append(_mailbox_result(mailbox, _gmail_mailbox(client, _checked(mailbox), criteria, since,
+                                                                   limit)))
         except MailApiError as exc:
             results.append(_mailbox_result(mailbox, {}, str(exc)))
     return results

@@ -208,3 +208,39 @@ def test_a_mailbox_list_file_is_read(monkeypatch, tmp_path, capsys):
     assert main(["sweep", "graph", "--from", "x@evil.example", "--mailboxes", str(boxes), "--no-color"]) == 3
     swept = {url.split("/users/")[1].split("/")[0] for _, url, *_ in api.calls if "/users/" in url}
     assert swept == {"alice@corp.example", "bob@corp.example"}
+
+
+class Endless(Api):
+    """An API that keeps offering another empty page."""
+
+    def get(self, url, params=None, stream=False, timeout=None, headers=None):
+        self.calls.append(("GET", url, dict(params or {}), dict(headers or {})))
+        if len(self.calls) > 500:
+            raise AssertionError("still paging after 500 requests")
+        if "gmail" in url:
+            return Response(payload={"messages": [], "nextPageToken": "again"})
+        return Response(payload={"value": [], "@odata.nextLink": url + "?page=again"})
+
+
+def test_empty_pages_offered_for_ever_end_the_search():
+    for search in (sweep.sweep_graph, sweep.sweep_gmail):
+        api = Endless({})
+        [box] = search("t0k3n", ["me"], sweep.Criteria(senders=["x@evil.example"]), session=api)
+        assert len(api.calls) <= sweep.MAX_PAGES + 5
+
+
+def test_the_triage_readers_stop_paging_too():
+    from phishhawk import mailapi
+
+    for fetch in (mailapi.fetch_graph, mailapi.fetch_gmail):
+        api = Endless({})
+        list(fetch(mailapi.ApiSource(token="t0k3n"), 1024, session=api))
+        assert len(api.calls) <= mailapi.MAX_PAGES + 5
+
+
+def test_a_mailbox_that_is_not_an_address_or_id_is_refused_unsent():
+    api = Api({(GRAPH + "/users/alice@corp.example/messages", ()): Response(payload={"value": []})})
+    criteria = sweep.Criteria(senders=["x@e.example"])
+    boxes = sweep.sweep_graph("t0k3n", ["..", "a/b", "alice@corp.example"], criteria, session=api)
+    assert [bool(box["error"]) for box in boxes] == [True, True, False]
+    assert all("/users/alice@corp.example/" in url for _, url, *_ in api.calls)
