@@ -3,6 +3,8 @@ built-in approximation; with one, a registrable domain is what the list
 says, wildcards and exceptions included. Expected values are the Public
 Suffix List's own test vectors (publicsuffix.org/list/tests.txt)."""
 
+import json
+
 import pytest
 
 from phishhawk import extract
@@ -64,8 +66,9 @@ def test_a_lookalike_on_shared_hosting_is_its_own_domain(psl, tmp_path, capsys):
     (tmp_path / "mail.eml").write_bytes(raw)
     main(["scan", str(tmp_path / "mail.eml"), "--offline", "-q", "--no-color", "--json",
           str(tmp_path / "r.json"), "--psl", str(psl)])
-    report = (tmp_path / "r.json").read_text()
-    assert "paypal-billing.github.io" in report and '"combosquat"' in report
+    report = json.loads((tmp_path / "r.json").read_text())
+    found = {(hit["domain"], hit["target"], hit["method"]) for hit in report["lookalikes"]}
+    assert ("paypal-billing.github.io", "paypal.com", "combosquat") in found
 
 
 def test_the_list_can_come_from_the_config_file_or_the_environment(psl, tmp_path, monkeypatch):
