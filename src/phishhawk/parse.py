@@ -308,7 +308,7 @@ _AUTH_HEADERS = ("authentication-results", "received-spf")
 MAX_FORGED = 20
 MAX_CHECKS = 20
 _COMMENT_RE = re.compile(r"\([^()]*\)")
-_CHECK_RE = re.compile(r"\s*(spf|dkim|dmarc)\s*=\s*([a-z]+)", re.I)
+_CHECK_RE = re.compile(r"(spf|dkim|dmarc)\s*=\s*([a-z]+)", re.I)  # matched at a clause's start, stripped
 # The identity each check vouched for (RFC 8601): SPF the envelope sender,
 # DKIM the signing domain (or the agent identity), DMARC the From domain.
 _CHECK_PROPERTIES = {"spf": ("smtp.mailfrom", "smtp.helo"), "dkim": ("header.d", "header.i"),
@@ -347,7 +347,7 @@ def _auth_checks(values: list[str]) -> list[dict[str, str]]:
         text = value
         for _ in range(4):  # comments can nest
             text = _COMMENT_RE.sub(" ", text)
-        clauses = text.split(";")
+        clauses = [clause.lstrip() for clause in text.split(";")]
         if clauses and not _CHECK_RE.match(clauses[0]):
             clauses = clauses[1:]  # the authserv-id (Exchange Online writes none)
         for clause in clauses:
