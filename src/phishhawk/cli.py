@@ -24,7 +24,19 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator
 
-from . import __version__, banner, campaign, config, evidence, extract, imapfetch, mailapi, sweep, yararules
+from . import (
+    __version__,
+    banner,
+    campaign,
+    config,
+    evidence,
+    extract,
+    imapfetch,
+    mailapi,
+    sandbox,
+    sweep,
+    yararules,
+)
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
@@ -280,6 +292,9 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     kept.add_argument("--evidence", metavar="DIR",
                       help="keep each message here, read-only and named by its SHA-256, with a hash-chained "
                            "custody log (check it with: phishhawk evidence verify DIR)")
+    kept.add_argument("--sandbox", metavar="DIR",
+                      help="write a ZIP per message for your sandbox: the message, every file pulled out of it, "
+                           "the links to detonate and a manifest, encrypted with the password 'infected'")
 
     cache_opts = command.add_argument_group("cache")
     cache_opts.add_argument("--no-cache", action="store_true", help="do not read or write the lookup cache")
@@ -608,7 +623,7 @@ def _settings(args: argparse.Namespace, error: Callable[[str], None]) -> tuple[O
                       qr=not args.no_qr, trusted_authserv=trusted,
                       allow_domains=[d.strip().lower() for d in args.allow] + settings.allow_domains,
                       block_domains=[d.strip().lower() for d in args.block] + settings.block_domains,
-                      yara=rules)
+                      yara=rules, keep_files=bool(getattr(args, "sandbox", None)))
     return options, settings
 
 
@@ -690,6 +705,16 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
         finally:
             if progress:
                 sys.stderr.write("\r%-66s\r" % "")
+        if args.sandbox and isinstance(data, bytes):
+            try:
+                written = sandbox.pack(args.sandbox, data, analysis)
+                print(err("[i] sandbox pack written to %s (password: infected)" % printable(written), "dim"),
+                      file=sys.stderr)
+            except (sandbox.SandboxError, OSError) as exc:
+                print(err("[!] %s: no sandbox pack (%s)" % (printable(path), printable(str(exc))), "red"),
+                      file=sys.stderr)
+                failed = True
+        analysis.__dict__.pop("_files", None)  # the file bytes are needed only for the pack
         if args.evidence and isinstance(data, bytes):
             try:
                 evidence.keep(args.evidence, data, "<stdin>" if path == "-" else path, analysis)

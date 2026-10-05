@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from . import evidence, heuristics, yararules
 from .enrich import Enricher
 from .extract import registrable_domain
-from .models import Analysis
+from .models import Analysis, FileIoc
 from .parse import load_message, parse_message
 
 
@@ -22,6 +22,7 @@ class Options:
     allow_domains: list[str] = field(default_factory=list)  # partners never reported as lookalikes or IOCs
     block_domains: list[str] = field(default_factory=list)  # domains always flagged
     yara: yararules.Rules | None = None  # compiled rules from --yara
+    keep_files: bool = False  # hold every file's bytes for a sandbox pack (see sandbox.py)
 
 
 def _carriers(analysis: Analysis, options: Options) -> None:
@@ -58,6 +59,23 @@ def _finish(analysis: Analysis, options: Options, enricher: Enricher | None,
     return analysis
 
 
+def _keep_file(analysis: Analysis, ioc: FileIoc, data: bytes) -> None:
+    analysis.__dict__.setdefault("_files", []).append((ioc, data))  # not a field: never exported
+
+
+def _file_hook(options: Options) -> Callable[[Analysis, FileIoc, bytes], None] | None:
+    hooks = [yararules.hook(options.yara)] if options.yara is not None else []
+    if options.keep_files:
+        hooks.append(_keep_file)
+    if not hooks:
+        return None
+
+    def run(analysis: Analysis, ioc: FileIoc, data: bytes) -> None:
+        for hook in hooks:
+            hook(analysis, ioc, data)
+    return run
+
+
 def triage_bytes(data: bytes, path: str = "<memory>", options: Options | None = None,
                  enricher: Enricher | None = None,
                  progress: Callable[[str], None] | None = None) -> Analysis:
@@ -66,7 +84,7 @@ def triage_bytes(data: bytes, path: str = "<memory>", options: Options | None = 
     analysis = parse_message(load_message(data), path=path, unwrap=options.unwrap,
                              protected=options.protected, auto_protect=options.auto_protect, qr=options.qr,
                              trusted_authserv=tuple(options.trusted_authserv),
-                             file_hook=yararules.hook(rules) if rules is not None else None)
+                             file_hook=_file_hook(options))
     analysis.evidence = evidence.fingerprint(data)
     if rules is not None:
         for match in rules.match(data):
