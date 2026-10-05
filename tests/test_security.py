@@ -122,6 +122,22 @@ def test_a_phish_carrying_a_harmless_attached_message_is_still_caught():
     assert any("micros0ft-verify.top" in u.url for u in a.urls)
 
 
+def test_a_long_parameter_name_does_not_hang_the_email_library():
+    """Python's header refolding never finds a split point for a MIME parameter
+    whose name is longer than a line (email._header_value_parser.
+    _fold_mime_parameters), and recent patch releases refold every non-ASCII
+    header even with refold_source="none". Writing such a part back out, to
+    read its text, hung the analysis for ever. Found by the fuzzer."""
+    import subprocess
+
+    raw = (b"From: a@b.example\r\nTo: c@acme-labs.example\r\nSubject: s\r\nMIME-Version: 1.0\r\n"
+           b"Content-Type: multipart/mixed; boundar" + b"\x00" * 100 + b'y="====\xc5\xfbv8E"\r\n\r\n')
+    script = ("import sys; from phishhawk.pipeline import triage_bytes; "
+              "print(triage_bytes(sys.stdin.buffer.read()).subject)")
+    done = subprocess.run([sys.executable, "-c", script], input=raw, capture_output=True, timeout=60)
+    assert done.returncode == 0 and done.stdout.strip() == b"s", done.stderr[-500:]
+
+
 def test_an_impossible_date_in_a_received_header_is_ignored():
     # parsedate_to_datetime raises OverflowError, not ValueError, for a year
     # too large for C; that ended the whole analysis.

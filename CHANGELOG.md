@@ -99,13 +99,16 @@ The false positives found in 2.0's own evaluation:
 
 Found by a third security review, an independent code review and fuzzing of
 the new readers; the full list is in
-[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) (#30 to #51).
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) (#30 to #52).
 
 - Messages attached inside messages, which all share the name
   `attached-message.eml`, no longer loop the console and HTML reports or blow
   the HTML report up exponentially (in 2.0 they raised `RecursionError`).
 - A `Received` date with a year too large for C no longer ends the analysis
   with `OverflowError` (also in 2.0).
+- A MIME parameter whose name is longer than a line no longer hangs the
+  analysis for ever inside Python's header folding (also in 2.0, on recent
+  Python patch releases): headers are written back exactly as they came in.
 - A damaged partition no longer hides the files of the others on a disk image.
 - Decompression bombs and amplifiers in the new readers are defused: a 7z
   folder declaring 0 bytes, folders that break off near their end, repeated

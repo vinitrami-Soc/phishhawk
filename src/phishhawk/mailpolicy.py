@@ -87,6 +87,22 @@ class TolerantMessage(EmailMessage):
 
 
 class TolerantPolicy(EmailPolicy):
+    # A message is written back out only to hash or reread it, so a header
+    # that came from the source goes out as it came in. Refolding it is worse
+    # than pointless: Python's folder never finds a split point for a MIME
+    # parameter whose name is longer than a line (_fold_mime_parameters loops
+    # for ever), and recent patch releases refold every non-ASCII header even
+    # with refold_source="none".
+    def fold(self, name: str, value: Any) -> str:
+        if hasattr(value, "name"):  # a header object set by code, not read from a message
+            return super().fold(name, value)
+        return name + ": " + self.linesep.join(_LINE_BREAK_RE.split(value)) + self.linesep
+
+    def fold_binary(self, name: str, value: Any) -> bytes:
+        if hasattr(value, "name"):
+            return super().fold_binary(name, value)
+        return self.fold(name, value).encode("utf-8", "surrogateescape")
+
     def header_fetch_parse(self, name: str, value: str) -> Any:
         if hasattr(value, "name"):  # already a header object
             return value

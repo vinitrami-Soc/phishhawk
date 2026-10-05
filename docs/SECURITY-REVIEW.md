@@ -74,7 +74,7 @@ reviewed line by line, then by an independent reviewer given only the diff
 and the requirements, and the fuzzer was given the new readers. Fixing the
 fuzzer itself came first: in 2.0 it sent most mail seeds to the compound-file
 reader instead of the pipeline, so the pipeline was fuzzed less than its run
-count suggested. Two of the findings below (#32 and #34) were in 2.0
+count suggested. Three of the findings below (#32, #34 and #52) were in 2.0
 already and were found once that was fixed.
 
 | # | Finding | Impact | Severity | Fix |
@@ -101,6 +101,7 @@ already and were found once that was fixed.
 | 49 | **A token with a space or control character** made `requests` refuse the header with an error that quoted it, and the error was printed. Found by the review. | The token in the terminal or a log | Medium | Refused before any request, without being echoed |
 | 50 | **`--watch` walked back through the mailbox**, triaging older mail each round when nothing new came, contrary to its help. Found by the review. | Old mail re-triaged; API quota spent | Low | Each round looks at the newest `--limit` messages only |
 | 51 | **`graph --unread` alone** sent a filter that Graph refuses next to its sort (InefficientFilter). Found by the review. | The command fails | Low | The filter starts with the date; API errors name their code |
+| 52 | **A long MIME parameter name hung Python's email library.** Writing a part back out (to read the text of a multipart part with no usable boundary) refolds its headers, and Python's folder never finds a split point for a parameter whose name is longer than a line: `_fold_mime_parameters` loops for ever. Recent Python patch releases refold every non-ASCII header even with `refold_source="none"`, so `Content-Type: multipart/mixed; boundar<100 NULs>y="\xc5..."` with an empty body hung the analysis. Also in 2.0. Found by the fuzzer. | The analysis hangs for ever | High | Headers read from a message are written back exactly as they came in, never refolded |
 
 ## Tested and found safe
 
