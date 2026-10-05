@@ -435,6 +435,9 @@ def build_parser() -> _Parser:
                     "follows the one before it and every kept message still has its recorded SHA-256.")
     kept.add_argument("action", choices=("verify",), help="verify: check the log and every kept message")
     kept.add_argument("directory", metavar="DIR", help="the folder given to --evidence")
+    kept.add_argument("--head", dest="heads", action="append", default=[], metavar="CHAIN",
+                      help="a head or custody value recorded earlier, e.g. in a ticket: it must still be in the "
+                           "log (repeatable)")
 
     doctor = commands.add_parser(
         "doctor", parents=[display], formatter_class=_Formatter,
@@ -710,7 +713,7 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
                 written = sandbox.pack(args.sandbox, data, analysis)
                 print(err("[i] sandbox pack written to %s (password: infected)" % printable(written), "dim"),
                       file=sys.stderr)
-            except (sandbox.SandboxError, OSError) as exc:
+            except (sandbox.SandboxError, OSError, ValueError) as exc:
                 print(err("[!] %s: no sandbox pack (%s)" % (printable(path), printable(str(exc))), "red"),
                       file=sys.stderr)
                 failed = True
@@ -718,7 +721,7 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
         if args.evidence and isinstance(data, bytes):
             try:
                 evidence.keep(args.evidence, data, "<stdin>" if path == "-" else path, analysis)
-            except (evidence.EvidenceError, OSError) as exc:
+            except (evidence.EvidenceError, OSError, ValueError) as exc:
                 print(err("[!] %s: not kept as evidence (%s)" % (printable(path), printable(str(exc))), "red"),
                       file=sys.stderr)
                 failed = True
@@ -1060,7 +1063,7 @@ def cmd_campaign(args: argparse.Namespace, parser: _Parser) -> int:
     items: list[tuple[str, Analysis]] = []
     failed = False
     for path, data in iter_messages(expand_inputs(args.inputs), args.max_size * 1024 * 1024):
-        label = "<stdin>" if path == "-" else path
+        label = "<stdin>" if path == "-" else evidence.safe_text(path)
         try:
             if isinstance(data, Exception):
                 raise data
@@ -1177,7 +1180,7 @@ def cmd_sweep(args: argparse.Namespace, parser: _Parser) -> int:
 
 def cmd_evidence(args: argparse.Namespace) -> int:
     colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
-    result = evidence.verify(args.directory)
+    result = evidence.verify(args.directory, tuple(h.strip() for h in args.heads))
     for problem in result.problems:
         print(colour("[!] " + printable(problem), "red"))
     if result.problems:

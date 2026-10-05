@@ -43,6 +43,21 @@ class EvidenceError(Exception):
     pass
 
 
+def safe_text(value: str) -> str:
+    """value, made encodable as UTF-8: the bytes of a file name that are not
+    UTF-8 (which Python keeps as lone surrogates) become \\xNN escapes."""
+    try:
+        value.encode("utf-8")
+        return value
+    except UnicodeEncodeError:
+        pass
+    try:
+        raw = value.encode("utf-8", "surrogateescape")
+    except UnicodeEncodeError:
+        raw = value.encode("utf-8", "surrogatepass")
+    return raw.decode("utf-8", "backslashreplace")
+
+
 def fingerprint(data: bytes) -> dict[str, Any]:
     return {"sha256": hashlib.sha256(data).hexdigest(), "sha1": hashlib.sha1(data).hexdigest(),
             "md5": hashlib.md5(data).hexdigest(), "size": len(data)}
@@ -86,19 +101,55 @@ def _hash_file(path: str) -> str:
     return digest.hexdigest()
 
 
+def _write_all(fd: int, data: bytes) -> None:
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
+
+
 def _store(directory: str, name: str, data: bytes, sha256: str) -> None:
+    """The message appears under its name whole or not at all: it is written
+    to a temporary file, synced, made read-only and then linked into place,
+    so a full disk or a crash never leaves a half message to fail later runs."""
     path = os.path.join(directory, name)
+    temp = os.path.join(directory, ".%s.%s.tmp" % (name, os.urandom(6).hex()))
+    fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY, 0o600)
+    try:
+        try:
+            _write_all(fd, data)
+            os.fsync(fd)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o400)
+        finally:
+            os.close(fd)
+        try:
+            os.link(temp, path)
+        except FileExistsError:
+            # Seen before: keep the first copy, but only if it really is this message.
+            if _hash_file(path) != sha256:
+                raise EvidenceError("%s is already there and does not match the message's SHA-256"
+                                    % path) from None
+        except OSError:  # no hard links here (FAT, some network shares): create the name exclusively
+            _store_exclusive(path, data, sha256)
+    finally:
+        os.unlink(temp)
+
+
+def _store_exclusive(path: str, data: bytes, sha256: str) -> None:
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _BINARY, 0o400)
     except FileExistsError:
-        # Seen before: keep the first copy, but only if it really is this message.
         if _hash_file(path) != sha256:
             raise EvidenceError("%s is already there and does not match the message's SHA-256" % path) from None
         return
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(data)
-        handle.flush()
-        os.fsync(handle.fileno())
+    try:
+        _write_all(fd, data)
+        os.fsync(fd)
+    except OSError:
+        os.close(fd)
+        os.unlink(path)
+        raise
+    os.close(fd)
 
 
 def _last_chain(fd: int) -> str:
@@ -122,6 +173,7 @@ def keep(directory: str, data: bytes, source: str, analysis: Analysis) -> dict[s
     """Store data in directory and append its custody record; returns the record.
     The report's evidence block gains the file name and the record's chain value."""
     os.makedirs(directory, mode=0o700, exist_ok=True)
+    source = safe_text(source)
     prints = fingerprint(data)
     name = prints["sha256"] + (".msg" if data.startswith(OLE_MAGIC) else ".eml")
     _store(directory, name, data, prints["sha256"])
@@ -160,14 +212,16 @@ class Verification:
     problems: list[str] = field(default_factory=list)
 
 
-def verify(directory: str) -> Verification:
-    """Check every link of the custody log and every message it names."""
+def verify(directory: str, heads: tuple[str, ...] | list[str] = ()) -> Verification:
+    """Check every link of the custody log and every message it names. Each
+    of heads (a chain value recorded elsewhere, such as in a ticket) must
+    still be in the log: whoever rewrites the log after it cannot keep it."""
     result = Verification()
     log = os.path.join(directory, CUSTODY)
     if not os.path.isfile(log):
         result.problems.append("no custody log in %s" % directory)
         return result
-    previous, checked = "", set()
+    previous, hashes, chains = "", {}, set()
     with open(log, encoding="utf-8", errors="replace") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
@@ -187,23 +241,30 @@ def verify(directory: str) -> Verification:
                 result.problems.append("record %d: was changed after it was written" % number)
             previous = str(record.get("chain", ""))
             result.head = previous
+            chains.add(previous)
             name = record.get("file")
-            if not isinstance(name, str) or not _FILE_RE.match(name):
+            if not isinstance(name, str) or not _FILE_RE.fullmatch(name):
                 result.problems.append("record %d: names no valid evidence file" % number)
                 continue
-            if name in checked:
-                continue
-            checked.add(name)
-            path = os.path.join(directory, name)
-            if not os.path.lexists(path):
+            if name not in hashes:
+                path = os.path.join(directory, name)
+                if not os.path.lexists(path):
+                    hashes[name] = "missing"
+                else:
+                    try:
+                        hashes[name] = _hash_file(path)
+                    except EvidenceError as exc:
+                        hashes[name] = "unreadable: %s" % exc
+            actual = hashes[name]
+            if actual == "missing":
                 result.problems.append("record %d: evidence file %s is missing" % (number, name))
-                continue
-            try:
-                actual = _hash_file(path)
-            except EvidenceError as exc:
-                result.problems.append("record %d: %s" % (number, exc))
-                continue
-            if actual != record.get("sha256") or not name.startswith(actual):
+            elif actual.startswith("unreadable: "):
+                result.problems.append("record %d: %s" % (number, actual[len("unreadable: "):]))
+            elif actual != record.get("sha256") or not name.startswith(actual):
                 result.problems.append("record %d: evidence file %s does not match its recorded SHA-256"
                                        % (number, name))
+    for head in heads:
+        if head not in chains:
+            result.problems.append("head %s is not in the log: it was rewritten or cut after that head was "
+                                   "recorded" % head[:64])
     return result

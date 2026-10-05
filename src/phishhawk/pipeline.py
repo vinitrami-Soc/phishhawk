@@ -80,6 +80,7 @@ def triage_bytes(data: bytes, path: str = "<memory>", options: Options | None = 
                  enricher: Enricher | None = None,
                  progress: Callable[[str], None] | None = None) -> Analysis:
     options = options or Options()
+    path = evidence.safe_text(path)  # a file name that is not UTF-8 must not break a report
     rules = options.yara
     analysis = parse_message(load_message(data), path=path, unwrap=options.unwrap,
                              protected=options.protected, auto_protect=options.auto_protect, qr=options.qr,
