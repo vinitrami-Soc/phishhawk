@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from . import heuristics, yararules
+from . import evidence, heuristics, yararules
 from .enrich import Enricher
 from .extract import registrable_domain
 from .models import Analysis
@@ -67,6 +67,7 @@ def triage_bytes(data: bytes, path: str = "<memory>", options: Options | None = 
                              protected=options.protected, auto_protect=options.auto_protect, qr=options.qr,
                              trusted_authserv=tuple(options.trusted_authserv),
                              file_hook=yararules.hook(rules) if rules is not None else None)
+    analysis.evidence = evidence.fingerprint(data)
     if rules is not None:
         for match in rules.match(data):
             match["where"] = "the raw message"

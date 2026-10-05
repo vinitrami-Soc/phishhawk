@@ -51,6 +51,8 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     out.append("Subject    : %s" % (a.subject or "(none)"))
     out.append("Date       : %s" % (a.date or "(none)"))
     out.append("Message-ID : %s" % (a.message_id or "(none)"))
+    if a.evidence.get("sha256"):
+        out.append("SHA-256    : %s (%d bytes)" % (a.evidence["sha256"], a.evidence.get("size", 0)))
     if a.to:
         out.append("To         : %s" % a.to)
 

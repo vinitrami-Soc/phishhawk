@@ -58,6 +58,10 @@ def render(a: Analysis) -> str:
         out.append("| **Authentication** | %s |" % " · ".join(
             "%s %s" % (k.upper(), v) for k, v in a.auth.items()))
     out.append("| **Message-ID** | %s |" % _code(a.message_id or "(none)"))
+    if a.evidence.get("sha256"):
+        out.append("| **Message SHA-256** | %s |" % _code(a.evidence["sha256"]))
+    if a.evidence.get("custody"):
+        out.append("| **Custody record** | %s |" % _code(a.evidence["custody"]))
     if a.reported_by:
         out.append("| **Reported by** | %s |" % _cell(a.reported_by.get("from", "")))
     out += ["", "**Summary:** " + " ".join(summary_sentences(a)), ""]

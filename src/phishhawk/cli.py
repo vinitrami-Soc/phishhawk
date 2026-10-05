@@ -23,7 +23,7 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator
 
-from . import __version__, banner, config, extract, imapfetch, mailapi, yararules
+from . import __version__, banner, config, evidence, extract, imapfetch, mailapi, yararules
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
@@ -33,7 +33,7 @@ from .pipeline import Options, triage_bytes
 from .report import console, csvout, html, markdown, misp, stix
 from .report.common import printable, to_dict
 
-COMMANDS = ("scan", "imap", "graph", "gmail", "doctor", "cache", "techniques", "help")
+COMMANDS = ("scan", "imap", "graph", "gmail", "evidence", "doctor", "cache", "techniques", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -109,6 +109,22 @@ examples:
 Only GET requests are sent: each message is read in raw form, and nothing is
 marked read, moved or deleted. The token is read from $PHISHHAWK_GMAIL_TOKEN,
 never the command line."""
+
+EVIDENCE_EPILOG = """\
+examples:
+  phishhawk scan reported/ --evidence /cases/4711    keep each message and log its custody
+  phishhawk evidence verify /cases/4711               check every record and kept message
+
+With --evidence DIR, every message analysed is kept in DIR exactly as it was
+read, read-only and named by its SHA-256, and a record is appended to
+DIR/custody.jsonl: hashes, size, source, time, analyst ($PHISHHAWK_ANALYST, or
+the login name), tool version and verdict. Each record includes the hash of
+the one before it. verify recomputes that chain and every message's hash, and
+prints the last link: put it in the ticket, and the log as it was then can be
+proven unchanged later.
+
+exit codes:
+  0  every record and kept message checks out     1  something does not"""
 
 
 # ---------------------------------------------------------------------------
@@ -219,6 +235,11 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     enr.add_argument("--timeout", type=float, default=20, metavar="SECONDS",
                      help="HTTP timeout per request (default 20)")
 
+    kept = command.add_argument_group("evidence")
+    kept.add_argument("--evidence", metavar="DIR",
+                      help="keep each message here, read-only and named by its SHA-256, with a hash-chained "
+                           "custody log (check it with: phishhawk evidence verify DIR)")
+
     cache_opts = command.add_argument_group("cache")
     cache_opts.add_argument("--no-cache", action="store_true", help="do not read or write the lookup cache")
     cache_opts.add_argument("--cache-ttl", type=float, default=24, metavar="HOURS",
@@ -295,6 +316,14 @@ def build_parser() -> _Parser:
         box.add_argument("--watch", type=_seconds, default=0, metavar="SECONDS",
                          help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
         _triage_options(api)
+
+    kept = commands.add_parser(
+        "evidence", parents=[display], formatter_class=_Formatter, epilog=EVIDENCE_EPILOG,
+        help="verify the messages and custody log kept with --evidence",
+        description="Check the messages kept with --evidence and their custody log: every record still "
+                    "follows the one before it and every kept message still has its recorded SHA-256.")
+    kept.add_argument("action", choices=("verify",), help="verify: check the log and every kept message")
+    kept.add_argument("directory", metavar="DIR", help="the folder given to --evidence")
 
     doctor = commands.add_parser(
         "doctor", parents=[display], formatter_class=_Formatter,
@@ -565,6 +594,13 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
         finally:
             if progress:
                 sys.stderr.write("\r%-66s\r" % "")
+        if args.evidence and isinstance(data, bytes):
+            try:
+                evidence.keep(args.evidence, data, "<stdin>" if path == "-" else path, analysis)
+            except (evidence.EvidenceError, OSError) as exc:
+                print(err("[!] %s: not kept as evidence (%s)" % (printable(path), printable(str(exc))), "red"),
+                      file=sys.stderr)
+                failed = True
         analyses.append(analysis)
         if per_message is not None:
             per_message(path, analysis)
@@ -886,6 +922,24 @@ def cmd_techniques(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_evidence(args: argparse.Namespace) -> int:
+    colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
+    result = evidence.verify(args.directory)
+    for problem in result.problems:
+        print(colour("[!] " + printable(problem), "red"))
+    if result.problems:
+        print("%s checked, %s" % (_count(result.records, "record"), _count(len(result.problems), "problem")))
+        return 1
+    print(colour("[ok] %s checked: every record follows the one before it and every kept message "
+                 "matches its SHA-256" % _count(result.records, "record"), "green"))
+    print("head %s" % result.head)
+    return 0
+
+
+def _count(number: int, noun: str) -> str:
+    return "%d %s%s" % (number, noun, "" if number == 1 else "s")
+
+
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
@@ -909,6 +963,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_imap(args, parser)
     if args.command in ("graph", "gmail"):
         return cmd_mail_api(args, parser)
+    if args.command == "evidence":
+        return cmd_evidence(args)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "cache":

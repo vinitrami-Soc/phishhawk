@@ -656,6 +656,11 @@ def _hero(a: Analysis, level: str) -> str:
             ("Date", escape(a.date or "")), ("To", escape(a.to or "")),
             ("Message-ID", '<span class="mono ioc">%s</span>' % escape(a.message_id or "")),
             ("File", '<span class="mono ioc">%s</span>' % escape(a.path))]
+    if a.evidence.get("sha256"):
+        meta.append(("SHA-256", '<span class="mono ioc">%s</span> (%d bytes)'
+                     % (escape(a.evidence["sha256"]), a.evidence.get("size", 0))))
+    if a.evidence.get("custody"):
+        meta.append(("Custody record", '<span class="mono ioc">%s</span>' % escape(a.evidence["custody"])))
     sources = [PROVIDERS.get(s, s) for s in a.enrichment_sources]
     facts = ['<span class="fact">%s Reputation lookups: <b>%s</b></span>'
              % (_icon("lookup"), escape(", ".join(sources)) if sources else "none (offline)")]

@@ -123,6 +123,7 @@ MIME_TOO_DEEP = 1000  # Analysis.mime_depth when the parser could not follow the
 @dataclass
 class Analysis:
     path: str
+    evidence: dict[str, Any] = field(default_factory=dict)  # sha256, sha1, md5, size of the bytes analysed
     subject: str = ""
     date: str = ""
     message_id: str = ""
