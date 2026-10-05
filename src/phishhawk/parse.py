@@ -311,7 +311,10 @@ _COMMENT_RE = re.compile(r"\([^()]*\)")
 _CHECK_RE = re.compile(r"\s*(spf|dkim|dmarc)\s*=\s*([a-z]+)", re.I)
 # The identity each check vouched for (RFC 8601): SPF the envelope sender,
 # DKIM the signing domain (or the agent identity), DMARC the From domain.
-_CHECK_PROPERTIES = {"spf": ("smtp.mailfrom",), "dkim": ("header.d", "header.i"), "dmarc": ("header.from",)}
+_CHECK_PROPERTIES = {"spf": ("smtp.mailfrom", "smtp.helo"), "dkim": ("header.d", "header.i"),
+                     "dmarc": ("header.from",)}
+_RECEIVED_SPF_DOMAIN_RE = re.compile(r'envelope-from\s*=\s*"?([^\s;"]{1,320})|domain of\s+(\S{1,320})\s+'
+                                     r"(?:designates|does not designate)", re.I)
 _CHECK_DOMAIN_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
 
 
@@ -341,10 +344,13 @@ def _auth_checks(values: list[str]) -> list[dict[str, str]]:
     x@y designates ...)" is prose, not the identity that was checked."""
     checks: list[dict[str, str]] = []
     for value in values:
-        text = value.split(";", 1)[1] if ";" in value else ""  # after the authserv-id
+        text = value
         for _ in range(4):  # comments can nest
             text = _COMMENT_RE.sub(" ", text)
-        for clause in text.split(";"):
+        clauses = text.split(";")
+        if clauses and not _CHECK_RE.match(clauses[0]):
+            clauses = clauses[1:]  # the authserv-id (Exchange Online writes none)
+        for clause in clauses:
             match = _CHECK_RE.match(clause)
             if not match:
                 continue
@@ -410,6 +416,7 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()
                 server = _authserv_id(items[i][1])
                 forged.append({"claim": "%s=pass" % mechanism, "authserv": server[:80],
                                "impersonates": bool(receiver) and server == receiver})
+    received_spf: dict[str, str] = {}
     if "spf" not in results:
         # Only the topmost Received-SPF, and only if it sits by the trusted block.
         near = trusted_block[0] if trusted_block else None
@@ -417,8 +424,14 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()
             if name == "received-spf" and value:
                 if near is None or abs(i - near) <= 3:
                     results["spf"] = value.split()[0].lower().strip(";")
+                    found = _RECEIVED_SPF_DOMAIN_RE.search(value)
+                    received_spf = {"method": "spf", "result": results["spf"],
+                                    "domain": _check_domain(next(g for g in found.groups() if g)) if found else ""}
                 break
-    return results, forged, _auth_checks([items[i][1] for i in trusted_block])
+    checks = _auth_checks([items[i][1] for i in trusted_block])
+    if received_spf and not any(check["method"] == "spf" for check in checks):
+        checks.insert(0, received_spf)
+    return results, forged, checks[:MAX_CHECKS]
 
 
 def _received(msg: Message) -> list[str]:

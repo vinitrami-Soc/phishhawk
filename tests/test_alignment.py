@@ -156,3 +156,27 @@ def test_the_receivers_dmarc_failure_wins_over_relaxed_alignment():
     block = assess(a)
     assert block["checks"][0]["aligned"] is True
     assert block["status"] == "fail"
+
+
+def test_microsofts_header_without_an_authserv_id_keeps_its_first_check():
+    # Exchange Online writes no authserv-id: the header starts with spf=.
+    a = _analysis("spf=pass (sender IP is 192.0.2.7) smtp.mailfrom=email.shop.example; dkim=pass "
+                  "(signature was verified) header.d=shop.example;dmarc=pass action=none "
+                  "header.from=shop.example;")
+    assert [(c["method"], c["domain"]) for c in a.auth_checks] == [
+        ("spf", "email.shop.example"), ("dkim", "shop.example"), ("dmarc", "shop.example")]
+
+
+def test_spf_on_the_helo_name_names_that_host():
+    a = _analysis("spf=pass (sender IP is 192.0.2.7) smtp.helo=mail.relay.example; dkim=none")
+    assert a.auth_checks[0] == {"method": "spf", "result": "pass", "domain": "mail.relay.example"}
+
+
+def test_received_spf_alone_still_names_the_checked_domain():
+    for header in ("Fail (protection.outlook.com: domain of inss.gov.example does not designate 192.0.2.9 as "
+                   "permitted sender) receiver=protection.outlook.com; client-ip=192.0.2.9; helo=x.example;",
+                   "pass (mx.example.net: 192.0.2.9 is authorized) client-ip=192.0.2.9; "
+                   "envelope-from=\"bounce@inss.gov.example\"; receiver=mx.example.net;"):
+        a = _analysis("", headers=[("Received-SPF", header)])
+        spf = assess(a)["checks"][0]
+        assert spf["domain"] == "inss.gov.example", header
