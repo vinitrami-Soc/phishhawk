@@ -27,6 +27,7 @@ from html import escape
 from importlib.resources import files as package_files
 
 from .. import __version__
+from ..alignment import assess
 from ..attack import TACTIC_ORDER, technique_tactic
 from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, signal_kind, vt_is_malicious
@@ -277,6 +278,7 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .kv>div:first-child{border-top:0;padding-top:0}
 .kv dt{color:var(--ink-3);font-size:12px}
 .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.why{margin:.4rem 0 0;padding-left:1.1rem}.why li{margin:.15rem 0}
 .kv .mono{font-size:12px}
 .badges{display:flex;flex-wrap:wrap;gap:5px}
 .summary{margin:0 0 12px;color:var(--ink-2);font-size:13px;line-height:1.6}
@@ -713,6 +715,12 @@ def _sender(a: Analysis) -> str:
             rows.append((label, '<span class="mono">%s</span>' % escape(defang_host(value))))
     rows.append(("Received hops", str(a.received_hops)))
     rows.append(("Auth", _auth_badges(a)))
+    block = assess(a, defang_host)
+    level = {"pass": "ok", "fail": "high"}.get(block["status"], "medium")
+    lead, *why = block["explanation"]
+    rows.append(("Alignment", '%s <span class="why-lead">%s</span>%s' % (
+        _badge(block["status"].upper(), level), escape(lead),
+        '<ul class="why">%s</ul>' % "".join("<li>%s</li>" % escape(line) for line in why) if why else "")))
     if a.forged_auth:
         rows.append(("Forged auth", "<br>".join(
             "%s claimed as <span class=\"mono\">%s</span>%s" % (

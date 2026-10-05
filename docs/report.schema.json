@@ -53,6 +53,32 @@
     "list_domains": {"type": "array", "items": {"type": "string"}},
     "auth": {"type": "object", "additionalProperties": {"type": "string"},
              "description": "spf, dkim, dmarc, compauth from the receiving server"},
+    "auth_checks": {
+      "type": "array",
+      "description": "Each SPF, DKIM and DMARC result in the receiving server's headers, with the domain it checked (empty when none was given or it was not a valid domain)",
+      "items": {"type": "object", "required": ["method", "result", "domain"], "additionalProperties": false,
+                "properties": {"method": {"enum": ["spf", "dkim", "dmarc"]}, "result": {"type": "string"},
+                               "domain": {"type": "string"}}}
+    },
+    "authentication": {
+      "type": "object",
+      "description": "Whether the From domain is authenticated, and why, in plain sentences for a ticket",
+      "required": ["status", "checks", "identities", "explanation"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["pass", "fail", "unknown"]},
+        "checks": {"type": "array", "items": {
+          "type": "object", "required": ["check", "result", "domain", "aligned"], "additionalProperties": false,
+          "properties": {"check": {"enum": ["SPF", "DKIM", "DMARC"]}, "result": {"type": "string"},
+                         "domain": {"type": "string"}, "aligned": {"type": ["boolean", "null"]}}}},
+        "identities": {"type": "array", "items": {
+          "type": "object", "required": ["role", "address", "domain", "same_organisation"],
+          "additionalProperties": false,
+          "properties": {"role": {"enum": ["From", "Reply-To", "Return-Path"]}, "address": {"type": "string"},
+                         "domain": {"type": "string"}, "same_organisation": {"type": "boolean"}}}},
+        "explanation": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+      }
+    },
     "forged_auth": {"type": "array", "items": {"type": "object", "required": ["claim", "authserv", "impersonates"],
                                                "properties": {"claim": {"type": "string"},
                                                               "authserv": {"type": "string"},

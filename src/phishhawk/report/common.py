@@ -9,6 +9,7 @@ from dataclasses import asdict
 from typing import Any
 
 from .. import __version__
+from ..alignment import assess
 from ..attack import technique_name, technique_url
 from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, vt_is_malicious
@@ -232,6 +233,7 @@ def to_dict(analysis: Analysis) -> dict[str, Any]:
     payload["verdict"] = analysis.verdict
     payload["techniques"] = [{k: v for k, v in row.items()} for row in technique_rows(analysis)]
     payload["iocs"] = analysis.iocs()
+    payload["authentication"] = assess(analysis)
     payload["recommendations"] = recommendations(analysis)
     payload["summary"] = summary_sentences(analysis)
     payload["generated_at"] = utc_now()
