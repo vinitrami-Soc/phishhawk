@@ -370,7 +370,7 @@ means an input could not be read or a report could not be written.
 | Flag | Best for | Notes |
 |---|---|---|
 | *(default)* | The analyst | Colour terminal report. `--quiet` gives one block per mail; `--verbose` shows everything. |
-| `--html PATH` | The ticket, L2, a manager | Self-contained, in the IntelPulse console's design and the PhishHawk logo's amber-orange. A score ring shows where the risk score came from, split by severity, with the verdict thresholds marked. Opens in the reader's light or dark mode, and an Auto / Light / Dark switch changes it without a script. Prints to A4 with page numbers: the summary on page one, the evidence after it. A strict Content-Security-Policy blocks scripts and network access, every value is escaped, and malicious URLs are never clickable. |
+| `--html PATH` | The ticket, L2, a manager | Self-contained, in the IntelPulse console's design and the PhishHawk logo's amber-orange. A score ring shows where the risk score came from, split by severity, with the verdict thresholds marked. Opens in the reader's light or dark mode, and an Auto / Light / Dark switch changes it without a script. Prints to A4 with page numbers: the summary first, the evidence from a fresh page after it. A strict Content-Security-Policy blocks scripts and network access, every value is escaped, and malicious URLs are never clickable. |
 | `--json PATH` | SOAR playbooks, scripts | Verdict, score, signals, techniques, indicators and actions, in a format published as a [JSON Schema](docs/report.schema.json). Message bodies are left out. |
 | `--stix PATH` | OpenCTI, Sentinel TI | STIX 2.1 bundle, validated against the official `stix2` library in CI. IDs are deterministic, so one URL reported by fifty users imports as one indicator. |
 | `--misp PATH` | MISP | A MISP event per message: every indicator as an attribute, an email object, ATT&CK galaxy tags and a TLP tag. |
@@ -379,11 +379,11 @@ means an input could not be read or a report could not be written.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/report-dark.png">
-  <img alt="The HTML report for the BEC sample: the verdict and why, the risk score ring split into high, medium and low points, counts of URLs, files, signals and ATT&CK techniques, sender authentication, recommended actions, and the signals table with severity badges" src="docs/images/report-light.png" width="760">
+  <img alt="The HTML report for the BEC sample: the verdict and why, the message's details with its SHA-256, the risk score ring split into high, medium and low points, counts of URLs, files, signals and ATT&CK techniques, sender authentication with the alignment explained in sentences, recommended actions, and the signals table with severity badges" src="docs/images/report-light.png" width="760">
 </picture>
 
 <p align="center">
-  <img alt="The same report printed to A4: page one holds the verdict, the counts, sender and authentication, and the recommended actions; page two starts the evidence with the signals and lookalike domains" src="docs/images/report-print.png" width="760">
+  <img alt="The same report printed to A4: page one holds the verdict, the message's details with its SHA-256, and the counts; page two holds sender and authentication, with the alignment explained, and the recommended actions; the evidence starts on the next page" src="docs/images/report-print.png" width="760">
 </p>
 
 <sub>Printed from a browser, or saved as PDF. Section headers repeat on every page, and rows never split
