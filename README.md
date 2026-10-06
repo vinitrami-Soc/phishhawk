@@ -27,7 +27,8 @@
   <a href="docs/DETECTIONS.md">Detections</a> ·
   <a href="docs/INTEGRATIONS.md">Integrations</a> ·
   <a href="eval/README.md">Evaluation</a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="https://medium.com/@ramivinit/i-built-an-open-source-tool-that-triages-a-reported-phishing-email-in-under-a-second-fbf591ef52b0">Write-up on Medium</a>
 </p>
 
 | | |
