@@ -9,8 +9,8 @@ matter. Thank you for reporting them responsibly.
 |---|---|
 | 2.2.x | Yes |
 | 2.1.x | Upgrade: 2.2.0 stops `graph` and `gmail` paging for ever when an API keeps offering empty pages, and `scan --json` crashing on a file name that is not UTF-8 (#53 and #57 in [the security review](docs/SECURITY-REVIEW.md)) |
-| 2.0.x | No: upgrade, 2.1.0 fixes two crashes and a hang on hostile mail that 2.0 has (#32, #34 and #52 in [the security review](docs/SECURITY-REVIEW.md)) |
-| 1.x | No: upgrade, 2.0.0 fixes the issues in [the security review](docs/SECURITY-REVIEW.md) |
+| 2.0.x | No: upgrade to 2.2.0. 2.1.0 fixed two crashes and a hang on hostile mail that 2.0 has (#32, #34 and #52 in [the security review](docs/SECURITY-REVIEW.md)) |
+| 1.x | No: upgrade to 2.2.0. 2.0.0 fixed the issues in [the security review](docs/SECURITY-REVIEW.md) |
 | Earlier prototypes (`phishtriage`, the single-file extractor) | No |
 
 ## Reporting a vulnerability
