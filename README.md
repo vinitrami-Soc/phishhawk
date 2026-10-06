@@ -334,7 +334,7 @@ environment variable and exit code, with worked examples.
 ## Reading the result
 
 <p align="center">
-  <img src="docs/images/demo.svg" width="760" alt="phishhawk scan output for a business email compromise sample: header block, SPF DKIM and DMARC all pass, lookalike sender domain, HTML smuggling attachment, verdict LIKELY PHISHING with recommended actions">
+  <img src="docs/images/demo.svg" width="760" alt="phishhawk scan output for a business email compromise sample: header block with the message's SHA-256, SPF DKIM and DMARC all pass with the alignment explained in sentences, lookalike sender domain, HTML smuggling attachment, verdict LIKELY PHISHING with recommended actions">
 </p>
 
 <sub>A real, unedited run, recorded from the CLI under a pseudo-terminal by

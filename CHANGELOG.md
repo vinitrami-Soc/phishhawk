@@ -15,7 +15,10 @@ the JSON and STIX output are the public interface.
   The artifact round trip and the GHCR build were run with them before the
   update.
 - The README's hero image shows 2.2's held-out results, test count and
-  fuzzing total.
+  fuzzing total, and the banner and demo images are recorded again from 2.2
+  (the banner said v2.1.0; the demo now shows the message's SHA-256 and the
+  authentication explanation).
+- `SECURITY.md` points every unsupported version at 2.2.0.
 
 ### Fixed
 
