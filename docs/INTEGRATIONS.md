@@ -274,13 +274,16 @@ phishhawk evidence verify "$CASE"
 - **Purge and block** with `copies.json` (each copy's mailbox and message id)
   and `triage.json`'s `iocs[]`: a SOAR playbook can delete the copies through
   Graph or the Gmail API with its own, separately approved, write permission.
+  Review any copy matched only by "(Gmail's search, not checked again)", and
+  treat an incomplete sweep (exit `3`) as unfinished.
 - **Who clicked** is not in a mailbox: search your proxy, DNS and EDR logs for
   the domains and SHA-256 values in `iocs[]`.
 - **Detonate** with the pack in `$CASE/sandbox`: CAPE, Joe Sandbox, ANY.RUN
   and Hybrid Analysis all accept a ZIP with the password `infected`, and
   `urls.txt` inside lists the links to submit as URL tasks.
 - **Keep the chain of custody**: put `evidence verify`'s `head`, or each
-  report's `evidence.custody`, in the ticket.
+  report's `evidence.custody`, in the ticket, and check the folder against it
+  later with `phishhawk evidence verify "$CASE" --head <value>`.
 
 **Sweeping many Microsoft 365 mailboxes** needs an application (not delegated)
 token with the `Mail.Read` application permission. Grant it to an app

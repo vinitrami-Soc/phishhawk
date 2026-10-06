@@ -276,9 +276,12 @@ phishhawk evidence verify /cases/4711
 
 `phishhawk evidence verify DIR` recomputes the chain and every kept message's
 hash, reports any record changed, removed or reordered and any message changed
-or missing, and prints the chain's last link (`head`). Put the head, or the
-`custody` value of a report, in the ticket: it pins the log as it was then.
-Exit code `0` when everything checks out, `1` when something does not.
+or missing, and prints the chain's last link (`head`). The chain alone cannot
+catch someone who rewrites the whole log, so put the head, or a report's
+`custody` value, in the ticket, and check against it later:
+`phishhawk evidence verify DIR --head VALUE` fails unless that value is still
+in the log. Exit code `0` when everything checks out, `1` when something does
+not.
 
 ## campaign: group reports into campaigns
 
@@ -309,7 +312,8 @@ the report lists the platforms it found. A web address (link, domain or host)
 links only messages at least half of which PhishHawk judged suspicious or
 worse, because ordinary sites turn up in ordinary mail.
 
-Each campaign shows what links it, how many messages share each trait, its
+Each campaign shows what its messages share and how many share each trait
+(web addresses of mostly clean mail are left out: they link nothing), its
 recipients (from each message's To line, the original's for a reported
 message), its senders, its first and last sighting (from the Date lines) and
 its verdicts. Output: the terminal summary, `--json`, `--csv` (one row per
@@ -329,7 +333,7 @@ phishhawk sweep gmail --like reported.eml --since 2026-09-01 --csv copies.csv
 
 | Option | Meaning |
 |---|---|
-| `--like FILE` | The reported `.eml` or `.msg`. Its Message-ID, sender and reply-to addresses, subject and phishing domains are searched for; a brand's own domain or address, free-mail providers and other shared services never are. |
+| `--like FILE` | The reported `.eml` or `.msg`. Its Message-ID, sender and reply-to addresses, subject and phishing domains are searched for; a brand's own domain or address, free-mail providers and other shared services never are, and a platform's customer is searched by its host (`shop.myshopify.com`), never the whole platform. |
 | `--from`, `--subject`, `--domain`, `--message-id` | Search for these too (each repeatable) |
 | `--mailbox ADDRESS` | A mailbox to search (repeatable; default `me`, the token's own) |
 | `--mailboxes FILE` | One mailbox per line; `#` starts a comment |
@@ -339,17 +343,23 @@ phishhawk sweep gmail --like reported.eml --since 2026-09-01 --csv copies.csv
 
 Each copy is listed with its mailbox, received time, folder (Graph's folder
 name; Gmail's Inbox, Spam, Trash or Archive), whether it was read, whether
-the mailbox's owner replied in its thread, and what matched. Gmail searches
-`in:anywhere`, spam and trash included; Graph searches every folder. Graph's
-search matches loosely, so its hits are checked against what was asked (the
-sender's address, the subject, the domain in the body) before they count;
-the body is read for that check and never kept.
+the mailbox's owner replied (wrote to the copy's sender or reply-to address in
+its thread: a forward to the SOC is not a reply), and what matched. Gmail
+searches `in:anywhere`, spam and trash included; Graph searches every folder.
+Every hit is checked against what was asked before it counts: the sender's
+address, the subject, the Message-ID, and for Graph the domain in the body (or
+a host under it; the body is read for that check and never kept). Gmail's
+search for a domain is taken as it is, and such copies are marked "(Gmail's
+search, not checked again)": look at them before purging.
 
 Only GET requests are sent, the token is read from the environment and only
 sent to the API's host, and a mailbox that is refused or not found is reported
-without stopping the others. A Gmail token belongs to one mailbox (with
-domain-wide delegation, mint one per mailbox). Exit code `0` when no copy was
-found, `1` when copies were, `3` when a mailbox could not be searched. Whether
+without stopping the others. One search or lookup that fails (throttling, an
+error) marks its mailbox incomplete and keeps what the others found; a copy
+deleted while the sweep runs is skipped. A Gmail token belongs to one mailbox
+(with domain-wide delegation, mint one per mailbox). Exit code `0` when no copy
+was found, `1` when copies were, `3` when a mailbox could not be searched, or
+only partly. Whether
 anyone clicked a link or opened an attachment is not in the mailbox: search
 your proxy and EDR logs for the domains and hashes in the scan report.
 
@@ -489,7 +499,7 @@ otherwise; `3` still means an error.
 
 `campaign` exits `0`, or `3` when an input could not be read. `sweep` exits
 `0` when no copy was found, `1` when copies were and `3` when a mailbox could
-not be searched. `evidence verify` exits `0` when everything checks out and
+not be searched, or only partly. `evidence verify` exits `0` when everything checks out and
 `1` when it does not.
 
 ## stdout, stderr and piping

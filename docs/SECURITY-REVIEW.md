@@ -112,7 +112,8 @@ authentication in every report. Each new module was written test-first and
 then mutation-tested: the code was broken on purpose in every way that
 matters (a check skipped, an escape dropped, a limit lifted, a permission
 loosened) and the tests had to fail. All did, once three tests were added
-for the mutants that first survived. The diff was reviewed line by line; the
+for the mutants that first survived. The diff was reviewed line by line, then
+by an independent reviewer given only the diff and the requirements; the
 regular-expression scan and the fuzzer were run over the new code, the
 fuzzer now also correlating, packing and deriving sweep searches from every
 mutated message; and every installed dependency and every commit were
@@ -123,6 +124,12 @@ checked by pip-audit and gitleaks, which now run in CI.
 | 53 | **Paging never ended when an API kept offering empty pages.** `graph`, `gmail` and `sweep` followed `@odata.nextLink` or `nextPageToken` while they held fewer messages than asked for, so a listing offering empty page after empty page kept them asking for ever. Also in 2.1. Found by the review. | The command hangs; API quota spent | Medium | Every listing stops after 100 pages |
 | 54 | **`sweep` put any mailbox name into the request path.** A name such as `..` or `a/b` in a mailbox list would have addressed another resource of the API, with the token. Found by the review, before release. | A request with the token to the wrong API path | Low | A mailbox must be an address, a user id or a GUID; anything else is refused before a request is sent |
 | 55 | **The authentication-check pattern was quadratic** when searched from every position: over 60 s on 60,000 spaces. Triage only ever matched it at the start of one clause, so no message was slowed, but the pattern was fixed rather than relied on. Found by the ReDoS scan. | None in use | Low | Clauses are stripped and matched at their start |
+| 56 | **`sweep --like` searched whole platform zones**, and Graph's body check was a substring test. A phish on `evil-store.myshopify.com` searched for `myshopify.com`, and a body naming `tesco.com` matched a search for `co.com`, so legitimate mail could be listed as copies, and purged by a playbook following the documented workflow. Found by the independent review. | Legitimate mail purged | High | A known platform is searched by its customer's host; a body must name the domain or a host under it; Gmail hits are checked against their headers, and a domain only Gmail's search vouches for is labelled so |
+| 57 | **A file name that is not UTF-8** crashed `--evidence` (after keeping the message, before recording it), `campaign --json`/`--md`, and `scan --json` (since before 2.2). Found by the independent review. | The run stops; custody incomplete | Medium | Such bytes are written as `\xNN` escapes |
+| 58 | **One failed request discarded a mailbox's sweep results**: a copy deleted mid-sweep, a 429 or a 400 on one search. An attacker controls subject and Message-ID lengths that could provoke a 400. Found by the independent review. | Copies missed | Medium | Each failure is a warning on its mailbox and the rest is kept; a deleted copy is skipped; terms are capped and KQL operators neutralised; an incomplete sweep exits 3 |
+| 59 | **Campaigns merged through shared providers**: path-style IPFS gateways linked every message using `ipfs.io`, and form and file-sharing links with the document id in the query collapsed into one. Found by the independent review. | Unrelated phish shown as one campaign | Medium | IPFS links by content identifier; document ids stay in the link |
+| 60 | **A forward to the SOC counted as a reply** to the phish. Found by the independent review. | Users wrongly shown as having replied | Medium | Only mail sent to the copy's sender or reply-to address counts |
+| 61 | **`evidence verify` could not catch a rewritten log**, and a crash mid-write left half a message that later read as tampering. Found by the independent review. | False assurance; false alarms | Medium | `--head` checks against a value recorded elsewhere; messages are written to a temporary file and linked into place |
 
 ## Tested and found safe
 

@@ -47,8 +47,12 @@ tuning messages; @@HELD@@
   folder, whether it was read and whether the mailbox's owner replied in its
   thread; JSON and CSV too. Read-only like `graph` and `gmail`: GET requests
   only, the token from `PHISHHAWK_GRAPH_TOKEN` or `PHISHHAWK_GMAIL_TOKEN` and
-  only to the API's host. Graph's loose search results are checked against
-  what was asked before they count. Exit 1 when copies are found.
+  only to the API's host. Every hit is checked against what was asked before
+  it counts; a platform's customer is searched by its host, never the whole
+  platform; "replied" means mail sent to the copy's sender or reply-to
+  address, not a forward to the SOC. One failed search marks its mailbox
+  incomplete without losing the rest. Exit 1 when copies are found, 3 when a
+  mailbox could not be searched fully.
 - **An authentication block in every report**: pass, fail or unknown for the
   domain the reader sees in From; which domain SPF, DKIM and DMARC each
   vouched for and whether it is aligned with From; the Reply-To and
@@ -64,7 +68,7 @@ tuning messages; @@HELD@@
   `DIR/custody.jsonl` (hashes, source, time, analyst, tool version, verdict);
   the report carries the record's chain value. `phishhawk evidence verify DIR`
   finds a record changed, removed or reordered and a kept message changed or
-  missing.
+  missing; with `--head`, a log rewritten after the head you recorded.
 - **`--sandbox DIR`** writes, per message, a ZIP for your sandbox: the message
   as read, every file pulled out of it (archive members included), the links
   to detonate and a manifest, every member encrypted with the password
@@ -81,12 +85,14 @@ tuning messages; @@HELD@@
   country code are now suffixes. Found by campaign correlation.
 - Exchange Online's Authentication-Results header has no authserv-id; its
   first check's domain is now read too.
+- `scan --json` crashed on a file whose name is not UTF-8; such bytes are now
+  written as `\xNN` escapes.
 
 ### Security
 
-Found by a fourth security review, mutation testing of every new module, a
-regular-expression scan and fuzzing; the full list is in
-[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) (#53 to #55).
+Found by a fourth security review, an independent code review, mutation
+testing of every new module, a regular-expression scan and fuzzing; the full list is in
+[docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md) (#53 to #61).
 
 - `graph`, `gmail` (also in 2.1) and `sweep` kept paging for ever when an API
   offered empty page after empty page: every listing stops after 100 pages.
@@ -94,6 +100,12 @@ regular-expression scan and fuzzing; the full list is in
   `a/b`) before anything is sent for it.
 - The new authentication-check pattern was quadratic when searched from
   every position; clauses are now matched at their start.
+- Before release, the independent review also found `sweep --like`
+  searching whole platform zones (legitimate mail could have been listed as
+  copies and purged), one failed request discarding a mailbox's results,
+  forwards to the SOC counted as replies, campaigns merged through IPFS
+  gateways and shared forms, and `evidence verify` unable to catch a
+  rewritten log. All are fixed.
 - @@FUZZ@@
 
 ## [2.1.0] - 2026-10-05

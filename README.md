@@ -51,6 +51,11 @@ $ phishhawk scan samples/sample_benign.eml samples/sample_phish.eml --quiet --of
   9 high-severity signals raised.
   Maps to 10 MITRE ATT&CK techniques.
   Verdict: LIKELY PHISHING (risk score 35)
+
+-- BATCH SUMMARY (2 messages) --------------------------------------------
+  file                                   verdict               score  urls files
+  samples/sample_benign.eml              NO STRONG INDICATORS      0     1     0
+  samples/sample_phish.eml               LIKELY PHISHING          35     6     1
 ```
 
 <p align="center">
@@ -128,7 +133,7 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 | **Your rules** | A config file for your domains, partners (never flagged), a block list, your own brands and lure phrases, and your YARA rules, run on the message and every file inside it. |
 | **Reputation** *(optional)* | VirusTotal for URLs and file hashes, urlscan.io for hosts, RDAP for domain age, AbuseIPDB for the sending IP. All cached, rate-limited and switched off by `--offline`. |
 | **After triage** | `phishhawk campaign` groups a folder of reports into campaigns by shared attachments, phishing domains, links, QR payloads and senders, with each campaign's recipients and first and last sighting, offline. `phishhawk sweep` finds a reported message's other copies in Microsoft 365 or Gmail mailboxes, with whether each was read or replied to, read-only. `--sandbox` writes a pack for any sandbox: the message, every file in it and the links to detonate, encrypted with the password `infected`. |
-| **Evidence** | Every report names the SHA-256 of the exact bytes it analysed. `--evidence` keeps each message, read-only, with a hash-chained custody log, and `phishhawk evidence verify` proves it unchanged. |
+| **Evidence** | Every report names the SHA-256 of the exact bytes it analysed. `--evidence` keeps each message, read-only, with a hash-chained custody log; `phishhawk evidence verify --head` shows whether anything changed since the head you put in the ticket. |
 
 The full list of signals, their severities and the ATT&CK techniques behind
 each is in [docs/DETECTIONS.md](docs/DETECTIONS.md).
