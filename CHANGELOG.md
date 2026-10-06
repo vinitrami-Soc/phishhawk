@@ -19,6 +19,8 @@ the JSON and STIX output are the public interface.
   (the banner said v2.1.0; the demo now shows the message's SHA-256 and the
   authentication explanation).
 - `SECURITY.md` points every unsupported version at 2.2.0.
+- The HTML report screenshots are taken again from 2.2 (they showed v2.1.0
+  and no SHA-256 or alignment explanation).
 
 ### Fixed
 
