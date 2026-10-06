@@ -7,8 +7,40 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- **HTML report: decisions first.** Each message opens with section links
+  (plain anchors, no script), the verdict and why, whether the analysis was
+  complete, whether reputation was checked and whether custody was
+  recorded, and the top three findings, each with why it matters, beside
+  the recommended actions. The evidence follows in its own sections:
+  Message; Authentication, with each SPF, DKIM and DMARC check, its result,
+  domain and alignment, and where the results were read; Findings, with a
+  "Why it matters" column; URLs; Files, shown even when there are none;
+  ATT&CK; Reputation and enrichment; Evidence and provenance (the SHA-256,
+  the custody record, and that this report does not verify the chain); and
+  Limitations. The footer says the report is an investigation aid that may
+  hold sensitive content. Still no script and no network access.
+- **JSON:** `analysis_status` (`complete` or `incomplete` with the reasons;
+  reputation `checked`, `partially checked` or `not checked`),
+  `limitations[]`, and `auth_header`, `auth_receiver` and `auth_pinned`
+  (where the authentication results were read, and whether
+  `--trusted-authserv` named the server). No field was removed or renamed.
+  The Markdown report shows the analysis and reputation status and the
+  limitations too.
+
 ### Changed
 
+- **Recommended actions no longer read as automatic.** "Purge the message
+  from every mailbox" is now "Search every mailbox for copies ... then
+  remove confirmed copies through your approved workflow", and indicators
+  are blocked "after confirming them, at your approved control points".
+  This changes `recommendations[]` in every format.
+- In the HTML report, a reputation lookup that was not made reads "Not
+  checked" instead of "not queried" or a dash, and an RDAP or AbuseIPDB
+  answer that is not a result reads as words ("Not found", "Rate limited").
+  "Signals", "Attachments" and "Infrastructure" are now "Findings", "Files"
+  and "Reputation and enrichment".
 - The release workflow's actions are updated to their current major
   versions (`download-artifact` 8, `setup-buildx-action` 4, `login-action` 4,
   `metadata-action` 6, `build-push-action` 7), each still pinned to a commit.
@@ -19,19 +51,18 @@ the JSON and STIX output are the public interface.
   (the banner said v2.1.0; the demo now shows the message's SHA-256 and the
   authentication explanation).
 - `SECURITY.md` points every unsupported version at 2.2.0.
-- The HTML report screenshots are taken again from 2.2 (they showed v2.1.0
-  and no SHA-256 or alignment explanation).
+- The HTML report screenshots are taken again (they showed v2.1.0, no
+  SHA-256 and the 2.2 layout).
 
 ### Fixed
 
 - The printed HTML report fits its summary on page one again. 2.2's
   alignment explanation had pushed sender and authentication and the
-  recommended actions onto page two. On paper the sender card now keeps the
-  alignment verdict and its first sentence, the reasons open the evidence
-  under Authentication, and the margins and spacing are tighter. All five
-  samples' summaries now fit on page one (the reported sample's did not in
-  2.1). The screen layout is unchanged. `tools/make_report_shots.py` stops
-  if the summary no longer fits.
+  recommended actions onto page two. Page one now holds the verdict, the
+  score, the counts, the top findings and the actions for all five samples
+  (the reported sample's did not fit in 2.1); authentication opens the
+  evidence on page two, and the margins and spacing are tighter.
+  `tools/make_report_shots.py` stops if the summary no longer fits.
 - Documentation: the sandbox pack's member names (`message.msg` for an
   Outlook message; `files/<first 16 hex digits of the SHA-256>-<name>`).
 - Documentation: USAGE now says next to `--sandbox` that ZipCrypto is not

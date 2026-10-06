@@ -357,8 +357,8 @@ through. PhishHawk still flags it:
 |---|---|---|---|
 | **NO STRONG INDICATORS** | None of the rules below | Close as benign unless the reporter describes harm; thank them | `0` |
 | **SUSPICIOUS** | One high-severity signal, or a risk score of 4 or more | An analyst looks before closing | `1` |
-| **LIKELY PHISHING** | Two high-severity signals, or one plus a score of 8 or more | Purge from mailboxes, block the indicators, find who clicked, escalate | `1` |
-| **MALICIOUS** | Two or more VirusTotal engines flag a URL or attachment | Treat as an incident: purge, block, reset credentials, hunt the hashes in EDR | `2` |
+| **LIKELY PHISHING** | Two high-severity signals, or one plus a score of 8 or more | Find the copies in every mailbox and remove the confirmed ones through your workflow, block the confirmed indicators, find who clicked, escalate | `1` |
+| **MALICIOUS** | Two or more VirusTotal engines flag a URL or attachment | Treat as an incident: remove confirmed copies, block, reset credentials, hunt the hashes in EDR | `2` |
 
 Signals weigh 3 (high), 2 (medium) or 1 (low). Low signals add **at most 3
 points between them**, so a missing authentication header plus a bounce address
@@ -370,7 +370,7 @@ means an input could not be read or a report could not be written.
 | Flag | Best for | Notes |
 |---|---|---|
 | *(default)* | The analyst | Colour terminal report. `--quiet` gives one block per mail; `--verbose` shows everything. |
-| `--html PATH` | The ticket, L2, a manager | Self-contained, in the IntelPulse console's design and the PhishHawk logo's amber-orange. A score ring shows where the risk score came from, split by severity, with the verdict thresholds marked. Opens in the reader's light or dark mode, and an Auto / Light / Dark switch changes it without a script. Prints to A4 with page numbers: the summary on page one, the evidence from a fresh page after it, opening with the reasons behind the alignment verdict. A strict Content-Security-Policy blocks scripts and network access, every value is escaped, and malicious URLs are never clickable. |
+| `--html PATH` | The ticket, L2, a manager | Self-contained, in the IntelPulse console's design and the PhishHawk logo's amber-orange. Decisions come first: the verdict and why, whether the analysis was complete, the top three findings and the recommended actions. Then each part of the evidence in its own section (message, authentication with each check and where it was read, findings with why each matters, URLs, files, ATT&CK, reputation, evidence and provenance, limitations), with section links at the top. A score ring shows where the risk score came from, split by severity, with the verdict thresholds marked. Opens in the reader's light or dark mode, and an Auto / Light / Dark switch changes it without a script. Prints to A4 with page numbers: the summary on page one, the evidence from a fresh page after it. A strict Content-Security-Policy blocks scripts and network access, every value is escaped, and malicious URLs are never clickable. |
 | `--json PATH` | SOAR playbooks, scripts | Verdict, score, signals, techniques, indicators and actions, in a format published as a [JSON Schema](docs/report.schema.json). Message bodies are left out. |
 | `--stix PATH` | OpenCTI, Sentinel TI | STIX 2.1 bundle, validated against the official `stix2` library in CI. IDs are deterministic, so one URL reported by fifty users imports as one indicator. |
 | `--misp PATH` | MISP | A MISP event per message: every indicator as an attribute, an email object, ATT&CK galaxy tags and a TLP tag. |
@@ -379,11 +379,11 @@ means an input could not be read or a report could not be written.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/report-dark.png">
-  <img alt="The HTML report for the BEC sample: the verdict and why, the message's details with its SHA-256, the risk score ring split into high, medium and low points, counts of URLs, files, signals and ATT&CK techniques, sender authentication with the alignment explained in sentences, recommended actions, and the signals table with severity badges" src="docs/images/report-light.png" width="760">
+  <img alt="The HTML report for the BEC sample: section links at the top; the verdict and why, the sender, date and SHA-256, and whether the analysis was complete, reputation was checked and custody was recorded; the risk score ring split into high, medium and low points; counts of URLs, files, signals and ATT&CK techniques; the top three findings, each with why it matters, beside the recommended actions; then the message details" src="docs/images/report-light.png" width="760">
 </picture>
 
 <p align="center">
-  <img alt="The same report printed to A4: page one holds the verdict, the message's details with its SHA-256, the counts, sender and authentication, and the recommended actions; page two starts the evidence with the reasons behind the alignment verdict, then the signals and lookalike domains" src="docs/images/report-print.png" width="760">
+  <img alt="The same report printed to A4: page one holds the verdict, the SHA-256, the analysis status, the risk score, the counts, the top three findings and the recommended actions; page two starts the evidence with the message details, authentication with each check, and the findings with why each matters" src="docs/images/report-print.png" width="760">
 </p>
 
 <sub>Printed from a browser, or saved as PDF. Section headers repeat on every page, and rows never split

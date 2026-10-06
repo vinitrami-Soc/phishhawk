@@ -366,10 +366,21 @@ def _auth_checks(values: list[str]) -> list[dict[str, str]]:
     return checks
 
 
+def _receiver_name(value: str) -> str:
+    """The authserv-id an Authentication-Results header opens with, or ""
+    when it names none (Exchange Online starts with the first result)."""
+    text = value
+    for _ in range(4):  # comments can nest
+        text = _COMMENT_RE.sub(" ", text)
+    first = text.split(";", 1)[0].strip()
+    return "" if _CHECK_RE.match(first) else first.lower()[:80]
+
+
 def _auth_results(msg: Message, trusted: tuple[str, ...] = ()
-                  ) -> tuple[dict[str, str], list[dict[str, Any]], list[dict[str, str]]]:
+                  ) -> tuple[dict[str, str], list[dict[str, Any]], list[dict[str, str]], tuple[str, str]]:
     """SPF/DKIM/DMARC results from the receiving server, any claims that were
-    forged below them, and each of the receiver's checks with its domain.
+    forged below them, each of the receiver's checks with its domain, and
+    where the results came from: the header and the server that wrote it.
 
     Only the block of Authentication-Results headers at the top is trusted:
     the receiving server writes it, one header or (ProtonMail) one per check,
@@ -431,7 +442,11 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()
     checks = _auth_checks([items[i][1] for i in trusted_block])
     if received_spf and not any(check["method"] == "spf" for check in checks):
         checks.insert(0, received_spf)
-    return results, forged, checks[:MAX_CHECKS]
+    if trusted_block:
+        source = ("Authentication-Results", _receiver_name(items[trusted_block[0]][1]))
+    else:
+        source = ("Received-SPF", "") if received_spf else ("", "")
+    return results, forged, checks[:MAX_CHECKS], source
 
 
 def _received(msg: Message) -> list[str]:
@@ -546,7 +561,9 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
     analysis.return_path_domain = domain_of_address(return_path)
 
     analysis.mailing_list, analysis.list_domains = _mailing_list(msg)
-    analysis.auth, analysis.forged_auth, analysis.auth_checks = _auth_results(msg, trusted_authserv)
+    analysis.auth, analysis.forged_auth, analysis.auth_checks, (analysis.auth_header, analysis.auth_receiver) = \
+        _auth_results(msg, trusted_authserv)
+    analysis.auth_pinned = bool(trusted_authserv)
     received = _received(msg)
     analysis.originating_ip = _originating_ip(msg, received)
     analysis.hops = _hops(received)
