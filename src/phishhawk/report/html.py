@@ -21,6 +21,7 @@ page and the evidence after it.
 from __future__ import annotations
 
 import math
+import re
 from base64 import b64encode
 from contextvars import ContextVar
 from functools import lru_cache
@@ -41,6 +42,7 @@ from .common import (
     human_size,
     limitations,
     recommendations,
+    report_id,
     sorted_signals,
     summary_sentences,
     technique_rows,
@@ -122,6 +124,9 @@ ICONS = {
     "lookup": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>',
     "inbox": '<path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13L21 13v6H3v-6z"/>',
     "check": '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>',
+    "offline": '<path d="m3 3 18 18"/><path d="M8.6 16.4a4.8 4.8 0 0 1 6.8 0"/>'
+               '<path d="M5 12.8a9.9 9.9 0 0 1 5-2.7"/><path d="M19 12.8a9.9 9.9 0 0 0-2.3-1.7"/>'
+               '<path d="M12 20h.01"/>',
     "chain": '<rect x="2.5" y="8.5" width="9" height="7" rx="3.5"/><rect x="12.5" y="8.5" width="9" height="7" '
              'rx="3.5"/>',
     "auto": '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/>',
@@ -222,7 +227,9 @@ a:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:
 .pill .mono{font-size:11.5px;color:var(--ink)}
 .version{font:600 11px var(--sans);letter-spacing:.02em;padding:3px 9px;border-radius:var(--r-full);
   background:var(--brand-wash);color:var(--brand-ink-2);border:1px solid var(--brand-wash-2)}
-.topbar .pill{margin-left:auto}
+.topbar .gen{margin-left:auto}
+.pill.offline svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;
+  stroke-linejoin:round}
 /* theme switch: radios styled as a segmented control, no script */
 .theme{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:var(--r-full);
   background:var(--paper);box-shadow:var(--shade-sm)}
@@ -429,6 +436,7 @@ mark{background:var(--brand-wash-2);color:var(--brand-ink-2);border-radius:3px;p
 .top li>div>span{display:block;margin-top:2px;font-size:12.5px;color:var(--ink-3);line-height:1.45}
 .more{margin:12px 0 0;font-size:12.5px}
 .more a{display:inline-block;padding:4px 0}
+a[download]{display:inline-block;padding:4px 0}
 .caution{background:var(--amber-wash);border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
 .limits{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px;color:var(--ink-2)}
 
@@ -529,7 +537,7 @@ footer b{color:var(--ink-2);font-weight:600}
 @media (max-width:760px){
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   .grid-2{grid-template-columns:minmax(0,1fr)}
-  .topbar .pill{margin-left:0}
+  .topbar .gen{margin-left:0}
   .verdict{font-size:25px}
 }
 @media (max-width:560px){
@@ -588,6 +596,8 @@ footer b{color:var(--ink-2);font-weight:600}
   .pill{box-shadow:none}
   .hero{grid-template-columns:minmax(0,1fr) 236px;gap:16px;padding:14px 16px 12px}
   .hero-side{padding:0 0 0 16px;border-top:0;border-left:1px solid var(--line);gap:10px}
+  .hero-side{grid-template-columns:minmax(0,1fr)}
+  .hero-side .legend{border-top:1px solid var(--line);padding-top:8px}
   .ring{width:104px;height:104px;flex-basis:104px}
   .ring-row{gap:12px}
   .legend li{font-size:11.5px;grid-template-columns:14px 4.4em minmax(0,1fr) auto;gap:6px}
@@ -856,6 +866,7 @@ def _hero(a: Analysis, level: str, anchor: str) -> str:
     if a.evidence.get("sha256"):
         meta.append(("SHA-256", '<span class="mono ioc sel">%s</span> (%d bytes)'
                      % (escape(a.evidence["sha256"]), a.evidence.get("size", 0))))
+    meta.append(("Report ID", '<span class="mono sel">%s</span>' % report_id(a)))
     status = analysis_status(a)
     facts = [_fact("check", "Analysis", status["status"].capitalize(), status["status"] != "complete"),
              _fact("lookup", "Reputation", escape(status["reputation"].capitalize()),
@@ -1071,7 +1082,9 @@ def _reputation(a: Analysis) -> str:
 
 def _provenance(a: Analysis, anchor: str, generated: str) -> str:
     sha = a.evidence.get("sha256", "")
-    rows = [("Message SHA-256", '<span class="mono ioc sel">%s</span>' % escape(sha) if sha else "Not computed"),
+    rows = [("Report ID", '<span class="mono sel">%s</span> (from the message SHA-256; the same in every format)'
+             % report_id(a)),
+            ("Message SHA-256", '<span class="mono ioc sel">%s</span>' % escape(sha) if sha else "Not computed"),
             ("Size", "%d bytes" % a.evidence["size"] if "size" in a.evidence else ""),
             ("Source", '<span class="mono ioc">%s</span>' % escape(a.path)),
             ("Kept as", '<span class="mono ioc">%s</span>' % escape(a.evidence["file"]) if a.evidence.get("file")
@@ -1380,14 +1393,34 @@ def _theme_switch() -> str:
         for key, name, hint in THEME_CHOICES)
 
 
-def render(analyses: list[Analysis]) -> str:
+def _exports(exports: list[dict]) -> str:
+    """The other files written in the same run, with what checks them. A file
+    beside this one is linked by its bare name, so the link still works when
+    the folder is copied; one elsewhere is only named."""
+    rows = []
+    for item in exports:
+        name = escape(item["name"])
+        if item.get("beside") and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", item["name"]):
+            name = '<a href="%s" download>%s</a>' % (name, name)
+        rows.append(("", [name, escape(item["type"]), escape(human_size(item["size"])),
+                          '<span class="mono ioc sel">%s</span>' % escape(item["sha256"])]))
+    table = _table("Report files written in the same run", ["File", "Type", "Size", "SHA-256"],
+                   [30, 18, 12, 40], rows)
+    return _panel("Report files", table, len(exports),
+                  note="the same facts in other formats; a SHA-256 shows a copy has not changed")
+
+
+def render(analyses: list[Analysis], exports: list[dict] | None = None) -> str:
+    """exports: the files written before this one in the same run, as
+    {name, type, size, sha256, beside}; listed in a "Report files" section."""
     analyses = display_copy(analyses)  # escaped anyway; this also names bidi overrides
     title = "Phishing triage" if len(analyses) != 1 else "Phishing triage: %s" % analyses[0].verdict
     generated = utc_now()
     body = ['<a class="skip" href="#msg-1-summary">Skip to the verdict</a>'
             '<div class="wrap"><header class="topbar"><div class="brand">%s<span>PhishHawk</span></div>'
-            '<span class="version">v%s</span><span class="pill">Generated <span class="mono">%s</span></span>%s'
-            "</header>" % (LOGO, __version__, generated, _theme_switch()),
+            '<span class="version">v%s</span><span class="pill gen">Generated <span class="mono">%s</span></span>'
+            '<span class="pill offline">%s Offline report'
+            "</span>%s</header>" % (LOGO, __version__, generated, _icon("offline"), _theme_switch()),
             '<main class="stack">']
     if len(analyses) > 1:
         body.append('<h1 class="sr-only">Phishing triage: %d messages</h1>' % len(analyses))
@@ -1397,6 +1430,8 @@ def render(analyses: list[Analysis]) -> str:
         body += [_section(a, "msg-%d" % i, generated) for i, a in enumerate(analyses, 1)]
     finally:
         _SHIFT.reset(token)
+    if exports:
+        body.append(_exports(exports))
     body.append("</main>")
     body.append("<footer><p><b>PhishHawk</b> v%s, a read-only analysis tool. Every indicator is defanged. This "
                 "report loads nothing from the network and runs no scripts.</p><p>This report is an investigation "

@@ -14,6 +14,7 @@ from .common import (
     display_copy,
     limitations,
     recommendations,
+    report_id,
     sorted_signals,
     summary_sentences,
     technique_rows,
@@ -61,6 +62,7 @@ def render(a: Analysis) -> str:
         out.append("| **Authentication** | %s |" % " · ".join(
             "%s %s" % (k.upper(), v) for k, v in a.auth.items()))
     out.append("| **Message-ID** | %s |" % _code(a.message_id or "(none)"))
+    out.append("| **Report ID** | %s |" % _code(report_id(a)))
     if a.evidence.get("sha256"):
         out.append("| **Message SHA-256** | %s |" % _code(a.evidence["sha256"]))
     if a.evidence.get("custody"):

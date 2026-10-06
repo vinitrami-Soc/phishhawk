@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import re
 import time
 from dataclasses import asdict
@@ -299,6 +300,31 @@ def limitations(analysis: Analysis) -> list[str]:
     return notes
 
 
+def report_id(analysis: Analysis) -> str:
+    """The report's identifier: the first 16 hex digits of the message's
+    SHA-256, so every format written for one message carries the same one."""
+    sha = analysis.evidence.get("sha256", "")
+    return "PH-%s" % sha[:16].upper() if sha else "PH-UNKNOWN"
+
+
+REPORT_EXTENSIONS = {"html": "html", "json": "json", "md": "md", "csv": "csv", "stix": "stix.json",
+                     "misp": "misp.json", "manifest": "manifest.json"}
+
+
+def safe_report_name(analyses: list[Analysis], kind: str, day: str) -> str:
+    """A file name made of hex digits and the date only. Nothing from the
+    message goes into it: a subject or a sender can carry path separators,
+    control characters or a misleading extension."""
+    if not re.fullmatch(r"\d{8}", day):
+        raise ValueError("day must be YYYYMMDD")
+    hashes = [a.evidence.get("sha256", "") for a in analyses]
+    if len(hashes) == 1 and re.fullmatch(r"[0-9a-f]{64}", hashes[0]):
+        stem = "phishhawk-report-%s" % hashes[0][:12]
+    else:
+        stem = "phishhawk-batch-%s" % hashlib.sha256("\n".join(sorted(hashes)).encode()).hexdigest()[:12]
+    return "%s-%s.%s" % (stem, day, REPORT_EXTENSIONS[kind])
+
+
 def technique_rows(analysis: Analysis) -> list[dict[str, Any]]:
     rows = []
     for technique in analysis.techniques:
@@ -318,6 +344,7 @@ def to_dict(analysis: Analysis) -> dict[str, Any]:
     payload["authentication"] = assess(analysis)
     payload["recommendations"] = recommendations(analysis)
     payload["summary"] = summary_sentences(analysis)
+    payload["report_id"] = report_id(analysis)
     payload["analysis_status"] = analysis_status(analysis)
     payload["limitations"] = limitations(analysis)
     payload["generated_at"] = utc_now()
