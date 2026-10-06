@@ -24,6 +24,14 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- The printed HTML report fits its summary on page one again. 2.2's
+  alignment explanation had pushed sender and authentication and the
+  recommended actions onto page two. On paper the sender card now keeps the
+  alignment verdict and its first sentence, the reasons open the evidence
+  under Authentication, and the margins and spacing are tighter. All five
+  samples' summaries now fit on page one (the reported sample's did not in
+  2.1). The screen layout is unchanged. `tools/make_report_shots.py` stops
+  if the summary no longer fits.
 - Documentation: the sandbox pack's member names (`message.msg` for an
   Outlook message; `files/<first 16 hex digits of the SHA-256>-<name>`).
 - Documentation: USAGE now says next to `--sandbox` that ZipCrypto is not

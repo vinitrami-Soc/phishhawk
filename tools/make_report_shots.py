@@ -5,6 +5,7 @@
 
 Writes report-light.png and report-dark.png (the top of the report, as a
 browser shows it) and report-print.png (the first two A4 pages, as printed).
+It stops if the printed summary no longer fits on page one.
 The sample is the BEC message, because it exercises the most of the report.
 Set PHISHHAWK_CHROMIUM to a Chromium binary to use it instead of Playwright's own.
 """
@@ -56,6 +57,9 @@ def main() -> int:
             browser.close()
 
     doc = pymupdf.open(stream=pdf, filetype="pdf")
+    if "Recommended actions" not in doc[0].get_text():
+        print("the printed summary no longer fits on page one", file=sys.stderr)
+        return 1
     pages = [Image.open(io.BytesIO(doc[i].get_pixmap(dpi=110).tobytes("png"))).convert("RGB") for i in range(2)]
     gap = 28
     sheet = Image.new("RGB", (sum(p.width for p in pages) + gap * 3, pages[0].height + gap * 2), "#e4e7ee")

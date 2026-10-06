@@ -279,6 +279,7 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .kv dt{color:var(--ink-3);font-size:12px}
 .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .why{margin:.4rem 0 0;padding-left:1.1rem}.why li{margin:.15rem 0}
+.print-only{display:none}
 .kv .mono{font-size:12px}
 .badges{display:flex;flex-wrap:wrap;gap:5px}
 .summary{margin:0 0 12px;color:var(--ink-2);font-size:13px;line-height:1.6}
@@ -413,16 +414,16 @@ footer b{color:var(--ink-2);font-weight:600}
 }
 
 /* Print: A4, paper white, the summary on page one and the evidence after it. */
-@page{size:A4;margin:14mm 12mm 16mm;
+@page{size:A4;margin:10mm 10mm 14mm;
   @bottom-left{content:"PhishHawk triage report";font:9pt "Outfit",sans-serif;color:#646c78}
   @bottom-right{content:"Page " counter(page) " of " counter(pages);font:9pt "Outfit",sans-serif;color:#646c78}}
 @media print{
-  body{background:#fff;font-size:12px}
+  body{background:#fff;font-size:12px;line-height:1.45}
   .theme{display:none}
   .wrap{max-width:none;padding:0}
   .card{box-shadow:none;border-color:#d9dee6}
   .pill{box-shadow:none}
-  .hero{grid-template-columns:minmax(0,1fr) 250px;gap:18px;padding:18px 20px 16px}
+  .hero{grid-template-columns:minmax(0,1fr) 236px;gap:16px;padding:14px 16px 12px}
   .hero-side{padding:0 0 0 16px;border-top:0;border-left:1px solid var(--line);gap:10px}
   .ring{width:104px;height:104px;flex-basis:104px}
   .ring-row{gap:12px}
@@ -430,21 +431,28 @@ footer b{color:var(--ink-2);font-weight:600}
   .legend .pts{font-size:11px}
   .ring-note{font-size:10.5px}
   .verdict{font-size:26px}
-  h1{font-size:17px;margin:12px 0 10px}
-  .meta{font-size:12px;gap:4px 14px}
+  h1{font-size:17px;margin:10px 0 8px}
+  .meta{font-size:11.5px;gap:3px 12px}
+  .facts{margin-top:10px}
   .kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-  .kpi{padding:11px 12px;gap:7px}
-  .kpi .val{font-size:26px}
+  .kpi{padding:9px 11px;gap:5px}
+  .kpi .val{font-size:23px}
   .grid-2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
-  .kv>div{padding:6px 0;font-size:12px}
-  .steps{gap:7px}
-  .steps li{font-size:12px}
+  .kv>div{grid-template-columns:88px minmax(0,1fr);gap:8px;padding:5px 0;font-size:11.5px}
+  .kv dt{font-size:11px}
+  .steps{gap:5px}
+  .steps li{grid-template-columns:20px minmax(0,1fr);gap:8px;font-size:11.5px;line-height:1.45}
+  .steps li::before{width:20px;height:20px;font-size:10.5px}
+  /* the alignment reasons move to an Authentication panel with the evidence */
+  .print-only{display:block}
+  .kv .why{display:none}
+  .why-more{margin-top:3px;font-size:10.5px;color:var(--ink-3)}
   /* Chromium cannot fragment grid items across pages cleanly: a table split
      over a page break was drawn under the next card. Block flow fixes it. */
   main.stack,section.msg,.evidence{display:block}
-  section.msg>*+*,.evidence>*+*{margin-top:12px}
+  section.msg>*+*,.evidence>*+*{margin-top:10px}
   .card{-webkit-box-decoration-break:clone;box-decoration-break:clone}
-  .panel{padding:12px 14px}
+  .panel{padding:10px 12px}
   .panel-head{margin-bottom:8px}
   .tbl{font-size:11.5px}
   .tbl th{padding:6px 8px}
@@ -707,6 +715,19 @@ def _kpis(a: Analysis, files: list[FileIoc]) -> str:
         % (_icon(icon), escape(label), value, foot) for icon, label, value, foot in tiles)
 
 
+def _alignment(a: Analysis, note: bool = False) -> str:
+    """The alignment badge, its lead sentence and the reasons. In print the
+    sender card keeps the lead only (note=True says where the reasons went),
+    so the summary stays on page one."""
+    block = assess(a, defang_host)
+    level = {"pass": "ok", "fail": "high"}.get(block["status"], "medium")
+    lead, *why = block["explanation"]
+    reasons = '<ul class="why">%s</ul>' % "".join("<li>%s</li>" % escape(line) for line in why) if why else ""
+    more = '<span class="print-only why-more">See Authentication for the reasons.</span>'
+    return '%s <span class="why-lead">%s</span>%s%s' % (_badge(block["status"].upper(), level), escape(lead),
+                                                      reasons, more if note and why else "")
+
+
 def _sender(a: Analysis) -> str:
     rows = []
     for label, value in (("Reply-To", a.reply_to), ("Return-Path", a.return_path),
@@ -715,12 +736,7 @@ def _sender(a: Analysis) -> str:
             rows.append((label, '<span class="mono">%s</span>' % escape(defang_host(value))))
     rows.append(("Received hops", str(a.received_hops)))
     rows.append(("Auth", _auth_badges(a)))
-    block = assess(a, defang_host)
-    level = {"pass": "ok", "fail": "high"}.get(block["status"], "medium")
-    lead, *why = block["explanation"]
-    rows.append(("Alignment", '%s <span class="why-lead">%s</span>%s' % (
-        _badge(block["status"].upper(), level), escape(lead),
-        '<ul class="why">%s</ul>' % "".join("<li>%s</li>" % escape(line) for line in why) if why else "")))
+    rows.append(("Alignment", _alignment(a, note=True)))
     if a.forged_auth:
         rows.append(("Forged auth", "<br>".join(
             "%s claimed as <span class=\"mono\">%s</span>%s" % (
@@ -806,6 +822,8 @@ def _url_cell(ioc) -> str:
 
 def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
     out = []
+    if '<ul class="why">' in (alignment := _alignment(a)):  # on paper only: on screen they sit in the card
+        out.append(_panel("Authentication", alignment, cls="print-only"))
     if a.signals:
         rows = []
         for s in sorted_signals(a):
