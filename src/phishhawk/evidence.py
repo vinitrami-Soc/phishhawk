@@ -1,7 +1,7 @@
 """Evidence: the exact bytes a report is about, kept so they can be shown
 later to be unchanged.
 
-Every report carries the SHA-256, SHA-1, MD5 and size of the bytes PhishHawk
+Every report carries the SHA-256 and size of the bytes PhishHawk
 was given (for a reported message, the report as it arrived, not the
 original unwrapped from it). With --evidence DIR those bytes are also kept
 in DIR, read-only and named by their SHA-256, and a line is appended to
@@ -59,14 +59,8 @@ def safe_text(value: str) -> str:
 
 
 def fingerprint(data: bytes) -> dict[str, Any]:
-    # SHA-1 and MD5 only name the message for tools and tickets that look files
-    # up by them; integrity rests on SHA-256 (the custody chain, the kept file).
-    # CodeQL reads an IMAP UID as account data and its message as sensitive.
-    # codeql[py/weak-sensitive-data-hashing]
-    sha1 = hashlib.sha1(data).hexdigest()
-    # codeql[py/weak-sensitive-data-hashing]
-    md5 = hashlib.md5(data).hexdigest()
-    return {"sha256": hashlib.sha256(data).hexdigest(), "sha1": sha1, "md5": md5, "size": len(data)}
+    # SHA-256 only: MD5 and SHA-1 collide, so they cannot show evidence unchanged.
+    return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}
 
 
 def _link(previous: str, record: dict[str, Any]) -> str:

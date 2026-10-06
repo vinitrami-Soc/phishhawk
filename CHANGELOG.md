@@ -64,11 +64,11 @@ Fixed).
   address, not the sender the reader sees"). The receiver's DMARC result
   always wins. In JSON as `authentication` and, per check, `auth_checks`.
   Explanation only: no signal or verdict changes.
-- **Evidence.** Every report names the SHA-256, SHA-1, MD5 and size of the
+- **Evidence.** Every report names the SHA-256 and size of the
   bytes it analysed (for a reported message, the report as it arrived), in
   JSON as `evidence`. `--evidence DIR` keeps each message there, read-only and
   named by its SHA-256, and appends a hash-chained record to
-  `DIR/custody.jsonl` (hashes, source, time, analyst, tool version, verdict);
+  `DIR/custody.jsonl` (SHA-256, size, source, time, analyst, tool version, verdict);
   the report carries the record's chain value. `phishhawk evidence verify DIR`
   finds a record changed, removed or reordered and a kept message changed or
   missing; with `--head`, a log rewritten after the head you recorded.

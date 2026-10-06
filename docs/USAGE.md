@@ -259,15 +259,15 @@ phishhawk gmail --query "has:attachment" --out reports/
 
 ## Evidence and sandbox packs
 
-Every report names the exact bytes it analysed: their SHA-256, SHA-1, MD5 and
+Every report names the exact bytes it analysed: their SHA-256 and
 size (for a reported message, the report as it arrived, not the original
 unwrapped from it). Two options of `scan`, `imap`, `graph` and `gmail` keep
 more:
 
 | Option | What it writes |
 |---|---|
-| `--evidence DIR` | Each message, exactly as read, as `DIR/<sha256>.eml` (or `.msg`), read-only; and one record per analysis appended to `DIR/custody.jsonl`: hashes, size, source (file, `mbox#n`, `imap://`, `graph://`, `gmail://`), time, analyst (`$PHISHHAWK_ANALYST`, else the login name), tool version, verdict and score. Each record includes the hash of the one before it; the record's own hash (`custody` in the report's `evidence` block) is shown in every report. A message seen again is kept once and recorded again. |
-| `--sandbox DIR` | `DIR/<message sha256>.zip`, encrypted with the password `infected`: `message.eml`, every file pulled out of it under `files/` (archive members too, so a payload behind a password PhishHawk guessed arrives unpacked), `urls.txt` (the links worth detonating: not defanged, not trusted brands) and `manifest.json` (each file's name, hashes, type, parent and notes; the message's hashes and verdict). Up to 50 MB of files per pack; the rest is listed in the manifest. Nothing is sent anywhere: upload the pack to your sandbox. |
+| `--evidence DIR` | Each message, exactly as read, as `DIR/<sha256>.eml` (or `.msg`), read-only; and one record per analysis appended to `DIR/custody.jsonl`: SHA-256, size, source (file, `mbox#n`, `imap://`, `graph://`, `gmail://`), time, analyst (`$PHISHHAWK_ANALYST`, else the login name), tool version, verdict and score. Each record includes the hash of the one before it; the record's own hash (`custody` in the report's `evidence` block) is shown in every report. A message seen again is kept once and recorded again. |
+| `--sandbox DIR` | `DIR/<message sha256>.zip`, encrypted with the password `infected`: `message.eml`, every file pulled out of it under `files/` (archive members too, so a payload behind a password PhishHawk guessed arrives unpacked), `urls.txt` (the links worth detonating: not defanged, not trusted brands) and `manifest.json` (each file's name, hashes, type, parent and notes; the message's SHA-256 and verdict). Up to 50 MB of files per pack; the rest is listed in the manifest. Nothing is sent anywhere: upload the pack to your sandbox. |
 
 ```bash
 phishhawk scan reported/ --quiet --evidence /cases/4711 --sandbox /cases/4711/sandbox
@@ -527,7 +527,7 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | Field | Contents |
 |---|---|
 | `verdict`, `score` | The verdict and the risk score |
-| `evidence` | Since 2.2: `sha256`, `sha1`, `md5` and `size` of the bytes analysed; with `--evidence`, the kept `file` and the `custody` record's chain value |
+| `evidence` | Since 2.2: `sha256` and `size` of the bytes analysed; with `--evidence`, the kept `file` and the `custody` record's chain value |
 | `authentication` | Since 2.2: `status` (`pass`, `fail` or `unknown`) for the From domain; `checks[]` with each of SPF, DKIM and DMARC's `result`, `domain` and whether it is `aligned` with From; `identities[]` (From, Reply-To, Return-Path, each with `same_organisation`); `explanation[]`, sentences for a ticket |
 | `auth_checks[]` | Since 2.2: every SPF, DKIM and DMARC result in the receiving server's headers, with the `domain` it checked |
 | `summary` | The plain-language summary lines, e.g. `"6 URLs found."` |

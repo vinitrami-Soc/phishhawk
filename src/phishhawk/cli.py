@@ -165,7 +165,7 @@ examples:
 
 With --evidence DIR, every message analysed is kept in DIR exactly as it was
 read, read-only and named by its SHA-256, and a record is appended to
-DIR/custody.jsonl: hashes, size, source, time, analyst ($PHISHHAWK_ANALYST, or
+DIR/custody.jsonl: SHA-256, size, source, time, analyst ($PHISHHAWK_ANALYST, or
 the login name), tool version and verdict. Each record includes the hash of
 the one before it. verify recomputes that chain and every message's hash, and
 prints the last link: put it in the ticket, and the log as it was then can be

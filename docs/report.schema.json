@@ -14,11 +14,9 @@
     "evidence": {
       "type": "object",
       "description": "The bytes analysed: for a reported message, the report as received. file and custody appear when the message was kept with --evidence; custody is the chain value of its record in custody.jsonl.",
-      "required": ["sha256", "sha1", "md5", "size"],
+      "required": ["sha256", "size"],
       "properties": {
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "sha1": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "md5": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
         "size": {"type": "integer", "minimum": 0},
         "file": {"type": "string", "pattern": "^[0-9a-f]{64}\\.(eml|msg)$"},
         "custody": {"type": "string", "pattern": "^[0-9a-f]{64}$"}

@@ -28,8 +28,8 @@ def test_every_report_names_the_hash_of_the_bytes_analysed():
     data = _bytes("sample_phish.eml")
     analysis = triage_bytes(data, "phish.eml")
     digest = hashlib.sha256(data).hexdigest()
-    assert analysis.evidence == {"sha256": digest, "sha1": hashlib.sha1(data).hexdigest(),
-                                 "md5": hashlib.md5(data).hexdigest(), "size": len(data)}
+    # SHA-256 only: MD5 and SHA-1 collide, so they prove nothing about evidence
+    assert analysis.evidence == {"sha256": digest, "size": len(data)}
     assert to_dict(analysis)["evidence"]["sha256"] == digest
     assert digest in markdown.render(analysis)
     assert digest in html.render([analysis])
