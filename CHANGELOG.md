@@ -67,6 +67,20 @@ the JSON and STIX output are the public interface.
   `base-uri 'none'` and `form-action 'none'`. In Chromium, a script, an
   inline handler and a remote image smuggled into the page past escaping
   were all stopped by the policy. No escaping bug was found.
+- **Exports: one report ID, safe file names and a manifest.** Every format
+  carries the same report ID, `PH-` and the first 16 hex digits of the
+  message's SHA-256 (`report_id` in JSON; in the HTML and Markdown headers).
+  A folder given to a report option (an existing one, or a path ending in
+  `/`, which is created) gets a file name built from hashes alone, such as
+  `phishhawk-report-372d0d6e533b-20261006.html`, so nothing from the message
+  reaches the disk; several messages get `phishhawk-batch-` and a hash of
+  all of theirs. `--manifest PATH` writes a JSON list of the messages and of
+  every report file written, with its size and SHA-256, so a copy passed
+  along can be checked. Each file written is announced with its size and
+  SHA-256. The HTML report lists the other files of the same run in a
+  "Report files" panel, linked when they sit in the same folder, and says
+  in its top bar that it is an offline report. Still no script: the files
+  are written by the command, not by the page.
 - **JSON:** `analysis_status` (`complete` or `incomplete` with the reasons;
   reputation `checked`, `partially checked` or `not checked`),
   `limitations[]`, and `auth_header`, `auth_receiver` and `auth_pinned`
@@ -102,6 +116,10 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- The printed HTML report shows the score breakdown (high, medium and low,
+  with their points) again. An A4 page is narrower than 900 px, so the
+  tablet layout set it beside the ring, past the edge of the printed
+  column, where it was cut off.
 - The printed HTML report fits its summary on page one again. 2.2's
   alignment explanation had pushed sender and authentication and the
   recommended actions onto page two. Page one now holds the verdict, the

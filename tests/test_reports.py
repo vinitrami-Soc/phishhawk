@@ -373,8 +373,16 @@ def test_html_print_pages_carry_the_verdict_time_and_page_numbers(phish):
     assert '@bottom-left{content:"PhishHawk \\00B7  2 messages"' in html.render([phish, benign])
 
 
+def test_html_print_keeps_the_score_breakdown_inside_the_hero(phish):
+    # an A4 page is narrower than 900px, so the tablet layout would set the
+    # breakdown beside the ring, outside the narrow print column, and cut it off
+    printed = html.render([phish]).split("@media print{", 1)[1].split("\n}", 1)[0]
+    assert ".hero-side{grid-template-columns:minmax(0,1fr)}" in printed
+
+
 def test_html_controls_are_big_enough_to_tap(phish):
     page = html.render([phish])
     assert ".chip{display:inline-flex;align-items:center;min-height:24px" in page
+    assert "a[download]{display:inline-block;padding:4px 0}" in page  # the report-file links
     coarse = page.split("@media (pointer:coarse){", 1)[1].split("\n}", 1)[0]
     assert ".secmenu a{min-height:44px}" in coarse and ".secnav a{padding:10px 14px}" in coarse

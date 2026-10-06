@@ -111,6 +111,23 @@ A batch of more than one message ends with a summary table:
 Each report flag takes a file path. All except `--html` also accept `-` for
 stdout; only one report can go to stdout at a time.
 
+A folder works too: an existing one, or a path ending in `/`, which is
+created. The file then gets a name built from hashes alone, so nothing from
+the message (its subject, its file name) reaches the disk:
+`phishhawk-report-<first 12 hex digits of the message's SHA-256>-<UTC date>`
+and the format's extension (`.html`, `.json`, `.md`, `.csv`, `.stix.json`,
+`.misp.json`, `.manifest.json`). Several messages get `phishhawk-batch-`
+and a hash of all their SHA-256 values, the same whatever their order.
+
+```bash
+phishhawk scan mail.eml --html out/ --json out/ --md out/ --manifest out/
+```
+
+Every file written is announced on stderr with its size and SHA-256. The
+HTML report is written after the others and lists them in a "Report files"
+panel with their SHA-256, linked when they are in the same folder (a bare
+file name, so the links still work when the folder is copied).
+
 | Option | Output | Several messages |
 |---|---|---|
 | `--json PATH` | The full structured analysis ([format below](#the-json-report)) | `{"reports": [ ... ]}` |
@@ -118,6 +135,7 @@ stdout; only one report can go to stdout at a time.
 | `--stix PATH` | STIX 2.1 bundle: an indicator per IOC, the ATT&CK attack patterns and a report object per message | One bundle, duplicate indicators merged |
 | `--md PATH` | Markdown ticket note | Notes separated by `---` |
 | `--csv PATH` | One row per indicator: `type, value, defanged, context, verdict, subject, source_file` | All rows in one file |
+| `--manifest PATH` | Written last: `manifest_version`, `generated_at`, `tool_version`, `messages[]` (`report_id`, `path`, `sha256`, `size`) and `files[]` (`name`, `kind`, `type`, `size`, `sha256`) for every other report written to a file, so a copy passed along can be checked | One manifest for the run |
 | `--misp PATH` | A MISP event: every indicator as an attribute (with `ip-src` for the sending IP, `btc`/`xmr` for wallets), an `email` object, the ATT&CK techniques as galaxy tags and a TLP tag (`--tlp`, default `amber`). Ready for *Add Event → Populate from JSON* or the `/events/add` API | A list of events |
 
 The terminal, HTML and Markdown reports show indicators **defanged**
@@ -558,6 +576,7 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | `recommendations[]` | The actions to take, in order. They are for the analyst: PhishHawk itself never blocks, moves or deletes anything |
 | `analysis_status` | Since 2.3: `status` (`complete` or `incomplete`) with the `reasons[]` a part of the message was not read or checked (links past the cap, archive members not opened, MIME nested too deep), and `reputation` (`checked`, `partially checked` or `not checked`) with `reputation_detail`. No answer from a reputation service is never reported as clean |
 | `limitations[]` | Since 2.3: what this report cannot tell, for this message |
+| `report_id` | Since 2.3: `PH-` and the first 16 hex digits of the message's SHA-256, upper case (`PH-UNKNOWN` without one). The same ID is in the HTML and Markdown reports, so the formats of one message can be matched |
 | `auth_header`, `auth_receiver`, `auth_pinned` | Since 2.3: where the SPF, DKIM and DMARC results were read (`Authentication-Results`, `Received-SPF` or empty), the authserv-id of the server that wrote them (empty when it names none, as Exchange Online does), and whether `--trusted-authserv` named it |
 | `subject`, `date`, `message_id`, `to` | Message metadata |
 | `from_display`, `from_address`, `from_domain`, `reply_to`, `return_path`, `originating_ip`, `auth` | Sender and SPF/DKIM/DMARC details |

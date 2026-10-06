@@ -192,6 +192,8 @@
         "reputation_detail": {"type": "string"}
       }
     },
-    "limitations": {"type": "array", "items": {"type": "string"}, "description": "What this report cannot tell, for this message."}
+    "limitations": {"type": "array", "items": {"type": "string"}, "description": "What this report cannot tell, for this message."},
+    "report_id": {"type": "string", "pattern": "^PH-([0-9A-F]{16}|UNKNOWN)$",
+                  "description": "Since 2.3: the first 16 hex digits of the message's SHA-256, the same in every format written for it."}
   }
 }

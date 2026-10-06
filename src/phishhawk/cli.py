@@ -44,7 +44,7 @@ from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
 from .pipeline import Options, triage_bytes
 from .report import campaignout, console, csvout, html, markdown, misp, stix, sweepout
-from .report.common import printable, to_dict
+from .report.common import printable, report_id, safe_report_name, to_dict
 
 COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "sweep", "evidence", "doctor", "cache", "techniques",
             "help")
@@ -260,6 +260,9 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     out.add_argument("--misp", metavar="PATH", help="MISP event JSON, one event per message ('-' for stdout)")
     out.add_argument("--md", metavar="PATH", help="Markdown ticket note ('-' for stdout)")
     out.add_argument("--csv", metavar="PATH", help="CSV indicator list for blocklists ('-' for stdout)")
+    out.add_argument("--manifest", metavar="PATH",
+                     help="JSON list of the report files written, with sizes and SHA-256 ('-' for stdout); "
+                          "a folder given to any report option gets a safe file name")
     out.add_argument("--tlp", choices=("clear", "green", "amber", "amber+strict", "red"),
                      help="TLP tag for the MISP event (default amber)")
     out.add_argument("-q", "--quiet", action="store_true", help="one summary block per message")
@@ -585,6 +588,34 @@ def _write(path: str, content: str) -> None:
         handle.write(content)
 
 
+REPORT_TYPES = {"json": "JSON report", "stix": "STIX 2.1 bundle", "misp": "MISP event", "md": "Markdown note",
+                "csv": "CSV indicators", "html": "HTML report", "manifest": "Manifest"}
+
+
+def _report_path(path: str, analyses: list[Analysis], kind: str, day: str) -> str:
+    """A folder (an existing one, or any path ending in a separator) gets a file
+    name built from hashes alone, so nothing from the message reaches the disk."""
+    if path == "-":
+        return path
+    if path.endswith(tuple(sep for sep in (os.sep, os.altsep) if sep)) or os.path.isdir(path):
+        os.makedirs(path, exist_ok=True)
+        return os.path.join(path, safe_report_name(analyses, kind, day))
+    return path
+
+
+def _manifest(analyses: list[Analysis], written: list[dict]) -> dict:
+    """What a run wrote, so a copy passed along can be checked against it."""
+    return {
+        "manifest_version": 1,
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "tool": "phishhawk",
+        "tool_version": __version__,
+        "messages": [{"report_id": report_id(a), "path": a.path, "sha256": a.evidence.get("sha256", ""),
+                      "size": a.evidence.get("size", 0)} for a in analyses],
+        "files": [{key: f[key] for key in ("name", "kind", "type", "size", "sha256")} for f in written],
+    }
+
+
 FAIL_ORDER = {"never": 99, "suspicious": 1, "likely": 2, "malicious": 3}
 VERDICT_RANK = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 2, "MALICIOUS": 3}
 
@@ -649,8 +680,9 @@ def cmd_scan(args: argparse.Namespace, parser: _Parser) -> int:
 def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
             source: Callable[[int], Iterator[tuple[str, bytes | Exception]]],
             per_message: Callable[[str, Analysis], None] | None = None) -> int:
-    outputs = {"json": args.json, "html": args.html, "stix": args.stix, "misp": args.misp, "md": args.md,
-               "csv": args.csv}
+    # the HTML lists the files written before it and the manifest every one, so they go last
+    outputs = {"json": args.json, "stix": args.stix, "misp": args.misp, "md": args.md, "csv": args.csv,
+               "html": args.html, "manifest": args.manifest}
     if list(outputs.values()).count("-") > 1:
         command.error("only one report can go to stdout ('-')")
     if args.html == "-":
@@ -741,19 +773,33 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
         "json": lambda: json.dumps(to_dict(analyses[0]) if len(analyses) == 1
                                    else {"reports": [to_dict(a) for a in analyses]},
                                    indent=2, ensure_ascii=False) + "\n",
-        "html": lambda: html.render(analyses),
         "stix": lambda: json.dumps(stix.build_bundle(analyses), indent=2) + "\n",
         "misp": lambda: json.dumps(misp.build(analyses, args.tlp), indent=2, ensure_ascii=False) + "\n",
         "md": lambda: "\n---\n\n".join(markdown.render(a) for a in analyses),
         "csv": lambda: csvout.render(analyses),
+        "manifest": lambda: json.dumps(_manifest(analyses, report_files), indent=2, ensure_ascii=False) + "\n",
     }
+    day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
+    report_files: list[dict] = []
     for kind, path in outputs.items():
         if not path or not analyses:
             continue
         try:
-            _write(path, renderers[kind]())
+            path = _report_path(path, analyses, kind, day)
+            if kind == "html":  # links the files beside it; names the ones in other folders
+                folder = os.path.dirname(os.path.abspath(path))
+                content = html.render(analyses, [dict(f, beside=os.path.dirname(f["path"]) == folder)
+                                                 for f in report_files])
+            else:
+                content = renderers[kind]()
+            _write(path, content)
             if path != "-":
-                print(err("[i] %s report written to %s" % (kind.upper(), path), "dim"), file=sys.stderr)
+                encoded = content.encode("utf-8")  # _write keeps line endings, so these are the bytes on disk
+                digest = hashlib.sha256(encoded).hexdigest()
+                report_files.append({"name": os.path.basename(path), "path": os.path.abspath(path), "kind": kind,
+                                     "type": REPORT_TYPES[kind], "size": len(encoded), "sha256": digest})
+                print(err("[i] %s report written to %s (%d bytes, sha256 %s)"
+                          % (kind.upper(), path, len(encoded), digest), "dim"), file=sys.stderr)
         except OSError as exc:
             print(err("[!] could not write %s: %s" % (path, exc), "red"), file=sys.stderr)
             failed = True
