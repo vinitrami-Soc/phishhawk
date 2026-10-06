@@ -140,7 +140,7 @@ def _bucket(url: str) -> str:
     return "%s/%s" % (host, "/".join(segments)) if depth and len(segments) == depth else ""
 
 
-def _embedded(sources: list[str]) -> bool:
+def embedded_only(sources: list[str]) -> bool:
     """Only ever an image, stylesheet or other resource the message loads, never a link to follow."""
     return bool(sources) and all(source.endswith("resource") for source in sources)
 
@@ -162,7 +162,7 @@ def _traits(a: Analysis) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
         host = (ioc.host or "").lower()
         base = registrable_domain(host)
         kind = hosting_kind(ioc.url)
-        if _embedded(ioc.sources) or base in lists:
+        if embedded_only(ioc.sources) or base in lists:
             continue  # logos and pixels: copied brand templates load the same ones whoever sends them
         if kind == "file sharing" or _bucket(ioc.url):
             found["link"].add(_link_key(ioc.url, document=True))  # the tenant is in the path: one document

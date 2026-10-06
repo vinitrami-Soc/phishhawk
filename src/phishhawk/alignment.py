@@ -51,6 +51,9 @@ def _first(a: Analysis, method: str) -> dict[str, str]:
 
 def _explain_spf(row: dict[str, Any], sender: str) -> str:
     result, domain = row["result"], row["shown"] or "the envelope sender"
+    if result == "pass" and row["aligned"] is None:
+        return "SPF passed; which domain it vouched for is not recorded, so its alignment with %s is unknown." % (
+            sender or "the sender")
     if result == "pass":
         if row["aligned"]:
             return "SPF passed for %s, the sender's own organisation." % domain
@@ -63,6 +66,9 @@ def _explain_spf(row: dict[str, Any], sender: str) -> str:
 
 def _explain_dkim(row: dict[str, Any], sender: str) -> str:
     result, domain = row["result"], row["shown"]
+    if result == "pass" and row["aligned"] is None:
+        return ("DKIM signature verified; its signing domain is not recorded, so its alignment with %s is "
+                "unknown." % (sender or "the sender"))
     if result == "pass":
         if row["aligned"]:
             return "DKIM signature by %s verified: it is the sender's own organisation." % domain

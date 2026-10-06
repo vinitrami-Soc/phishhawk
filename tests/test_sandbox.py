@@ -134,3 +134,31 @@ def test_scan_writes_a_pack_and_keeps_bytes_out_of_the_report(tmp_path, capsys):
     assert os.listdir(packs) == [hashlib.sha256(MESSAGE).hexdigest() + ".zip"]
     assert "_files" not in report.read_text() and "pretend payload" not in report.read_text()
     assert "sandbox pack" in capsys.readouterr().err
+
+
+def test_tracking_pixels_and_logos_are_not_links_to_detonate(tmp_path):
+    message = build_eml(html='<img src="https://track.mailer.example/open.gif?u=1">'
+                             '<a href="https://pay.1nvoice-desk.top/view">view</a>')
+    path = sandbox.pack(str(tmp_path), message, _analysis(message))
+    with _open(path) as archive:
+        urls = [line for line in archive.read("urls.txt", pwd=PASSWORD).decode().splitlines()
+                if not line.startswith("#")]
+    assert urls == ["https://pay.1nvoice-desk.top/view"]
+
+
+def test_one_file_under_two_names_lists_both(tmp_path):
+    twice = build_eml(attachments=[(b"%PDF-1.4 same", "application", "pdf", "a.pdf"),
+                                   (b"%PDF-1.4 same", "application", "pdf", "b.pdf")])
+    path = sandbox.pack(str(tmp_path), twice, _analysis(twice))
+    with _open(path) as archive:
+        manifest = json.loads(archive.read("manifest.json", pwd=PASSWORD))
+    [entry] = manifest["files"]
+    assert entry["filename"] == "a.pdf" and entry["also_named"] == ["b.pdf"]
+
+
+def test_the_message_counts_toward_the_size_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox, "MAX_PACK", len(MESSAGE) + 10)
+    path = sandbox.pack(str(tmp_path), MESSAGE, _analysis())
+    with _open(path) as archive:
+        manifest = json.loads(archive.read("manifest.json", pwd=PASSWORD))
+    assert manifest["files"] == [] and manifest["not_packed"]

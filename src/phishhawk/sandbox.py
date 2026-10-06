@@ -24,6 +24,7 @@ import zlib
 from typing import TYPE_CHECKING, Any
 
 from . import __version__
+from .campaign import embedded_only
 from .evidence import OLE_MAGIC
 
 if TYPE_CHECKING:
@@ -106,7 +107,10 @@ def _files(analysis: Analysis) -> list[tuple[FileIoc, bytes]]:
 
 
 def _urls(analysis: Analysis) -> list[str]:
-    return [ioc.url for ioc in analysis.urls if not analysis.is_trusted_domain(ioc.host)][:500]
+    """Links a sandbox should open: not a trusted brand's, and not an image or
+    pixel the message only loads."""
+    return [ioc.url for ioc in analysis.urls
+            if not analysis.is_trusted_domain(ioc.host) and not embedded_only(ioc.sources)][:500]
 
 
 def build(data: bytes, analysis: Analysis) -> tuple[str, bytes]:
@@ -115,14 +119,22 @@ def build(data: bytes, analysis: Analysis) -> tuple[str, bytes]:
 
     prints = fingerprint(data)
     members: list[tuple[str, bytes]] = [("message.msg" if data.startswith(OLE_MAGIC) else "message.eml", data)]
-    entries, not_packed, seen, total = [], [], set(), 0
+    entries: list[dict[str, Any]] = []
+    not_packed: list[dict[str, Any]] = []
+    seen: dict[str, dict[str, Any]] = {}
+    total = len(data)  # the message is always packed, and counts
     for ioc, content in _files(analysis):
-        if ioc.inline or not ioc.sha256 or ioc.sha256 in seen:
+        if ioc.inline or not ioc.sha256:
             continue
-        seen.add(ioc.sha256)
+        if ioc.sha256 in seen:
+            names = seen[ioc.sha256].setdefault("also_named", [])
+            if ioc.filename not in names and ioc.filename != seen[ioc.sha256]["filename"] and len(names) < 20:
+                names.append(ioc.filename)
+            continue
         entry: dict[str, Any] = {"filename": ioc.filename, "sha256": ioc.sha256, "md5": ioc.md5, "size": ioc.size,
                                  "true_type": ioc.true_type, "parent": ioc.parent, "flagged": ioc.flagged,
                                  "notes": ioc.notes[:10]}
+        seen[ioc.sha256] = entry
         if total + len(content) > MAX_PACK:
             not_packed.append(dict(entry, reason="past the pack's size cap of %d MB" % (MAX_PACK // 2 ** 20)))
             continue

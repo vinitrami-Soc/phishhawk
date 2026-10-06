@@ -180,3 +180,12 @@ def test_received_spf_alone_still_names_the_checked_domain():
         a = _analysis("", headers=[("Received-SPF", header)])
         spf = assess(a)["checks"][0]
         assert spf["domain"] == "inss.gov.example", header
+
+
+def test_a_pass_without_a_domain_claims_nothing_about_alignment():
+    block = assess(_analysis("mx.example.net; spf=pass; dkim=pass; dmarc=none"))
+    spf, dkim, _ = block["checks"]
+    assert spf["aligned"] is None and dkim["aligned"] is None
+    text = " ".join(block["explanation"])
+    assert "different organisation" not in text and "another domain" not in text
+    assert "not recorded" in text
