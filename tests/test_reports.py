@@ -130,6 +130,25 @@ def test_html_embeds_its_fonts_and_prints_to_a4(phish):
     assert ".tbl thead{display:table-header-group}" in page  # column headers repeat on every page
 
 
+def test_html_print_keeps_the_summary_on_page_one(phish):
+    # The alignment reasons made the printed summary spill onto page two: on
+    # paper the sender card keeps the verdict and its lead sentence, and the
+    # reasons move to an Authentication panel at the start of the evidence.
+    from phishhawk.alignment import assess
+    from phishhawk.report.common import defang_host
+
+    page = html.render([phish])
+    lead, *why = assess(phish, defang_host)["explanation"]
+    assert why  # the sample fails authentication for several reasons
+    summary, evidence = page.split('<div class="evidence stack">', 1)
+    assert '<ul class="why">' in summary  # on screen the reasons stay beside the badge
+    panel = evidence.split('<section class="card panel print-only">', 1)[1].split("</section>", 1)[0]
+    assert "<h2>Authentication</h2>" in panel
+    assert all(html.escape(line) in panel for line in [lead, *why])
+    assert ".print-only{display:none}" in page
+    assert ".kv .why{display:none}" in page and ".print-only{display:block}" in page
+
+
 def test_html_theme_follows_the_system_and_can_be_switched_without_a_script(phish):
     page = html.render([phish])
     assert "<script" not in page
