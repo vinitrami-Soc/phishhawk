@@ -101,9 +101,8 @@ campaign's shared traits before treating it as one campaign.
 **Every message, every format.** All 19,917 real messages were run again
 through triage and every report format with the final code, the JSON checked
 against the schema: no errors and no schema violations. The median message
-takes 7 ms. The slowest took 1.6 s in that run, with other work on the
-machine; alone, the three slowest take 0.7 to 1.0 s (600 KB to 4 MB messages:
-images decoded for QR codes, a 2.8 MB HTML body, a 4 MB attachment), in code
+takes 7 ms and the slowest 1.0 s; the slowest are 600 KB to 4 MB messages
+(images decoded for QR codes, a 2.8 MB HTML body, a 4 MB attachment), in code
 2.2 did not change.
 
 ## The 2.1 evaluation

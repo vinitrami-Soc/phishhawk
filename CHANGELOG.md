@@ -116,10 +116,10 @@ testing of every new module, a regular-expression scan and fuzzing; the full lis
   gateways and shared forms, and `evidence verify` unable to catch a
   rewritten log. All are fixed.
 - Fuzzing found no crash and no hang: 362,634 runs before the independent
-  review's fixes and 147,461 on the final code, with the new modules added to
-  the pipeline target. Its only findings were 2 to 3 MB garbage `--psl` files
-  taking about 5 s to load, which is linear in size and only ever the
-  analyst's own file.
+  review's fixes, 147,461 after them and 148,311 on the released code, with
+  the new modules added to the pipeline target. Its only findings were 2 to 3
+  MB garbage `--psl` files taking about 5 s to load, which is linear in size
+  and only ever the analyst's own file.
 
 ## [2.1.0] - 2026-10-05
 
