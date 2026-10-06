@@ -7,6 +7,24 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Changed
+
+- The release workflow's actions are updated to their current major
+  versions (`download-artifact` 8, `setup-buildx-action` 4, `login-action` 4,
+  `metadata-action` 6, `build-push-action` 7), each still pinned to a commit.
+  The artifact round trip and the GHCR build were run with them before the
+  update.
+- The README's hero image shows 2.2's held-out results, test count and
+  fuzzing total.
+
+### Fixed
+
+- Documentation: the sandbox pack's member names (`message.msg` for an
+  Outlook message; `files/<first 16 hex digits of the SHA-256>-<name>`).
+- Documentation: USAGE now says next to `--sandbox` that ZipCrypto is not
+  confidentiality against a determined reader, and lists what `sweep` sends
+  to Microsoft or Google.
+
 ### Security
 
 - Every GitHub Action in CI and the release workflow is pinned to a full
@@ -16,14 +34,6 @@ the JSON and STIX output are the public interface.
 - Tests for spreadsheet-formula escaping in the campaign and sweep CSVs: a
   cell opening with `=`, `+`, `-` or `@` gets a leading `'`. The escaping was
   already applied; each output path is now tested on its own.
-
-### Fixed
-
-- Documentation: the sandbox pack's member names (`message.msg` for an
-  Outlook message; `files/<first 16 hex digits of the SHA-256>-<name>`).
-- Documentation: USAGE now says next to `--sandbox` that ZipCrypto is not
-  confidentiality against a determined reader, and lists what `sweep` sends
-  to Microsoft or Google.
 
 ## [2.2.0] - 2026-10-06
 
