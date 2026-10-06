@@ -169,7 +169,7 @@ def test_html_section_navigation_works_without_a_script(phish):
         assert 'id="msg-1-%s"' % key in page
     assert 'id="msg-2-summary"' in page  # every message has its own anchors
     assert page.count('<nav class="secnav"') == 2
-    assert ".secnav{display:none}" in page.split("@media print{", 1)[1]
+    assert ".secnav,.secmenu{display:none}" in page.split("@media print{", 1)[1]
     assert "<script" not in page
 
 
@@ -348,3 +348,33 @@ def test_html_has_no_control_characters(bec):
     page = html.render([bec])
     assert not re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", page)
     assert 'content:"\\2197"' in page and 'content:"\\2713"' in page
+
+
+def test_html_keeps_the_verdict_in_sight_while_scrolling(phish):
+    page = html.render([phish])
+    bar = _between(page, '<nav class="secnav" aria-label="Report sections">', "</nav>")
+    assert '<span class="nav-verdict t-high">' in bar and "LIKELY PHISHING &middot; %d" % phish.score in bar
+    # on a phone or tablet the same links fold into a menu that needs no script
+    menu = _between(page, '<details class="secmenu">', "</details>")
+    assert "<summary>" in menu and "LIKELY PHISHING &middot; %d" % phish.score in menu
+    assert '<nav aria-label="Report sections">' in menu and 'href="#msg-1-limits"' in menu
+    narrow = page.split("@media (max-width:900px){", 1)[1].split("\n}", 1)[0]
+    assert ".secnav{display:none}" in narrow and ".secmenu{display:block" in narrow
+    assert ".secnav,.secmenu{display:none}" in page.split("@media print{", 1)[1]
+
+
+def test_html_print_pages_carry_the_verdict_time_and_page_numbers(phish):
+    benign = triage_file(sample("sample_benign.eml"))
+    page = html.render([phish])
+    generated = re.search(r'Generated <span class="mono">([0-9TZ:-]+)</span>', page).group(1)
+    assert '@bottom-left{content:"PhishHawk \\00B7  LIKELY PHISHING \\00B7  risk score %d"' % phish.score in page
+    assert '@bottom-center{content:"Generated %s"' % generated in page
+    assert '@bottom-right{content:"Page " counter(page) " of " counter(pages)' in page
+    assert '@bottom-left{content:"PhishHawk \\00B7  2 messages"' in html.render([phish, benign])
+
+
+def test_html_controls_are_big_enough_to_tap(phish):
+    page = html.render([phish])
+    assert ".chip{display:inline-flex;align-items:center;min-height:24px" in page
+    coarse = page.split("@media (pointer:coarse){", 1)[1].split("\n}", 1)[0]
+    assert ".secmenu a{min-height:44px}" in coarse and ".secnav a{padding:10px 14px}" in coarse

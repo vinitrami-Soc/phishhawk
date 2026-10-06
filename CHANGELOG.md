@@ -34,6 +34,15 @@ the JSON and STIX output are the public interface.
   observed, not observed or not assessed (what happens after delivery, such
   as persistence, cannot be seen in a message). Links to VirusTotal and
   MITRE say that they open in a new tab.
+- **HTML report: phones, tablets and paper.** The section links keep the
+  verdict and score in sight while scrolling; on screens up to 900 px wide
+  they fold into a "Sections" menu (`<details>`, no script). On a tablet
+  the score ring and its legend sit side by side. Every control is at
+  least 24 px tall, and 40 to 44 px on touch screens. Each printed page's
+  footer carries the verdict, the risk score, when the report was made and
+  the page number, and cards, findings and list items no longer split
+  across a page break. Checked at 320, 375, 768, 1024 and 1440 px: no
+  sideways scrolling.
 - **JSON:** `analysis_status` (`complete` or `incomplete` with the reasons;
   reputation `checked`, `partially checked` or `not checked`),
   `limitations[]`, and `auth_header`, `auth_receiver` and `auth_pinned`

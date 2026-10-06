@@ -277,6 +277,23 @@ html{scroll-behavior:smooth}
 .secnav a{flex:0 0 auto;padding:5px 12px;border-radius:var(--r-full);font-size:12.5px;font-weight:500;
   color:var(--ink-2);text-decoration:none;white-space:nowrap}
 .secnav a:hover{background:var(--ground-2);color:var(--ink)}
+.nav-verdict{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:5px 12px 5px 10px;
+  font:650 12px var(--sans);letter-spacing:.02em;white-space:nowrap}
+.secnav .nav-verdict{border-right:1px solid var(--line);margin-right:4px}
+.nav-verdict svg{width:9px;height:9px;fill:currentColor}
+.secmenu{display:none;position:sticky;top:8px;z-index:5;border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shade-sm);background:color-mix(in srgb,var(--paper) 94%,transparent);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+.secmenu summary{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 8px 0 4px;cursor:pointer;
+  list-style:none;border-radius:var(--r)}
+.secmenu summary::-webkit-details-marker{display:none}
+.secmenu summary:focus-visible,.secmenu a:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.secmenu .menu-label{margin-left:auto;padding:6px 10px;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.secmenu .menu-label::after{content:" \\25BE"}
+.secmenu[open] .menu-label::after{content:" \\25B4"}
+.secmenu nav{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:4px;padding:4px 8px 10px}
+.secmenu a{display:flex;align-items:center;min-height:40px;padding:0 10px;border-radius:var(--r-sm);
+  font-size:13px;color:var(--ink-2);text-decoration:none;background:var(--ground)}
 section.msg [id]{scroll-margin-top:64px}
 .panel:target,.hero:target{outline:2px solid var(--brand);outline-offset:2px}
 
@@ -350,6 +367,7 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .steps li{counter-increment:step}
 /* each action is a checkbox: the analyst can tick it off; nothing is sent or saved */
 .steps label{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;font-size:13.5px;
+  min-height:24px;
   cursor:pointer}
 .steps input{position:absolute;width:1px;height:1px;margin:0;opacity:0}
 .steps .n{width:24px;height:24px;border-radius:var(--r-full);display:grid;place-items:center;
@@ -362,7 +380,7 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .check{margin-top:4px;font-size:12px;color:var(--ink-2)}
 .check b{font-weight:600}
 .calc{margin:0 0 12px;border:1px solid var(--line);border-radius:var(--r);padding:8px 12px}
-.calc summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.calc summary{cursor:pointer;padding:4px 0;font-size:12.5px;font-weight:600;color:var(--ink-2)}
 .calc summary:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
 .calc[open] summary{margin-bottom:8px}
 .calc .summary{margin:10px 0 0}
@@ -402,6 +420,7 @@ mark{background:var(--brand-wash-2);color:var(--brand-ink-2);border-radius:3px;p
 .top li>div>b{display:block;font-size:13.5px;font-weight:550;line-height:1.4;overflow-wrap:anywhere}
 .top li>div>span{display:block;margin-top:2px;font-size:12.5px;color:var(--ink-3);line-height:1.45}
 .more{margin:12px 0 0;font-size:12.5px}
+.more a{display:inline-block;padding:4px 0}
 .caution{background:var(--amber-wash);border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
 .limits{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px;color:var(--ink-2)}
 
@@ -420,7 +439,8 @@ mark{background:var(--brand-wash-2);color:var(--brand-ink-2);border-radius:3px;p
 .b-ok{background:var(--sev-ok-bg);color:var(--sev-ok)}
 .t-critical{color:var(--sev-critical)}.t-high{color:var(--brand-ink)}.t-medium{color:var(--amber-ink)}
 .t-ok{color:var(--sev-ok)}.t-info{color:var(--ink-3)}
-.chip{display:inline-block;font:500 11.5px var(--mono);padding:2px 8px;margin:0 4px 4px 0;
+.chip{display:inline-flex;align-items:center;min-height:24px;font:500 11.5px var(--mono);padding:2px 8px;
+  margin:0 4px 4px 0;
   border-radius:var(--r-full);background:var(--ground-2);border:1px solid var(--line-2);
   color:var(--ink);text-decoration:none;white-space:nowrap}
 .chip:hover{border-color:var(--brand)}
@@ -488,8 +508,14 @@ footer p{margin:0;max-width:880px}
 footer b{color:var(--ink-2);font-weight:600}
 
 @media (max-width:900px){
+  .secnav{display:none}
+  .secmenu{display:block}
   .hero{grid-template-columns:minmax(0,1fr)}
-  .hero-side{padding:16px 0 0;border-left:0;border-top:1px solid var(--line)}
+  /* tablet: the ring and its legend side by side under the verdict */
+  .hero-side{padding:16px 0 0;border-left:0;border-top:1px solid var(--line);
+    grid-template-columns:max-content minmax(0,1fr);column-gap:32px;align-items:center}
+  .hero-side>.label,.ring-note{grid-column:1/-1}
+  .hero-side .legend{border-top:0;padding-top:0}
   .tactics{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 @media (max-width:760px){
@@ -500,6 +526,8 @@ footer b{color:var(--ink-2);font-weight:600}
 }
 @media (max-width:560px){
   .wrap{padding:16px 12px 40px}
+  .hero-side{grid-template-columns:minmax(0,1fr)}
+  .hero-side .legend{border-top:1px solid var(--line);padding-top:10px}
   .pair{grid-template-columns:minmax(0,1fr);gap:4px}
   .pair .arrow{transform:rotate(90deg);justify-self:start}
   .kpi .val{font-size:26px}
@@ -526,6 +554,14 @@ footer b{color:var(--ink-2);font-weight:600}
   .flagged td:first-child{box-shadow:none}
   .flagged{border-left:3px solid var(--brand)}
 }
+@media (pointer:coarse){
+  .secnav a{padding:10px 14px}
+  .secmenu a{min-height:44px}
+  .theme label{padding:8px 12px 8px 10px}
+  .calc summary{padding:10px 0}
+  .chip{min-height:32px;padding:4px 10px}
+  .more a{padding:10px 0}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}html{scroll-behavior:auto}}
 @media (forced-colors:active){
   .badge,.sevbar span,.chip,.tag,.idx,.legend .sw,.tactics li{border:1px solid CanvasText}
@@ -535,7 +571,6 @@ footer b{color:var(--ink-2);font-weight:600}
 
 /* Print: A4, paper white, the summary on page one and the evidence after it. */
 @page{size:A4;margin:10mm 10mm 14mm;
-  @bottom-left{content:"PhishHawk triage report";font:9pt "Outfit",sans-serif;color:#646c78}
   @bottom-right{content:"Page " counter(page) " of " counter(pages);font:9pt "Outfit",sans-serif;color:#646c78}}
 @media print{
   body{background:#fff;font-size:12px;line-height:1.45}
@@ -569,7 +604,9 @@ footer b{color:var(--ink-2);font-weight:600}
   .urlcard,.looks li{padding:8px 10px}
   .u-facts{margin-top:6px}
   .techs li{padding:7px 9px}
-  .secnav{display:none}
+  .secnav,.secmenu{display:none}
+  .limits li,.top li,.u-facts>div,.align{break-inside:avoid}
+  .tgroup h3{break-after:avoid}
   .top{gap:7px}
   .top li>div>b{font-size:12px}
   .top li>div>span{font-size:11px}
@@ -825,7 +862,14 @@ def _nav(a: Analysis, anchor: str, files: list[FileIoc]) -> str:
     present = {"findings": bool(a.signals), "urls": bool(a.urls), "attack": bool(a.techniques)}
     links = "".join('<a href="#%s-%s">%s</a>' % (anchor, key, title)
                     for key, title in NAV if present.get(key, True))
-    return '<nav class="secnav" aria-label="Report sections">%s</nav>' % links
+    level = VERDICT_LEVEL.get(a.verdict, "ok")
+    verdict = '<span class="nav-verdict t-%s">%s%s &middot; %d</span>' % (
+        level, _svg(GLYPHS[level]), escape(a.verdict), a.score)
+    # Wide screens get a bar; narrow ones the same links folded into a menu.
+    # Either way the verdict stays in sight while scrolling, without a script.
+    return ('<nav class="secnav" aria-label="Report sections">%s%s</nav>'
+            '<details class="secmenu"><summary>%s<span class="menu-label">Sections</span></summary>'
+            '<nav aria-label="Report sections">%s</nav></details>' % (verdict, links, verdict, links))
 
 
 def _kpis(a: Analysis, files: list[FileIoc]) -> str:
@@ -1275,6 +1319,19 @@ def _batch(analyses: list[Analysis]) -> str:
     return _panel("Batch (%d messages)" % len(analyses), table, cls="batch")
 
 
+def _page_css(analyses: list[Analysis], generated: str) -> str:
+    """The printed page's footer: what the report is about and when it was
+    made, on every page. Only fixed words, a number and our own timestamp go
+    into the CSS, never message text."""
+    if len(analyses) == 1:
+        what = "%s \\00B7  risk score %d" % (analyses[0].verdict, analyses[0].score)
+    else:
+        what = "%d messages" % len(analyses)
+    return ('@page{@bottom-left{content:"PhishHawk \\00B7  %s";font:9pt "Outfit",sans-serif;color:#646c78}'
+            '@bottom-center{content:"Generated %s";font:9pt "Outfit",sans-serif;color:#646c78}}'
+            % (what, generated))
+
+
 def _theme_switch() -> str:
     return '<div class="theme" role="radiogroup" aria-label="Colour theme">%s</div>' % "".join(
         '<input type="radio" name="theme" id="theme-%s"%s><label for="theme-%s" title="%s">%s%s</label>'
@@ -1306,4 +1363,4 @@ def render(analyses: list[Analysis]) -> str:
             "<meta name=\"referrer\" content=\"no-referrer\">"
             "<meta name=\"color-scheme\" content=\"light dark\">"
             "<title>%s</title><style>%s\n%s</style></head><body>%s</body></html>\n"
-            % (escape(title), font_faces(), THEMES + CSS, "\n".join(body)))
+            % (escape(title), font_faces(), THEMES + CSS + _page_css(analyses, generated), "\n".join(body)))
