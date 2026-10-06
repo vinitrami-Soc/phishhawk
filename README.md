@@ -70,7 +70,7 @@ $ phishhawk scan samples/sample_benign.eml samples/sample_phish.eml --quiet --of
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-kpis-dark.svg">
-  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 81.3% of 5,714 unseen real phishing emails flagged, up from 79.9% in 2.0. 46.9% of the same emails called likely phishing, up from 30.5% in 2.0. 0.8% false positives: 46 of 5,945 held-out real legitimate emails, down from 0.9% in 2.0. 528 automated tests, up from 403 in 2.0.">
+  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 81.3% of 5,714 unseen real phishing emails flagged, up from 79.9% in 2.0. 46.9% of the same emails called likely phishing, up from 30.5% in 2.0. 0.8% false positives: 46 of 5,945 held-out real legitimate emails, down from 0.9% in 2.0. 641 automated tests, up from 403 in 2.0.">
 </picture>
 
 <sub>Measured offline, with no reputation lookups, on held-out real mail scored once after all tuning: 5,714
@@ -241,7 +241,7 @@ with `--build-arg BASE=public.ecr.aws/docker/library/python:3.12-slim`.
 
 ```console
 $ phishhawk doctor
-PhishHawk 2.1.0 doctor
+PhishHawk 2.2.0 doctor
 
   OK    Python             3.12.4
   OK    requests           2.32.3
@@ -491,26 +491,26 @@ messages.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-evaluation-dark.svg">
-  <img src="docs/images/chart-evaluation-light.svg" width="760" alt="Dumbbell chart, PhishHawk 2.0 against 2.1 on held-out real mail. Phishing flagged: 5,714 unseen emails from 2022 to 2026, 79.9% to 81.3%; the earlier 200-email sample, 76% to 76.5%; 2,279 phishing emails from 2005 to 2007, 57.7% to 56.9%. Called likely phishing: 30.5% to 46.9%, 28% to 43.5%, and 26.7% to 29.7%. Legitimate mail flagged by mistake: everyday mail 0.5% in both, spam-like mail 17.6% to 13.6%, Enron business mail 0.2% in both, mail-library edge cases 11% to 8.8%.">
+  <img src="docs/images/chart-evaluation-light.svg" width="760" alt="Dumbbell chart, PhishHawk 2.0 against 2.2 on held-out real mail. Phishing flagged: 5,714 unseen emails from 2022 to 2026, 79.9% to 81.3%; the earlier 200-email sample, 76% to 76.5%; 2,279 phishing emails from 2005 to 2007, 57.7% to 56.7%. Called likely phishing: 30.5% to 46.9%, 28% to 43.5%, and 26.7% to 29.7%. Legitimate mail flagged by mistake: everyday mail 0.5% in both, spam-like mail 17.6% to 13.6%, Enron business mail 0.2% in both, mail-library edge cases 11% to 8.8%.">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-verdicts-dark.svg">
-  <img src="docs/images/chart-verdicts-light.svg" width="760" alt="Stacked bars of 2.1's verdicts. Unseen phishing, 5,714 emails: 2,679 likely phishing, 1,965 suspicious, 1,070 not flagged. Phishing from 2005 to 2007, 2,279 emails: 678 likely phishing, 618 suspicious, 983 not flagged. Held-out legitimate mail, 5,945 emails: 5,899 not flagged, 40 suspicious, 6 likely phishing.">
+  <img src="docs/images/chart-verdicts-light.svg" width="760" alt="Stacked bars of 2.2's verdicts. Unseen phishing, 5,714 emails: 2,679 likely phishing, 1,965 suspicious, 1,070 not flagged. Phishing from 2005 to 2007, 2,279 emails: 678 likely phishing, 615 suspicious, 986 not flagged. Held-out legitimate mail, 5,945 emails: 5,899 not flagged, 40 suspicious, 6 likely phishing.">
 </picture>
 
 | Data set | Emails | Flagged | Strict | False positives | Median time |
 |---|---|---|---|---|---|
 | Real phishing, **held out**, 2022 to 2026: every [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot email not used before, split at random | 5,714 | **81.3%** (2.0: 79.9%) | **46.9%** (2.0: 30.5%) | n/a | 9 ms |
-| Real phishing, **held out**, 2005 to 2007: Jose Nazario's phishing corpus | 2,279 | 56.9% (2.0: 57.7%) | 29.7% (2.0: 26.7%) | n/a | 6 ms |
-| Real phishing, earlier held-out sample | 200 | 76.5% (2.0: 76.0%) | 43.5% (2.0: 28.0%) | n/a | 8 ms |
-| Real phishing used while developing detections (the other part of the split, and an earlier sample) | 2,700 | 82.2% | 45.9% | n/a | 8 ms |
-| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.5%** (7; 2.0: 7) | 4 ms |
-| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 13.6% (17; 2.0: 22) | 22 ms |
+| Real phishing, **held out**, 2005 to 2007: Jose Nazario's phishing corpus | 2,279 | 56.7% (2.0: 57.7%) | 29.7% (2.0: 26.7%) | n/a | 7 ms |
+| Real phishing, earlier held-out sample | 200 | 76.5% (2.0: 76.0%) | 43.5% (2.0: 28.0%) | n/a | 10 ms |
+| Real phishing used while developing detections (the other part of the split, and an earlier sample) | 2,700 | 82.2% | 45.9% | n/a | 10 ms |
+| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.5%** (7; 2.0: 7) | 5 ms |
+| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 13.6% (17; 2.0: 22) | 25 ms |
 | Real legitimate mail, **held out**: Enron business mail | 4,279 | n/a | n/a | **0.2%** (10; 2.0: 10) | 3 ms |
-| Legitimate edge cases, **held out**: test messages of four mail libraries | 136 | n/a | n/a | 8.8% (12; 2.0: 15) | 4 ms |
-| Outlook `.msg` files, **held out** | 5 | n/a | n/a | 0% | 6 ms |
-| Real legitimate mail used while fixing false positives, and CPython's email test corpus | 2,673 | n/a | n/a | 0.9% (23) | 3 ms |
+| Legitimate edge cases, **held out**: test messages of four mail libraries | 136 | n/a | n/a | 8.8% (12; 2.0: 15) | 3 ms |
+| Outlook `.msg` files, **held out** | 5 | n/a | n/a | 0% | 7 ms |
+| Real legitimate mail used while fixing false positives, and CPython's email test corpus | 2,673 | n/a | n/a | 0.9% (23) | 4 ms |
 | Labelled synthetic corpus, including tricky legitimate mail | 167 | 100% | 71.6% | 0% | 2.2 ms |
 
 *Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse. *n/a* means the
@@ -533,6 +533,17 @@ the end, after all tuning was finished. Some things to know about them:
   spam-like mail); five are forged eBay and PayPal senders on the brands' own
   country domains (`ebay.ca`, `paypal.us`), which 2.1 no longer calls an
   impersonation without failed authentication, and 2005 mail carries none.
+  2.2 flags three fewer again (56.7%): senders on `paypal.co.us`,
+  `ebay.co.us` and `xbox.com.bo`, now that 2.2 reads `co.us` and `com.bo` as
+  the country suffixes they are, get the same allowance. No other held-out
+  verdict changed in 2.2.
+- **Campaigns can mix with legitimate mail through well-known sites.** Run
+  once over all 11,659 held-out messages, `phishhawk campaign` put 4,362 of
+  the 5,714 phishing emails into campaigns. 4 of its 742 campaigns mix
+  phishing and legitimate mail, each because phishing linked to a news or
+  reference site (`npr.org`, `wikipedia.org`, `unesco.org`) that a legitimate
+  email also linked to; one of them then pulls in 126 legitimate emails that
+  share senders. See [eval/README.md](eval/README.md).
 - **The edge-case set was studied.** 2.0's evaluation named its two false
   positives in it (a Russian name typed with one Latin letter and a mis-declared
   Big5 subject), and 2.1 fixes them on purpose, so its improvement is not a
@@ -737,7 +748,7 @@ phishhawk/
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV; campaign and sweep output
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              528 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
+├── tests/              641 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
 │                       and the evaluation gate
 ├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetchers, results.json
@@ -755,7 +766,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 528 tests, offline, under a minute
+pytest                                       # 641 tests, offline, under a minute
 ruff check src tests samples eval tools phishhawk
 mypy                                         # the package is fully typed
 coverage run -m pytest && coverage report    # CI requires 85%

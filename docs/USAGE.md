@@ -310,7 +310,11 @@ domain under which the messages use many different host names is a platform
 (Cloud Run, a registry zone such as `sa.com`, a help desk) and links by host;
 the report lists the platforms it found. A web address (link, domain or host)
 links only messages at least half of which PhishHawk judged suspicious or
-worse, because ordinary sites turn up in ordinary mail.
+worse, because ordinary sites turn up in ordinary mail. That rule still lets
+phishing that links to a news or reference site join the legitimate mail
+that links there too: on held-out data, 4 of 742 campaigns mixed
+phishing with legitimate mail that way. Read a campaign's shared traits
+before acting on all of it.
 
 Each campaign shows what its messages share and how many share each trait
 (web addresses of mostly clean mail are left out: they link nothing), its

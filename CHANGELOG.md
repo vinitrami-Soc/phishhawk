@@ -19,7 +19,8 @@ each message with a hash-chained custody log, and `--sandbox` writes a
 password-protected pack for any sandbox. PhishHawk stays read-only, and
 none of this sends anything anywhere except `sweep`, which only asks your
 own mail host. No verdict changed on the 5,373
-tuning messages; @@HELD@@
+tuning messages; of the 14,138 held-out messages, scored once, three did (see
+Fixed).
 
 ### Added
 
@@ -38,7 +39,9 @@ tuning messages; @@HELD@@
   `sa.com`, help desks) link by that host; and web addresses link only
   messages most of which were judged suspicious. On the 2,500 real phishing
   messages of the tuning set the largest campaign is 86 messages, and mixed
-  with 2,625 legitimate ones no campaign mixes the two.
+  with 2,625 legitimate ones no campaign mixes the two. Run once on the
+  held-out data, 4 of 742 campaigns mix the two, through links to well-known
+  news and reference sites; see [eval/README.md](eval/README.md).
 - **`phishhawk sweep graph|gmail`** finds the other copies of a reported
   message: `--like reported.eml` searches for its Message-ID, its sender and
   reply-to addresses, its subject and the phishing domains it links to (or
@@ -75,6 +78,8 @@ tuning messages; @@HELD@@
   `infected`. Nothing is sent anywhere.
 - **CI** audits every dependency PhishHawk installs with pip-audit and
   searches every commit for secrets with gitleaks.
+- 641 tests (2.1: 528), including one for every finding of the reviews that
+  fails on the old code.
 
 ### Fixed
 
@@ -82,7 +87,11 @@ tuning messages; @@HELD@@
   (`com.ar`, `gob.ar`, `co.th`, `ne.jp`, `or.at`, `gouv.fr` and the like) was
   one organisation named after the registry: lookalike checks read
   `paypal-login.com.ar` as `com`. Common registry names under a two-letter
-  country code are now suffixes. Found by campaign correlation.
+  country code are now suffixes. Found by campaign correlation. On held-out
+  data this moved three 2005 phishing emails from senders on `paypal.co.us`,
+  `ebay.co.us` and `xbox.com.bo` from suspicious to not flagged (Nazario's
+  corpus 56.9% → 56.7%): they now get 2.1's allowance for a brand's own
+  country domain, as `paypal.us` did.
 - Exchange Online's Authentication-Results header has no authserv-id; its
   first check's domain is now read too.
 - `scan --json` crashed on a file whose name is not UTF-8; such bytes are now
