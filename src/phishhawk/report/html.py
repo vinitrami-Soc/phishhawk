@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from base64 import b64encode
+from contextvars import ContextVar
 from functools import lru_cache
 from html import escape
 from importlib.resources import files as package_files
@@ -253,7 +254,8 @@ section.msg+section.msg{margin-top:48px}
 .verdict svg{width:18px;height:18px;flex:0 0 18px;fill:currentColor}
 .why{margin:6px 0 0;color:var(--ink-2);font-size:13.5px}
 .why b{color:var(--ink);font-weight:600}
-h1{font-size:20px;font-weight:600;letter-spacing:-.025em;line-height:1.3;margin:16px 0 12px;overflow-wrap:anywhere}
+.subject{font-size:20px;font-weight:600;letter-spacing:-.025em;line-height:1.3;margin:16px 0 12px;
+  overflow-wrap:anywhere}
 .meta{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 18px;margin:0;font-size:13px}
 .meta dt{color:var(--ink-3)}
 .meta dd{margin:0;min-width:0;overflow-wrap:anywhere;color:var(--ink-2)}
@@ -268,7 +270,13 @@ h1{font-size:20px;font-weight:600;letter-spacing:-.025em;line-height:1.3;margin:
 .fact.warn svg{color:var(--amber-ink)}
 
 /* section links: plain anchors, so they work without a script */
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);
+  white-space:nowrap;border:0}
+.skip{position:absolute;left:12px;top:-80px;z-index:10;padding:10px 14px;border-radius:var(--r-sm);
+  background:var(--paper);color:var(--ink);border:2px solid var(--brand);font-weight:600;text-decoration:none}
+.skip:focus{top:12px}
 .secnav{position:sticky;top:8px;z-index:5;display:flex;gap:4px;overflow-x:auto;padding:5px;
   border:1px solid var(--line);border-radius:var(--r-full);box-shadow:var(--shade-sm);
   background:color-mix(in srgb,var(--paper) 92%,transparent);-webkit-backdrop-filter:blur(8px);
@@ -325,7 +333,7 @@ section.msg [id]{scroll-margin-top:64px}
 .legend .n{color:var(--ink-2);white-space:nowrap}
 .legend .pts{font:600 12px var(--mono);color:var(--ink);white-space:nowrap}
 .legend .pts i{font:400 11px var(--sans);color:var(--ink-3);margin-left:4px}
-.legend .zero{opacity:.55}
+.legend .zero :is(.lv,.n,.pts){color:var(--ink-3);font-weight:500}
 .ring-note{margin:0;font-size:11.5px;color:var(--ink-3);line-height:1.5}
 
 /* KPI row */
@@ -345,7 +353,7 @@ section.msg [id]{scroll-margin-top:64px}
 .grid-2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
 .panel{padding:16px 18px;min-width:0}
 .panel-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
-h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
+.panel-head :is(h2,h3){font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .count{font:600 11px var(--sans);padding:2px 8px;border-radius:var(--r-full);background:var(--ground-2);
   color:var(--ink-2)}
 .head-note{margin-left:auto;font-size:12px;color:var(--ink-3)}
@@ -405,7 +413,7 @@ a[target="_blank"]::after{content:"\\2197";margin-left:2px;font-size:.85em}
 mark{background:var(--brand-wash-2);color:var(--brand-ink-2);border-radius:3px;padding:0 1px;font-weight:700}
 /* ATT&CK techniques, grouped under their tactic */
 .tgroup+.tgroup{margin-top:14px}
-.tgroup h3{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+.tgroup :is(h3,h4){margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
   color:var(--ink-3)}
 .techs{list-style:none;margin:0;padding:0;display:grid;
   grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));
@@ -586,7 +594,7 @@ footer b{color:var(--ink-2);font-weight:600}
   .legend .pts{font-size:11px}
   .ring-note{font-size:10.5px}
   .verdict{font-size:26px}
-  h1{font-size:17px;margin:10px 0 8px}
+  .subject{font-size:17px;margin:10px 0 8px}
   .meta{font-size:11.5px;gap:3px 12px}
   .facts{margin-top:10px}
   .kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
@@ -606,7 +614,8 @@ footer b{color:var(--ink-2);font-weight:600}
   .techs li{padding:7px 9px}
   .secnav,.secmenu{display:none}
   .limits li,.top li,.u-facts>div,.align{break-inside:avoid}
-  .tgroup h3{break-after:avoid}
+  .tgroup :is(h3,h4){break-after:avoid}
+  .skip{display:none}
   .top{gap:7px}
   .top li>div>b{font-size:12px}
   .top li>div>span{font-size:11px}
@@ -635,7 +644,7 @@ footer b{color:var(--ink-2);font-weight:600}
   section.msg+section.msg{margin-top:0;break-before:page}
   .batch+section.msg{break-before:page}
   .hero,.kpi,.grid-2>.card,.sevbar,.tactics,.kv>div,.steps li,.tbl tr,pre.iocs{break-inside:avoid}
-  .panel-head,h1,h2{break-after:avoid}
+  .panel-head,.subject{break-after:avoid}
   .tbl thead{display:table-header-group}
   a{text-decoration:none;color:inherit}
   footer{break-inside:avoid}
@@ -685,15 +694,16 @@ def _tone_text(text: str, tone: str) -> str:
 def _notes(notes: list[str]) -> str:
     if not notes:
         return ""
-    return '<ul class="notes">%s</ul>' % "".join("<li>%s</li>" % escape(n) for n in notes)
+    return '<ul class="notes" role="list">%s</ul>' % "".join("<li>%s</li>" % escape(n) for n in notes)
 
 
 def _count(n: int, word: str) -> str:
     return "%d %s%s" % (n, word, "" if n == 1 else "s")
 
 
-def _table(headers: list[str], widths: list[int], rows: list[tuple[str, list[str]]]) -> str:
-    """rows: (row class, cells). The first cell leads the row when it collapses on a phone."""
+def _table(caption: str, headers: list[str], widths: list[int], rows: list[tuple[str, list[str]]]) -> str:
+    """rows: (row class, cells). The first cell leads the row when it collapses on a phone.
+    The caption is for screen readers; the panel heading says it on screen."""
     cols = "".join('<col style="width:%d%%">' % w for w in widths)
     head = "".join("<th scope=\"col\">%s</th>" % escape(h) for h in headers)
     body = []
@@ -703,8 +713,19 @@ def _table(headers: list[str], widths: list[int], rows: list[tuple[str, list[str
             lead = ' class="lead"' if i == 0 else ""
             tds.append('<td%s data-label="%s"><div>%s</div></td>' % (lead, escape(headers[i]), cell))
         body.append("<tr%s>%s</tr>" % (' class="%s"' % cls if cls else "", "".join(tds)))
-    return ('<div class="table-wrap"><table class="tbl"><colgroup>%s</colgroup><thead><tr>%s</tr></thead>'
-            "<tbody>%s</tbody></table></div>" % (cols, head, "".join(body)))
+    return ('<div class="table-wrap"><table class="tbl"><caption class="sr-only">%s</caption>'
+            "<colgroup>%s</colgroup><thead><tr>%s</tr></thead><tbody>%s</tbody></table></div>"
+            % (escape(caption), cols, head, "".join(body)))
+
+
+# In a batch the page's h1 names the batch, so each message's headings move
+# down a level: its subject is an h2 and its sections h3.
+_SHIFT: ContextVar[int] = ContextVar("heading_shift", default=0)
+
+
+def _h(level: int, inner: str, cls: str = "") -> str:
+    n = level + _SHIFT.get()
+    return "<h%d%s>%s</h%d>" % (n, ' class="%s"' % cls if cls else "", inner, n)
 
 
 def _panel(title: str, body: str, count: int | None = None, cls: str = "", note: str = "",
@@ -712,8 +733,9 @@ def _panel(title: str, body: str, count: int | None = None, cls: str = "", note:
     badge = '<span class="count">%d</span>' % count if count is not None else ""
     extra = '<span class="head-note">%s</span>' % note if note else ""
     ident = ' id="%s"' % anchor if anchor else ""
-    return ('<section class="card panel %s"%s><header class="panel-head"><h2>%s</h2>%s%s</header>%s</section>'
-            % (cls, ident, title, badge, extra, body))
+    return ('<section class="card panel %s"%s aria-label="%s"><header class="panel-head">%s%s%s</header>'
+            '%s</section>'
+            % (cls, ident, title, _h(2, title), badge, extra, body))
 
 
 def _kv(rows: list[tuple[str, str]]) -> str:
@@ -851,10 +873,10 @@ def _hero(a: Analysis, level: str, anchor: str) -> str:
             'Low signals add at most %d points, one per kind.</p></div>'
             % (_ring(a), _scale(), _legend(a), RING_FULL, THRESHOLDS[1][0], THRESHOLDS[1][0], LOW_CAP))
     return ('<div class="card hero lvl-%s" id="%s-summary"><div><div class="label">Verdict</div>'
-            '<div class="verdict">%s<span>%s</span></div><p class="why">%s</p><h1>%s</h1>'
+            '<div class="verdict">%s<span>%s</span></div><p class="why">%s</p>%s'
             '<dl class="meta">%s</dl><div class="facts">%s</div></div>%s</div>'
             % (level, anchor, _svg(GLYPHS[level]), escape(a.verdict), verdict_reason(a),
-               escape(a.subject or "(no subject)"),
+               _h(1, escape(a.subject or "(no subject)"), "subject"),
                "".join("<dt>%s</dt><dd>%s</dd>" % m for m in meta if m[1]), "".join(facts), side))
 
 
@@ -936,7 +958,8 @@ def _score_breakdown(a: Analysis) -> str:
                 seen.add(kind)
         rows.append(("", [escape(s.label), _badge(s.severity, level),
                           "%d%s" % (points, '<div class="sub">%s</div>' % note if note else "")]))
-    table = _table(["Finding", "Severity", "Points"], [66, 14, 20], rows)
+    table = _table("Points each finding added to the risk score",
+                   ["Finding", "Severity", "Points"], [66, 14, 20], rows)
     return ('<details class="calc"><summary>How this score was calculated</summary>%s<p class="summary">Total: '
             '<b>%d points</b>. A high-severity signal adds %d points and a medium one %d; low signals add 1 per '
             'kind, at most %d between them. %d points make a message suspicious and %d likely phishing, with the '
@@ -954,7 +977,7 @@ def _top_findings(a: Analysis, anchor: str) -> str:
                        escape(WHY_IT_MATTERS.get(s.family, ""))) for s in signals[:3])
     more = ('<p class="more"><a href="#%s-findings">All %s, with why each matters</a></p>'
             % (anchor, _count(len(signals), "finding")) if len(signals) > 3 else "")
-    return _panel("Top findings", '<ol class="top">%s</ol>%s' % (items, more))
+    return _panel("Top findings", '<ol class="top" role="list">%s</ol>%s' % (items, more))
 
 
 def _message(a: Analysis, anchor: str) -> str:
@@ -989,7 +1012,8 @@ def _authentication(a: Analysis, anchor: str) -> str:
         rows.append(("", [escape(check["check"]), _badge(word, level),
                           _mono_host(check["domain"]) or '<span class="muted">none</span>',
                           aligned.get(check["aligned"], "Not applicable")]))
-    table = (_table(["Check", "Result", "Domain checked", "Aligned with From"], [16, 18, 42, 24], rows) if rows
+    table = (_table("SPF, DKIM and DMARC results",
+                    ["Check", "Result", "Domain checked", "Aligned with From"], [16, 18, 42, 24], rows) if rows
              else '<p class="summary">No SPF, DKIM or DMARC result was found.</p>')
     forged = ""
     if a.forged_auth:
@@ -1016,7 +1040,8 @@ def _actions(a: Analysis, anchor: str) -> str:
     summary = " ".join(escape(s) for s in summary_sentences(a))
     steps = "".join('<li><label><input type="checkbox"><span class="n" aria-hidden="true"></span>'
                     '<span class="t">%s</span></label></li>' % escape(x) for x in recommendations(a))
-    return _panel("Recommended actions", '<p class="summary">%s</p><ol class="steps">%s</ol>' % (summary, steps),
+    return _panel("Recommended actions",
+                  '<p class="summary">%s</p><ol class="steps" role="list">%s</ol>' % (summary, steps),
                   anchor="%s-actions" % anchor)
 
 
@@ -1040,7 +1065,7 @@ def _reputation(a: Analysis) -> str:
             detail = _tone_text(LOOKUP_WORDS.get(ip.get("status", ""), "Error: %s" % ip.get("status")), "dim")
         rows.append(("", ['<span class="mono ioc">%s</span>' % escape(defang_host(a.originating_ip)),
                           "AbuseIPDB IP reputation", detail]))
-    table = _table(["Indicator", "Check", "Result"], [34, 22, 44], rows) if rows else ""
+    table = _table("Reputation lookups", ["Indicator", "Check", "Result"], [34, 22, 44], rows) if rows else ""
     return _panel("Reputation and enrichment", head + table)
 
 
@@ -1062,7 +1087,8 @@ def _provenance(a: Analysis, anchor: str, generated: str) -> str:
 
 def _limitations(a: Analysis, anchor: str) -> str:
     items = "".join("<li>%s</li>" % escape(note) for note in limitations(a))
-    return _panel("Limitations", '<ul class="limits">%s</ul>' % items, cls="caution", anchor="%s-limits" % anchor)
+    return _panel("Limitations", '<ul class="limits" role="list">%s</ul>' % items, cls="caution",
+                  anchor="%s-limits" % anchor)
 
 
 def _severity_bar(a: Analysis) -> str:
@@ -1090,7 +1116,7 @@ def _tactic_strip(rows: list[dict]) -> str:
             cls, text = ("on", _count(per[t], "technique")) if per[t] else ("", "not observed")
         items.append('<li class="%s"><span class="t-name">%s</span><span class="t-n">%s</span></li>'
                      % (cls, escape(t), text))
-    return '<ol class="tactics" aria-label="ATT&amp;CK tactics">%s</ol>' % "".join(items)
+    return '<ol class="tactics" role="list" aria-label="ATT&amp;CK tactics">%s</ol>' % "".join(items)
 
 
 def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]]]:
@@ -1163,7 +1189,12 @@ def _compare(observed: str, target: str) -> tuple[str, str]:
             piece = "[.]" if ch == "." else escape(ch)
             out.append("<mark>%s</mark>" % piece if same and ch != other[i] else piece)
         return "".join(out)
-    return show(observed, target), show(target, observed)
+    marked = show(observed, target)
+    changes = ["character %d is \"%s\", not \"%s\"" % (i + 1, c, t)
+               for i, (c, t) in enumerate(zip(observed, target, strict=False)) if same and c != t]
+    if changes:
+        marked += '<span class="sr-only">%s</span>' % escape("; ".join(changes))
+    return marked, show(target, observed)
 
 
 def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) -> list[str]:
@@ -1175,7 +1206,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
                             for t in s.techniques)
             rows.append(("", [_badge(s.severity, s.severity if s.severity in POINTS else "low"), escape(s.label),
                               _why(s.family), techs or '<span class="muted">-</span>']))
-        table = _table(["Severity", "Finding", "Why it matters", "ATT&CK"], [12, 38, 32, 18], rows)
+        table = _table("Findings, most severe first",
+                       ["Severity", "Finding", "Why it matters", "ATT&CK"], [12, 38, 32, 18], rows)
         out.append(_panel("Findings", _severity_bar(a) + _score_breakdown(a) + table, len(a.signals),
                           note="risk score %d = %s" % (a.score, " + ".join(
                               "%d %s" % (p, s) for s, p in score_parts(a).items() if p)) if a.score else "",
@@ -1191,13 +1223,15 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
                           '<span class="label">Imitates</span><span class="mono ioc">%s</span>%s</div></div>'
                           '<div class="sub">%s lookalike, seen as %s.</div></li>'
                           % (observed, imitates, own, escape(h.method.capitalize()), escape(h.where)))
-        out.append(_panel("Lookalike domains", '<ul class="looks">%s</ul>' % "".join(cards), len(a.lookalikes),
+        out.append(_panel("Lookalike domains", '<ul class="looks" role="list">%s</ul>' % "".join(cards),
+                          len(a.lookalikes),
                           note="a lookalike is a reason to look closer, not proof the domain is malicious"))
 
     if a.urls:
         url_cards = "".join(_url_card(a, i, ioc) for i, ioc in enumerate(a.urls, 1))
         flagged = sum(1 for u in a.urls if u.flagged)
-        out.append(_panel("URLs", '<ol class="urls">%s</ol>' % url_cards, len(a.urls), note="%d flagged" % flagged,
+        out.append(_panel("URLs", '<ol class="urls" role="list">%s</ol>' % url_cards, len(a.urls),
+                          note="%d flagged" % flagged,
                           anchor="%s-urls" % anchor))
 
     if files:
@@ -1205,7 +1239,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
         for f in top_level_files(a):
             if not f.inline:
                 rows += _file_rows(a, f, 0)
-        body = _table(["File", "Type", "Hashes", "VirusTotal"], [27, 17, 40, 16], rows)
+        body = _table("Files in the message, with their hashes",
+                      ["File", "Type", "Hashes", "VirusTotal"], [27, 17, 40, 16], rows)
     else:
         body = '<p class="summary">No attachments were found.</p>'
     out.append(_panel("Files", body, len(files), anchor="%s-files" % anchor))
@@ -1216,7 +1251,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
                   '<span class="mono ioc">%s</span>' % escape(defang_url(code["url"]) if code.get("url")
                                                                else code.get("payload", "")[:200])])
                 for code in a.qr_codes]
-        out.append(_panel("QR codes", _table(["Found in", "Leads to (defanged)"], [34, 66], rows),
+        out.append(_panel("QR codes", _table("QR codes and where they lead",
+                                             ["Found in", "Leads to (defanged)"], [34, 66], rows),
                           len(a.qr_codes),
                           note="decoded offline; the phone that scans one skips every desktop link check"))
 
@@ -1225,7 +1261,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
                       '<span class="mono ioc">%s</span>' % escape(defang_host(invite.get("organizer") or "")),
                       escape(invite.get("method") or "-"), str(invite.get("links", 0)), escape(invite["where"])])
                 for invite in a.calendar]
-        out.append(_panel("Calendar invitations", _table(["Title", "Organiser", "Method", "Links", "Found in"],
+        out.append(_panel("Calendar invitations", _table("Calendar invitations",
+                                                         ["Title", "Organiser", "Method", "Links", "Found in"],
                                                          [30, 28, 12, 10, 20], rows), len(a.calendar)))
 
     if a.wallets or a.phones:
@@ -1233,7 +1270,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
                 for w in a.wallets]
         rows += [("flagged", ["phone", '<span class="mono ioc">%s</span>' % escape(number)])
                  for number in a.phones]
-        out.append(_panel("Payment and callback details", _table(["Kind", "Value"], [20, 80], rows),
+        out.append(_panel("Payment and callback details", _table("Payment and callback details",
+                                                                 ["Kind", "Value"], [20, 80], rows),
                           len(a.wallets) + len(a.phones),
                           note="where the message asks the reader to send money or to call"))
 
@@ -1241,7 +1279,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
         rows = [("flagged" if m.get("severity") == "high" else "",
                  [_badge(m.get("severity", "high"), m.get("severity", "high")), escape(m["rule"]),
                   escape(m["where"]), escape(m.get("description") or "-")]) for m in a.yara]
-        out.append(_panel("YARA matches", _table(["Severity", "Rule", "Matched", "Description"], [13, 27, 30, 30],
+        out.append(_panel("YARA matches", _table("YARA matches",
+                                                 ["Severity", "Rule", "Matched", "Description"], [13, 27, 30, 30],
                                                  rows), len(a.yara)))
 
     if a.hops:
@@ -1260,7 +1299,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
                               escape(hop.get("with", "-")),
                               '<span class="sub">%s</span>%s' % (when, "<div>%s</div>" % timing
                                                                   if timing != "-" else "")]))
-        out.append(_panel("Mail path", _table(["#", "From", "By", "With", "When"], [6, 32, 30, 12, 20], rows),
+        out.append(_panel("Mail path", _table("Mail path, oldest hop first",
+                                              ["#", "From", "By", "With", "When"], [6, 32, 30, 12, 20], rows),
                           len(a.hops), note="oldest hop first; only the receiving server's own entries are "
                                             "trustworthy"))
 
@@ -1271,7 +1311,8 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
         groups: dict[str, list[dict]] = {}
         for r in techniques:
             groups.setdefault(technique_tactic(r["id"]) or "Other", []).append(r)
-        body = "".join('<div class="tgroup"><h3>%s</h3><ul class="techs">%s</ul></div>' % (escape(tactic), "".join(
+        body = "".join('<div class="tgroup">%s<ul class="techs" role="list">%s</ul></div>' % (
+            _h(3, escape(tactic)), "".join(
             '<li>%s<div><b>%s</b><span class="sub">%s</span></div></li>'
             % (_link(r["url"], r["id"], "chip"), escape(r["name"]), escape(
                 "From: " + "; ".join(r["evidence"][:3]) + (" and %d more" % (len(r["evidence"]) - 3)
@@ -1315,7 +1356,7 @@ def _batch(analyses: list[Analysis]) -> str:
     rows = [("", ['<a href="#msg-%d">%s</a>' % (i, escape(a.subject or a.path)),
                   _badge(a.verdict, VERDICT_LEVEL.get(a.verdict, "ok")), '<span class="mono">%d</span>' % a.score])
             for i, a in enumerate(analyses, 1)]
-    table = _table(["Subject", "Verdict", "Score"], [62, 28, 10], rows)
+    table = _table("Messages in this report", ["Subject", "Verdict", "Score"], [62, 28, 10], rows)
     return _panel("Batch (%d messages)" % len(analyses), table, cls="batch")
 
 
@@ -1343,13 +1384,19 @@ def render(analyses: list[Analysis]) -> str:
     analyses = display_copy(analyses)  # escaped anyway; this also names bidi overrides
     title = "Phishing triage" if len(analyses) != 1 else "Phishing triage: %s" % analyses[0].verdict
     generated = utc_now()
-    body = ['<div class="wrap"><header class="topbar"><div class="brand">%s<span>PhishHawk</span></div>'
+    body = ['<a class="skip" href="#msg-1-summary">Skip to the verdict</a>'
+            '<div class="wrap"><header class="topbar"><div class="brand">%s<span>PhishHawk</span></div>'
             '<span class="version">v%s</span><span class="pill">Generated <span class="mono">%s</span></span>%s'
             "</header>" % (LOGO, __version__, generated, _theme_switch()),
             '<main class="stack">']
     if len(analyses) > 1:
+        body.append('<h1 class="sr-only">Phishing triage: %d messages</h1>' % len(analyses))
         body.append(_batch(analyses))
-    body += [_section(a, "msg-%d" % i, generated) for i, a in enumerate(analyses, 1)]
+    token = _SHIFT.set(1 if len(analyses) > 1 else 0)
+    try:
+        body += [_section(a, "msg-%d" % i, generated) for i, a in enumerate(analyses, 1)]
+    finally:
+        _SHIFT.reset(token)
     body.append("</main>")
     body.append("<footer><p><b>PhishHawk</b> v%s, a read-only analysis tool. Every indicator is defanged. This "
                 "report loads nothing from the network and runs no scripts.</p><p>This report is an investigation "
