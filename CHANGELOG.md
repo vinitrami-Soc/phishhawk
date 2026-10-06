@@ -55,6 +55,18 @@ the JSON and STIX output are the public interface.
   visible focus ring; the accessibility tree has one level-1 heading, a
   banner, main, navigation and contentinfo, and 14 named regions; forced
   colours and greyscale keep every meaning.
+- **HTML report: security tests.** A message with a markup payload in
+  every field a sender controls (subject, display names, Reply-To,
+  Return-Path, To, Message-ID, Received, the Authentication-Results server
+  name, attachment names, a calendar invitation, link text, and
+  `javascript:`, `data:` and `vbscript:` links) is rendered and checked
+  against an allowlist: only the report's own tags, no event-handler or
+  loading attribute, links only to the report's sections, MITRE and
+  VirusTotal, and nothing loaded from the network. The Markdown note keeps
+  such text inside code spans. The Content-Security-Policy adds
+  `base-uri 'none'` and `form-action 'none'`. In Chromium, a script, an
+  inline handler and a remote image smuggled into the page past escaping
+  were all stopped by the policy. No escaping bug was found.
 - **JSON:** `analysis_status` (`complete` or `incomplete` with the reasons;
   reputation `checked`, `partially checked` or `not checked`),
   `limitations[]`, and `auth_header`, `auth_receiver` and `auth_pinned`
