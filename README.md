@@ -63,7 +63,7 @@ $ phishhawk scan samples/sample_benign.eml samples/sample_phish.eml --quiet --of
 </p>
 
 <p align="center">
-  <img src="docs/images/hero.webp" width="760" alt="PhishHawk's mascot, an orange hawk in a PhishHawk hoodie, leaps with a hooked phishing email in one hand and a laptop showing a LIKELY PHISHING verdict with a risk score of 36 in the other, under the words Detect, Defang, Defend. Cards around it show what PhishHawk does: a lookalike domain found, an attachment scanned with nothing run, a QR code decoded and its link defanged, SPF and DKIM passing and DMARC failing, 79.9% of phishing caught with 0.9% false alarms on held-out mail, 403 tests and 9.7 million fuzz runs, export to STIX 2.1, MISP, HTML and JSON, 29 MITRE ATT&amp;CK techniques mapped, and a read-only IMAP mailbox watch.">
+  <img src="docs/images/hero.webp" width="760" alt="PhishHawk's mascot, an orange hawk in a PhishHawk hoodie, leaps with a hooked phishing email in one hand and a laptop showing a LIKELY PHISHING verdict with a risk score of 36 in the other, under the words Detect, Defang, Defend. Cards around it show what PhishHawk does: a lookalike domain found, an attachment scanned with nothing run, a QR code decoded and its link defanged, SPF and DKIM passing and DMARC failing, 81.3% of phishing caught with 0.8% false alarms on held-out mail, 641 tests and 11.8 million fuzz runs, export to STIX 2.1, MISP, HTML and JSON, 29 MITRE ATT&amp;CK techniques mapped, and a read-only IMAP mailbox watch.">
 </p>
 
 ## At a glance
