@@ -59,8 +59,14 @@ def safe_text(value: str) -> str:
 
 
 def fingerprint(data: bytes) -> dict[str, Any]:
-    return {"sha256": hashlib.sha256(data).hexdigest(), "sha1": hashlib.sha1(data).hexdigest(),
-            "md5": hashlib.md5(data).hexdigest(), "size": len(data)}
+    # SHA-1 and MD5 only name the message for tools and tickets that look files
+    # up by them; integrity rests on SHA-256 (the custody chain, the kept file).
+    # CodeQL reads an IMAP UID as account data and its message as sensitive.
+    # codeql[py/weak-sensitive-data-hashing]
+    sha1 = hashlib.sha1(data).hexdigest()
+    # codeql[py/weak-sensitive-data-hashing]
+    md5 = hashlib.md5(data).hexdigest()
+    return {"sha256": hashlib.sha256(data).hexdigest(), "sha1": sha1, "md5": md5, "size": len(data)}
 
 
 def _link(previous: str, record: dict[str, Any]) -> str:

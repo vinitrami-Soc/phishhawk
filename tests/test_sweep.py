@@ -255,8 +255,7 @@ def test_a_platform_customer_is_searched_by_host_never_by_the_platform():
     shop = build_eml(subject="Your order is on hold", sender="<orders@evil-store.myshopify.com>",
                      text="Pay now: https://evil-store.myshopify.com/pay and https://pay.x.co.com/now")
     c = sweep.criteria_from(triage_bytes(shop, "r.eml"))
-    assert "myshopify.com" not in c.domains and "co.com" not in c.domains
-    assert "evil-store.myshopify.com" in c.domains
+    assert c.domains == ["evil-store.myshopify.com", "pay.x.co.com"]  # never myshopify.com or co.com
 
 
 def test_graph_domain_hits_must_name_the_domain_itself():

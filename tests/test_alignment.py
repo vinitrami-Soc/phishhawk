@@ -72,8 +72,8 @@ def test_a_bulk_mailer_with_its_own_bounce_domain_still_passes():
 def test_a_spoofed_brand_fails_and_says_why():
     block = assess(_analysis(SPOOF, sender='"PayPal" <service@paypal.com>'))
     assert block["status"] == "fail"
-    assert block["explanation"][0].startswith("DMARC failed")
-    assert "paypal.com" in block["explanation"][0]
+    assert block["explanation"][0] == ("DMARC failed: neither SPF nor DKIM authenticated paypal.com, "
+                                       "the domain the reader sees.")
 
 
 def test_no_results_is_unknown_not_pass():
