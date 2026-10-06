@@ -142,6 +142,9 @@ class Analysis:
     list_domains: list[str] = field(default_factory=list)  # where those list headers point
     auth: dict[str, str] = field(default_factory=dict)
     auth_checks: list[dict[str, str]] = field(default_factory=list)  # method, result, domain checked
+    auth_header: str = ""  # where the results were read: Authentication-Results, Received-SPF or ""
+    auth_receiver: str = ""  # the authserv-id of the trusted block; "" when it names none
+    auth_pinned: bool = False  # --trusted-authserv named the servers whose results count
     forged_auth: list[dict[str, Any]] = field(default_factory=list)  # pass claims below the receiver's
     reported_by: dict[str, Any] | None = None
     forwarded_from: dict[str, str] | None = None  # original sender of an inline forward

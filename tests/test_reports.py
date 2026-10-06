@@ -130,23 +130,105 @@ def test_html_embeds_its_fonts_and_prints_to_a4(phish):
     assert ".tbl thead{display:table-header-group}" in page  # column headers repeat on every page
 
 
-def test_html_print_keeps_the_summary_on_page_one(phish):
-    # The alignment reasons made the printed summary spill onto page two: on
-    # paper the sender card keeps the verdict and its lead sentence, and the
-    # reasons move to an Authentication panel at the start of the evidence.
+def _between(page, start, end):
+    return page.split(start, 1)[1].split(end, 1)[0]
+
+
+def _panel_of(page, title):
+    """The HTML of the panel whose heading is title."""
+    return page.split("<h2>%s</h2>" % title, 1)[1].split("</section>", 1)[0]
+
+
+def test_html_puts_decisions_before_evidence(phish):
+    from phishhawk.report.common import sorted_signals
+
+    page = html.render([phish])
+    summary, evidence = page.split('<div class="evidence stack">', 1)
+    # the verdict, the top three findings and the actions come first ...
+    for marker in ('class="card hero', "<h2>Top findings</h2>", "<h2>Recommended actions</h2>"):
+        assert marker in summary, marker
+    top = _panel_of(summary, "Top findings")
+    assert all(html.escape(s.label) in top for s in sorted_signals(phish)[:3])
+    assert html.escape(sorted_signals(phish)[3].label) not in top
+    # ... then each part of the evidence in its own section, in this order
+    order = ["Message", "Authentication", "Findings", "URLs", "Files", "MITRE ATT&amp;CK",
+             "Reputation and enrichment", "Evidence and provenance", "Limitations"]
+    positions = [evidence.index("<h2>%s</h2>" % title) for title in order]
+    assert positions == sorted(positions)
+    message_id = html.escape(phish.message_id)
+    assert message_id in _panel_of(evidence, "Message") and message_id not in summary
+
+
+def test_html_section_navigation_works_without_a_script(phish):
+    benign = triage_file(sample("sample_benign.eml"))
+    page = html.render([phish, benign])
+    nav = _between(page, '<nav class="secnav" aria-label="Report sections">', "</nav>")
+    for key in ("summary", "actions", "message", "auth", "findings", "urls", "files", "attack", "evidence",
+                "limits"):
+        assert 'href="#msg-1-%s"' % key in nav
+        assert 'id="msg-1-%s"' % key in page
+    assert 'id="msg-2-summary"' in page  # every message has its own anchors
+    assert page.count('<nav class="secnav"') == 2
+    assert ".secnav{display:none}" in page.split("@media print{", 1)[1]
+    assert "<script" not in page
+
+
+def test_html_authentication_spells_out_each_check(phish):
     from phishhawk.alignment import assess
     from phishhawk.report.common import defang_host
 
     page = html.render([phish])
-    lead, *why = assess(phish, defang_host)["explanation"]
-    assert why  # the sample fails authentication for several reasons
-    summary, evidence = page.split('<div class="evidence stack">', 1)
-    assert '<ul class="why">' in summary  # on screen the reasons stay beside the badge
-    panel = evidence.split('<section class="card panel print-only">', 1)[1].split("</section>", 1)[0]
-    assert "<h2>Authentication</h2>" in panel
-    assert all(html.escape(line) in panel for line in [lead, *why])
-    assert ".print-only{display:none}" in page
-    assert ".kv .why{display:none}" in page and ".print-only{display:block}" in page
+    panel = _panel_of(page, "Authentication")
+    block = assess(phish, defang_host)
+    for header in ("Check", "Result", "Domain checked", "Aligned with From"):
+        assert '<th scope="col">%s</th>' % header in panel
+    for check in block["checks"]:
+        assert 'data-label="Check"><div>%s</div>' % check["check"] in panel
+    assert all(html.escape(line) in panel for line in block["explanation"])
+    assert "Read from" in panel and "Authentication-Results" in panel
+    assert "Fail" in panel  # results use the report's words, not raw tokens
+
+
+def test_html_findings_say_why_they_matter(phish):
+    page = html.render([phish])
+    panel = _panel_of(page, "Findings")
+    assert '<th scope="col">Why it matters</th>' in panel
+    assert html.WHY_IT_MATTERS["auth"] in panel and html.WHY_IT_MATTERS["sender"] in panel
+
+
+def test_html_files_section_is_there_even_without_files(phish):
+    benign = triage_file(sample("sample_benign.eml"))
+    assert not [f for f in benign.attachments if not f.inline]
+    assert "No attachments were found." in _panel_of(html.render([benign]), "Files")
+
+
+def test_html_states_completeness_reputation_and_evidence_explicitly(phish):
+    import copy
+
+    page = html.render([phish])
+    hero = _between(page, 'class="card hero', "<h2>")
+    assert "Analysis: <b>Complete</b>" in hero
+    assert "Reputation: <b>Not checked</b>" in hero
+    evidence = _panel_of(page, "Evidence and provenance")
+    assert phish.evidence["sha256"] in evidence
+    assert "Not recorded" in evidence and "Not verified" in evidence
+    assert _panel_of(page, "URLs").count("Not checked") >= len(phish.urls)  # never "clean" by silence
+    assert "does not mean an indicator is safe" in _panel_of(page, "Reputation and enrichment")
+    partial = copy.deepcopy(phish)
+    partial.urls_dropped = 2
+    hero = _between(html.render([partial]), 'class="card hero', "<h2>")
+    assert 'class="fact warn"' in hero and "Analysis: <b>Incomplete</b>" in hero
+
+
+def test_html_limitations_and_footer_keep_the_report_honest(phish):
+    from phishhawk.report.common import limitations
+
+    page = html.render([phish])
+    panel = _panel_of(page, "Limitations")
+    assert all(html.escape(note) in panel for note in limitations(phish))
+    footer = _between(page, "<footer>", "</footer>")
+    assert "investigation aid" in footer and "evidence policy" in footer
+    assert "Purge" not in page
 
 
 def test_html_theme_follows_the_system_and_can_be_switched_without_a_script(phish):
@@ -183,3 +265,13 @@ def test_html_font_files_ship_with_the_package():
     for name in ("Outfit-Variable-latin.woff2", "JetBrainsMono-Variable-latin.woff2",
                  "Outfit-OFL.txt", "JetBrainsMono-OFL.txt"):
         assert folder.joinpath(name).is_file(), name
+
+
+def test_html_escapes_the_authentication_source():
+    # The authserv-id comes from a header, so a sender can write anything there.
+    eml = build_eml(headers=[("Authentication-Results", "<script>alert`1`</script>.example; spf=pass")])
+    a = triage_bytes(eml)
+    assert a.auth_receiver.startswith("<script>")
+    page = html.render([a])
+    assert "<script>alert" not in page and "&lt;script&gt;alert`1`&lt;/script&gt;" in page
+    assert "<script>alert" not in markdown.render(a)

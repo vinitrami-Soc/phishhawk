@@ -173,7 +173,25 @@
         }
       }
     },
-    "recommendations": {"type": "array", "items": {"type": "string"}},
-    "summary": {"type": "array", "items": {"type": "string"}}
+    "recommendations": {"type": "array", "items": {"type": "string"},
+                        "description": "What the analyst can do next. PhishHawk itself never blocks, moves or deletes anything."},
+    "summary": {"type": "array", "items": {"type": "string"}},
+    "auth_header": {"enum": ["Authentication-Results", "Received-SPF", ""],
+                    "description": "Where the SPF, DKIM and DMARC results were read; empty when the message carries neither header."},
+    "auth_receiver": {"type": "string", "description": "The authserv-id of the trusted Authentication-Results block; empty when it names none (Exchange Online)."},
+    "auth_pinned": {"type": "boolean", "description": "True when --trusted-authserv named the servers whose results count."},
+    "analysis_status": {
+      "type": "object",
+      "description": "Whether every part of the message was read, and whether the reputation services were asked and answered. No answer is never reported as clean.",
+      "required": ["status", "reasons", "reputation", "reputation_detail"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["complete", "incomplete"]},
+        "reasons": {"type": "array", "items": {"type": "string"}, "description": "What was not read or not checked; empty when complete."},
+        "reputation": {"enum": ["checked", "partially checked", "not checked"]},
+        "reputation_detail": {"type": "string"}
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}, "description": "What this report cannot tell, for this message."}
   }
 }

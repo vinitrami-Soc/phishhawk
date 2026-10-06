@@ -12,7 +12,7 @@ from .. import __version__
 from ..alignment import assess
 from ..attack import technique_name, technique_url
 from ..extract import defang_host, defang_url
-from ..models import Analysis, FileIoc, vt_is_malicious
+from ..models import MIME_TOO_DEEP, Analysis, FileIoc, vt_is_malicious
 
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 VERDICT_TONE = {"MALICIOUS": "red", "LIKELY PHISHING": "red", "SUSPICIOUS": "amber",
@@ -198,23 +198,105 @@ def recommendations(analysis: Analysis) -> list[str]:
     if verdict == "SUSPICIOUS":
         return ["Detonate the URLs and attachments in a sandbox before deciding.",
                 "Confirm with the recipient whether they expected this message.",
-                "Hold the message in quarantine until the sandbox result is back."]
+                "Keep the message away from users through your quarantine process until the sandbox "
+                "result is back."]
     iocs = analysis.iocs()
-    actions = ["Purge the message from every mailbox (search by sender and Message-ID).",
-               "Block %s at the mail gateway and web proxy."
-               % plural(len([i for i in iocs if i["type"] in ("url", "domain", "email", "ipv4")]),
-                        "network indicator")]
+    actions = ["Search every mailbox for copies by sender and Message-ID (phishhawk sweep does this "
+               "read-only), then remove confirmed copies through your approved workflow.",
+               "After confirming them, block %s at your approved control points, such as the mail gateway "
+               "and web proxy." % plural(len([i for i in iocs if i["type"] in ("url", "domain", "email", "ipv4")]),
+                                         "network indicator")]
     techniques = set(analysis.techniques)
     if techniques & {"T1598.002", "T1598.003", "T1566.002"}:
         actions.append("Find who clicked (proxy logs for the URL hosts); for each, reset the password "
                        "and revoke active sessions and MFA tokens.")
     if any(f.flagged for f in analysis.attachments):
-        actions.append("Hunt the attachment SHA256 values in EDR; isolate any host that executed them.")
+        actions.append("Hunt the attachment SHA-256 values in EDR; isolate any host that executed them.")
     if any(hit.target in analysis.protected_domains for hit in analysis.lookalikes):
         actions.append("Your own domain is being impersonated: alert finance/HR about possible "
                        "payment-diversion (BEC) and consider takedown of the lookalike.")
     actions.append("Escalate to L2 with this report attached.")
     return actions
+
+
+FAILED_LOOKUPS = ("error", "rate_limited", "auth_error")
+PROVIDER_NAMES = {"virustotal": "VirusTotal", "urlscan": "urlscan.io", "rdap": "RDAP", "abuseipdb": "AbuseIPDB"}
+
+
+def _lookups(analysis: Analysis):
+    """Every reputation answer in the analysis, with the service that gave it."""
+    for url in analysis.urls:
+        yield "VirusTotal", url.vt
+        yield "urlscan.io", url.urlscan
+    for attachment in analysis.attachments:
+        yield "VirusTotal", attachment.vt
+    for info in analysis.domain_intel.values():
+        yield "RDAP", info
+    yield "AbuseIPDB", analysis.ip_intel
+
+
+def analysis_status(analysis: Analysis) -> dict[str, Any]:
+    """Whether every part of the message was read, and whether the reputation
+    services were asked and answered. No answer is never reported as clean."""
+    reasons = list(analysis.errors)
+    if analysis.urls_dropped:
+        reasons.append("%s past the per-message cap were counted but not checked."
+                       % plural(analysis.urls_dropped, "link"))
+    if analysis.mime_depth >= MIME_TOO_DEEP:
+        reasons.append("The MIME structure was nested too deep to follow; the body was read as plain text.")
+    unopened = sum(len(unopened_members(analysis, f)) for f in analysis.attachments)
+    if unopened:
+        reasons.append("%s inside archives or disk images were listed but not opened." % plural(unopened, "file"))
+    answers = [(name, report) for name, report in _lookups(analysis) if report]
+    failed = sorted({name for name, report in answers if report.get("status") in FAILED_LOOKUPS})
+    n_failed = sum(1 for _, report in answers if report.get("status") in FAILED_LOOKUPS)
+    n_budget = sum(1 for _, report in answers
+                   if report.get("status") == "skipped" and "budget" in str(report.get("detail", "")))
+    if not analysis.enrichment_sources:
+        reputation, detail = "not checked", "offline: no reputation service was asked"
+    elif n_failed or n_budget:
+        parts = []
+        if n_failed:
+            parts.append("%s failed (%s)" % (plural(n_failed, "lookup"), ", ".join(failed)))
+        if n_budget:
+            parts.append("%s skipped by the per-message VirusTotal budget" % plural(n_budget, "lookup"))
+        reputation, detail = "partially checked", "; ".join(parts)
+    else:
+        reputation, detail = "checked", ", ".join(PROVIDER_NAMES.get(n, n) for n in analysis.enrichment_sources)
+    return {"status": "incomplete" if reasons else "complete", "reasons": reasons,
+            "reputation": reputation, "reputation_detail": detail}
+
+
+def limitations(analysis: Analysis) -> list[str]:
+    """What this report cannot tell, for this message."""
+    notes = ["This report is an investigation aid: confirm indicators and follow your approved response process "
+             "before blocking or removing anything."]
+    server = " (written by %s)" % defang_host(analysis.auth_receiver) if analysis.auth_receiver else ""
+    if analysis.auth_pinned and analysis.auth_header:
+        notes.append("Authentication results were read only from the servers named with --trusted-authserv%s."
+                     % server)
+    elif analysis.auth_header == "Authentication-Results":
+        notes.append("Authentication results were read from the topmost Authentication-Results headers%s. If "
+                     "your receiving server did not write them, a sender could have; --trusted-authserv names "
+                     "the server to trust." % server)
+    elif analysis.auth_header:
+        notes.append("Only a Received-SPF header was found: DKIM and DMARC could not be judged, and no "
+                     "Authentication-Results header vouches for the SPF result.")
+    else:
+        notes.append("No Authentication-Results header was found, so SPF, DKIM and DMARC could not be judged.")
+    if analysis.enrichment_sources:
+        notes.append("A clean or empty reputation result does not prove an indicator is safe.")
+    else:
+        notes.append("No reputation service was asked. The absence of reputation data does not mean an "
+                     "indicator is safe.")
+    if analysis.urls or analysis.qr_codes or any(not f.inline for f in analysis.attachments):
+        notes.append("Whether anyone clicked a link or opened a file is not visible in the message: check "
+                     "proxy and EDR telemetry.")
+    if any(info.get("status") == "ok" for info in analysis.domain_intel.values()):
+        notes.append("A newly registered domain is not malicious by itself, and an old one is not safe by itself.")
+    if analysis.evidence.get("sha256"):
+        notes.append("The SHA-256 identifies the exact bytes analysed; it does not prove who wrote the message.")
+    return notes
 
 
 def technique_rows(analysis: Analysis) -> list[dict[str, Any]]:
@@ -236,6 +318,8 @@ def to_dict(analysis: Analysis) -> dict[str, Any]:
     payload["authentication"] = assess(analysis)
     payload["recommendations"] = recommendations(analysis)
     payload["summary"] = summary_sentences(analysis)
+    payload["analysis_status"] = analysis_status(analysis)
+    payload["limitations"] = limitations(analysis)
     payload["generated_at"] = utc_now()
     payload["tool_version"] = __version__
     payload["report_version"] = REPORT_VERSION

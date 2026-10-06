@@ -555,7 +555,10 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | `signals[]` | `severity`, `label`, `techniques` and, since 2.1, `family`: the part of the message the finding is about (`auth`, `sender`, `link`, `attachment`, `content`, `evasion`, `intel` or `policy`; empty for a finding added outside PhishHawk's checks) |
 | `techniques[]` | `id`, `name`, ATT&CK `url` and the `evidence` behind it |
 | `iocs[]` | `type` (url, domain, ipv4, ipv6, email, sha256, crypto-wallet, phone), `value`, `context`. Only indicators worth blocking. |
-| `recommendations[]` | The actions to take, in order |
+| `recommendations[]` | The actions to take, in order. They are for the analyst: PhishHawk itself never blocks, moves or deletes anything |
+| `analysis_status` | Since 2.3: `status` (`complete` or `incomplete`) with the `reasons[]` a part of the message was not read or checked (links past the cap, archive members not opened, MIME nested too deep), and `reputation` (`checked`, `partially checked` or `not checked`) with `reputation_detail`. No answer from a reputation service is never reported as clean |
+| `limitations[]` | Since 2.3: what this report cannot tell, for this message |
+| `auth_header`, `auth_receiver`, `auth_pinned` | Since 2.3: where the SPF, DKIM and DMARC results were read (`Authentication-Results`, `Received-SPF` or empty), the authserv-id of the server that wrote them (empty when it names none, as Exchange Online does), and whether `--trusted-authserv` named it |
 | `subject`, `date`, `message_id`, `to` | Message metadata |
 | `from_display`, `from_address`, `from_domain`, `reply_to`, `return_path`, `originating_ip`, `auth` | Sender and SPF/DKIM/DMARC details |
 | `forged_auth[]` | Pass results claimed below the receiving server's own: `claim`, `authserv`, and `impersonates` when the forged header uses the receiving server's name |

@@ -32,10 +32,13 @@ from ..attack import TACTIC_ORDER, technique_tactic
 from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, signal_kind, vt_is_malicious
 from .common import (
+    REPORT_VERSION,
+    analysis_status,
     children_of,
     defang_ioc,
     display_copy,
     human_size,
+    limitations,
     recommendations,
     sorted_signals,
     summary_sentences,
@@ -55,7 +58,33 @@ POINTS = {"high": 3, "medium": 2, "low": 1}
 LOW_CAP = 3          # low signals add at most 3 points between them (models.Analysis.low_points)
 RING_FULL = 30       # the ring is full at 30 points; most real phish score 5 to 20
 THRESHOLDS = ((4, "suspicious"), (8, "likely phishing"))
-PROVIDERS = {"virustotal": "VirusTotal", "urlscan": "urlscan.io", "rdap": "RDAP", "abuseipdb": "AbuseIPDB"}
+
+# Why a kind of finding matters, in the analyst's words; keyed by Signal.family.
+WHY_IT_MATTERS = {
+    "auth": "Email authentication did not confirm the domain the message claims to come from.",
+    "sender": "The sender, reply address or display name is made to look like someone the reader trusts.",
+    "link": "Links or QR codes lead somewhere other than they seem, or to hosting common in phishing.",
+    "attachment": "Attached files can run code, hide a payload or collect credentials.",
+    "content": "The wording pushes the reader to act: sign in, pay or hurry.",
+    "evasion": "The message hides or disguises content to get past mail filters.",
+    "intel": "A reputation service already reports this indicator.",
+    "policy": "It matches your organisation's own block list or YARA rules.",
+}
+
+# Authentication results in the report's words; JSON keeps the raw tokens.
+RESULT_WORDS = {"pass": ("Pass", "ok"), "fail": ("Fail", "high"), "softfail": ("Soft fail", "high"),
+                "neutral": ("Neutral", "info"), "none": ("None", "info"), "temperror": ("Error", "medium"),
+                "permerror": ("Error", "medium"), "policy": ("Policy", "info"), "": ("Not checked", "info")}
+
+# Reputation answers that are not results, in the report's words.
+LOOKUP_WORDS = {"not_found": "Not found", "no_date": "No registration date", "rate_limited": "Rate limited",
+                "auth_error": "API key rejected", "error": "Error", "skipped": "Skipped"}
+
+# The section links at the top of each message; a section that is not in the
+# report has no link.
+NAV = (("summary", "Summary"), ("actions", "Actions"), ("message", "Message"), ("auth", "Authentication"),
+       ("findings", "Findings"), ("urls", "URLs"), ("files", "Files"), ("attack", "ATT&amp;CK"),
+       ("evidence", "Evidence"), ("limits", "Limitations"))
 
 # One glyph per level, drawn in an 8x8 box so it looks the same on every system.
 GLYPHS = {
@@ -79,6 +108,9 @@ ICONS = {
               'width="6.5" height="6.5" rx="1.5"/>',
     "lookup": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>',
     "inbox": '<path d="M4 13h4l1.5 3h5L16 13h4"/><path d="M5.5 5h13L21 13v6H3v-6z"/>',
+    "check": '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/>',
+    "chain": '<rect x="2.5" y="8.5" width="9" height="7" rx="3.5"/><rect x="12.5" y="8.5" width="9" height="7" '
+             'rx="3.5"/>',
     "auto": '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/>',
     "light": '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4'
              'M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
@@ -219,6 +251,22 @@ h1{font-size:20px;font-weight:600;letter-spacing:-.025em;line-height:1.3;margin:
 .fact svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;
   stroke-linejoin:round;color:var(--ink-3)}
 .fact b{font-weight:600;color:var(--ink)}
+.fact.warn{background:var(--amber-wash);border-color:color-mix(in srgb,var(--amber) 45%,transparent);
+  color:var(--amber-ink)}
+.fact.warn svg{color:var(--amber-ink)}
+
+/* section links: plain anchors, so they work without a script */
+html{scroll-behavior:smooth}
+.secnav{position:sticky;top:8px;z-index:5;display:flex;gap:4px;overflow-x:auto;padding:5px;
+  border:1px solid var(--line);border-radius:var(--r-full);box-shadow:var(--shade-sm);
+  background:color-mix(in srgb,var(--paper) 92%,transparent);-webkit-backdrop-filter:blur(8px);
+  backdrop-filter:blur(8px);scrollbar-width:none}
+.secnav::-webkit-scrollbar{display:none}
+.secnav a{flex:0 0 auto;padding:5px 12px;border-radius:var(--r-full);font-size:12.5px;font-weight:500;
+  color:var(--ink-2);text-decoration:none;white-space:nowrap}
+.secnav a:hover{background:var(--ground-2);color:var(--ink)}
+section.msg [id]{scroll-margin-top:64px}
+.panel:target,.hero:target{outline:2px solid var(--brand);outline-offset:2px}
 
 /* the score ring: filled to the score on a 0-30 scale, split by where the
    points came from; ticks mark the verdict thresholds */
@@ -279,13 +327,24 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .kv dt{color:var(--ink-3);font-size:12px}
 .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
 .why{margin:.4rem 0 0;padding-left:1.1rem}.why li{margin:.15rem 0}
-.print-only{display:none}
+.align{margin:0 0 12px;font-size:13px;line-height:1.55}
+.source{margin:12px 0 0;font-size:12px;color:var(--ink-3)}
+.source b{color:var(--ink-2);font-weight:600}
+.sel{user-select:all}
 .kv .mono{font-size:12px}
 .badges{display:flex;flex-wrap:wrap;gap:5px}
 .summary{margin:0 0 12px;color:var(--ink-2);font-size:13px;line-height:1.6}
 .steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:step}
 .steps li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;font-size:13.5px;
   counter-increment:step}
+.top{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.top li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start}
+.top li .badge{margin-top:1px}
+.top li>div>b{display:block;font-size:13.5px;font-weight:550;line-height:1.4;overflow-wrap:anywhere}
+.top li>div>span{display:block;margin-top:2px;font-size:12.5px;color:var(--ink-3);line-height:1.45}
+.more{margin:12px 0 0;font-size:12.5px}
+.caution{background:var(--amber-wash);border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
+.limits{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px;color:var(--ink-2)}
 .steps li::before{content:counter(step);width:24px;height:24px;border-radius:var(--r-full);display:grid;
   place-items:center;font:600 11.5px var(--sans);background:var(--brand-wash-2);color:var(--brand-ink-2);
   margin-top:-1px}
@@ -365,8 +424,9 @@ pre.iocs{margin:0;padding:14px 16px;background:var(--ground);border:1px solid va
   overflow-wrap:anywhere}
 .errors{margin:0;padding-left:18px;color:var(--ink-2);font-size:13px}
 
-footer{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between;margin-top:28px;
-  padding-top:16px;border-top:1px solid var(--line-2);font-size:12px;color:var(--ink-3)}
+footer{display:grid;gap:6px;margin-top:28px;padding-top:16px;border-top:1px solid var(--line-2);font-size:12px;
+  color:var(--ink-3)}
+footer p{margin:0;max-width:880px}
 footer b{color:var(--ink-2);font-weight:600}
 
 @media (max-width:900px){
@@ -406,7 +466,7 @@ footer b{color:var(--ink-2);font-weight:600}
   .flagged td:first-child{box-shadow:none}
   .flagged{border-left:3px solid var(--brand)}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}html{scroll-behavior:auto}}
 @media (forced-colors:active){
   .badge,.sevbar span,.chip,.tag,.idx,.legend .sw,.tactics li{border:1px solid CanvasText}
   .hero::before{background:CanvasText}
@@ -443,10 +503,12 @@ footer b{color:var(--ink-2);font-weight:600}
   .steps{gap:5px}
   .steps li{grid-template-columns:20px minmax(0,1fr);gap:8px;font-size:11.5px;line-height:1.45}
   .steps li::before{width:20px;height:20px;font-size:10.5px}
-  /* the alignment reasons move to an Authentication panel with the evidence */
-  .print-only{display:block}
-  .kv .why{display:none}
-  .why-more{margin-top:3px;font-size:10.5px;color:var(--ink-3)}
+  .secnav{display:none}
+  .top{gap:7px}
+  .top li>div>b{font-size:12px}
+  .top li>div>span{font-size:11px}
+  .more,.more a{font-size:11px;color:var(--ink-3)}
+  .caution{background:#fff}
   /* Chromium cannot fragment grid items across pages cleanly: a table split
      over a page break was drawn under the next card. Block flow fixes it. */
   main.stack,section.msg,.evidence{display:block}
@@ -540,31 +602,27 @@ def _table(headers: list[str], widths: list[int], rows: list[tuple[str, list[str
             "<tbody>%s</tbody></table></div>" % (cols, head, "".join(body)))
 
 
-def _panel(title: str, body: str, count: int | None = None, cls: str = "", note: str = "") -> str:
+def _panel(title: str, body: str, count: int | None = None, cls: str = "", note: str = "",
+           anchor: str = "") -> str:
     badge = '<span class="count">%d</span>' % count if count is not None else ""
     extra = '<span class="head-note">%s</span>' % note if note else ""
-    return ('<section class="card panel %s"><header class="panel-head"><h2>%s</h2>%s%s</header>%s</section>'
-            % (cls, title, badge, extra, body))
+    ident = ' id="%s"' % anchor if anchor else ""
+    return ('<section class="card panel %s"%s><header class="panel-head"><h2>%s</h2>%s%s</header>%s</section>'
+            % (cls, ident, title, badge, extra, body))
+
+
+def _kv(rows: list[tuple[str, str]]) -> str:
+    return '<dl class="kv">%s</dl>' % "".join("<div><dt>%s</dt><dd>%s</dd></div>" % r for r in rows if r[1])
 
 
 def _vt_cell(report) -> str:
     if not report:
-        return '<span class="t-info">not queried</span>'
+        return '<span class="t-info">Not checked</span>'
     text, tone = vt_text(report)
     cell = _tone_text(text, tone)
     if report.get("link") and report.get("status") in ("ok", "not_found"):
         cell += '<div class="sub">%s</div>' % _link(report["link"], "open in VirusTotal")
     return cell
-
-
-def _auth_badges(a: Analysis) -> str:
-    if not a.auth:
-        return '<span class="muted">no Authentication-Results header</span>'
-    badges = []
-    for mechanism, value in a.auth.items():
-        level = "ok" if value == "pass" else ("high" if value in ("fail", "softfail") else "medium")
-        badges.append(_badge("%s %s" % (mechanism, value), level))
-    return '<div class="badges">%s</div>' % "".join(badges)
 
 
 # ------------------------------------------------------------------ score --
@@ -661,19 +719,21 @@ def _scale() -> str:
 
 # ------------------------------------------------------------- sections --
 
-def _hero(a: Analysis, level: str) -> str:
+def _fact(icon: str, label: str, value: str, warn: bool = False) -> str:
+    return '<span class="fact%s">%s %s: <b>%s</b></span>' % (" warn" if warn else "", _icon(icon), label, value)
+
+
+def _hero(a: Analysis, level: str, anchor: str) -> str:
     meta = [("From", "%s &lt;%s&gt;" % (escape(a.from_display), escape(defang_host(a.from_address)))),
-            ("Date", escape(a.date or "")), ("To", escape(a.to or "")),
-            ("Message-ID", '<span class="mono ioc">%s</span>' % escape(a.message_id or "")),
-            ("File", '<span class="mono ioc">%s</span>' % escape(a.path))]
+            ("Date", escape(a.date or ""))]
     if a.evidence.get("sha256"):
-        meta.append(("SHA-256", '<span class="mono ioc">%s</span> (%d bytes)'
+        meta.append(("SHA-256", '<span class="mono ioc sel">%s</span> (%d bytes)'
                      % (escape(a.evidence["sha256"]), a.evidence.get("size", 0))))
-    if a.evidence.get("custody"):
-        meta.append(("Custody record", '<span class="mono ioc">%s</span>' % escape(a.evidence["custody"])))
-    sources = [PROVIDERS.get(s, s) for s in a.enrichment_sources]
-    facts = ['<span class="fact">%s Reputation lookups: <b>%s</b></span>'
-             % (_icon("lookup"), escape(", ".join(sources)) if sources else "none (offline)")]
+    status = analysis_status(a)
+    facts = [_fact("check", "Analysis", status["status"].capitalize(), status["status"] != "complete"),
+             _fact("lookup", "Reputation", escape(status["reputation"].capitalize()),
+                   status["reputation"] == "partially checked"),
+             _fact("chain", "Custody", "Recorded" if a.evidence.get("custody") else "Not recorded")]
     if a.reported_by:
         who = a.reported_by.get("display") or a.reported_by.get("from", "")
         facts.append('<span class="fact">%s Reported by <b>%s</b>%s</span>'
@@ -685,12 +745,19 @@ def _hero(a: Analysis, level: str) -> str:
             'high signal or evidence of another kind; without one, three kinds of evidence and a score of %d do. '
             'Low signals add at most %d points, one per kind.</p></div>'
             % (_ring(a), _scale(), _legend(a), RING_FULL, THRESHOLDS[1][0], THRESHOLDS[1][0], LOW_CAP))
-    return ('<div class="card hero lvl-%s"><div><div class="label">Verdict</div>'
+    return ('<div class="card hero lvl-%s" id="%s-summary"><div><div class="label">Verdict</div>'
             '<div class="verdict">%s<span>%s</span></div><p class="why">%s</p><h1>%s</h1>'
             '<dl class="meta">%s</dl><div class="facts">%s</div></div>%s</div>'
-            % (level, _svg(GLYPHS[level]), escape(a.verdict), verdict_reason(a),
+            % (level, anchor, _svg(GLYPHS[level]), escape(a.verdict), verdict_reason(a),
                escape(a.subject or "(no subject)"),
                "".join("<dt>%s</dt><dd>%s</dd>" % m for m in meta if m[1]), "".join(facts), side))
+
+
+def _nav(a: Analysis, anchor: str, files: list[FileIoc]) -> str:
+    present = {"findings": bool(a.signals), "urls": bool(a.urls), "attack": bool(a.techniques)}
+    links = "".join('<a href="#%s-%s">%s</a>' % (anchor, key, title)
+                    for key, title in NAV if present.get(key, True))
+    return '<nav class="secnav" aria-label="Report sections">%s</nav>' % links
 
 
 def _kpis(a: Analysis, files: list[FileIoc]) -> str:
@@ -715,36 +782,44 @@ def _kpis(a: Analysis, files: list[FileIoc]) -> str:
         % (_icon(icon), escape(label), value, foot) for icon, label, value, foot in tiles)
 
 
-def _alignment(a: Analysis, note: bool = False) -> str:
-    """The alignment badge, its lead sentence and the reasons. In print the
-    sender card keeps the lead only (note=True says where the reasons went),
-    so the summary stays on page one."""
+def _alignment(a: Analysis) -> str:
+    """The alignment badge, its lead sentence and the reasons."""
     block = assess(a, defang_host)
     level = {"pass": "ok", "fail": "high"}.get(block["status"], "medium")
     lead, *why = block["explanation"]
     reasons = '<ul class="why">%s</ul>' % "".join("<li>%s</li>" % escape(line) for line in why) if why else ""
-    more = '<span class="print-only why-more">See Authentication for the reasons.</span>'
-    return '%s <span class="why-lead">%s</span>%s%s' % (_badge(block["status"].upper(), level), escape(lead),
-                                                      reasons, more if note and why else "")
+    return '<div class="align">%s <span class="why-lead">%s</span>%s</div>' % (
+        _badge(block["status"].upper(), level), escape(lead), reasons)
 
 
-def _sender(a: Analysis) -> str:
-    rows = []
-    for label, value in (("Reply-To", a.reply_to), ("Return-Path", a.return_path),
-                         ("Originating IP", a.originating_ip)):
-        if value:
-            rows.append((label, '<span class="mono">%s</span>' % escape(defang_host(value))))
-    rows.append(("Received hops", str(a.received_hops)))
-    rows.append(("Auth", _auth_badges(a)))
-    rows.append(("Alignment", _alignment(a, note=True)))
-    if a.forged_auth:
-        rows.append(("Forged auth", "<br>".join(
-            "%s claimed as <span class=\"mono\">%s</span>%s" % (
-                escape(claim["claim"]), escape(claim["authserv"]),
-                " (your server's name)" if claim.get("impersonates") else "")
-            for claim in a.forged_auth[:6])))
-    if a.protected_domains:
-        rows.append(("Protected", escape(", ".join(a.protected_domains))))
+def _mono_host(value: str) -> str:
+    return '<span class="mono ioc">%s</span>' % escape(defang_host(value)) if value else ""
+
+
+def _why(text: str | None) -> str:
+    return '<span class="sub">%s</span>' % escape(text) if text else '<span class="muted">-</span>'
+
+
+def _top_findings(a: Analysis, anchor: str) -> str:
+    signals = sorted_signals(a)
+    if not signals:
+        return _panel("Top findings", '<p class="summary">No signals were raised.</p>')
+    items = "".join('<li>%s<div><b>%s</b><span>%s</span></div></li>'
+                    % (_badge(s.severity, s.severity if s.severity in POINTS else "low"), escape(s.label),
+                       escape(WHY_IT_MATTERS.get(s.family, ""))) for s in signals[:3])
+    more = ('<p class="more"><a href="#%s-findings">All %s, with why each matters</a></p>'
+            % (anchor, _count(len(signals), "finding")) if len(signals) > 3 else "")
+    return _panel("Top findings", '<ol class="top">%s</ol>%s' % (items, more))
+
+
+def _message(a: Analysis, anchor: str) -> str:
+    mono = _mono_host
+    rows = [("Subject", escape(a.subject or "(no subject)")),
+            ("From", "%s &lt;%s&gt;" % (escape(a.from_display), escape(defang_host(a.from_address)))),
+            ("Reply-To", mono(a.reply_to)), ("Return-Path", mono(a.return_path)), ("To", escape(a.to or "")),
+            ("Date", escape(a.date or "")),
+            ("Message-ID", '<span class="mono ioc sel">%s</span>' % escape(a.message_id) if a.message_id else ""),
+            ("Originating IP", mono(a.originating_ip)), ("Received hops", str(a.received_hops))]
     if a.reported_by:
         rb = a.reported_by
         rows.append(("Reported by", "%s &lt;%s&gt;" % (escape(rb.get("display", "")), escape(rb.get("from", "")))))
@@ -755,14 +830,102 @@ def _sender(a: Analysis) -> str:
     if a.body_emails:
         rows.append(("In the body", '<span class="mono">%s</span>'
                      % escape(", ".join(defang_host(e) for e in a.body_emails[:5]))))
-    body = '<dl class="kv">%s</dl>' % "".join("<div><dt>%s</dt><dd>%s</dd></div>" % r for r in rows)
-    return _panel("Sender &amp; authentication", body)
+    if a.protected_domains:
+        rows.append(("Protected", escape(", ".join(a.protected_domains))))
+    return _panel("Message", _kv(rows), anchor="%s-message" % anchor)
 
 
-def _actions(a: Analysis) -> str:
+def _authentication(a: Analysis, anchor: str) -> str:
+    block = assess(a, defang_host)
+    aligned = {True: "Yes", False: "No", None: "Not applicable"}
+    rows = []
+    for check in block["checks"]:
+        word, level = RESULT_WORDS.get(check["result"], (check["result"].capitalize(), "info"))
+        rows.append(("", [escape(check["check"]), _badge(word, level),
+                          _mono_host(check["domain"]) or '<span class="muted">none</span>',
+                          aligned.get(check["aligned"], "Not applicable")]))
+    table = (_table(["Check", "Result", "Domain checked", "Aligned with From"], [16, 18, 42, 24], rows) if rows
+             else '<p class="summary">No SPF, DKIM or DMARC result was found.</p>')
+    forged = ""
+    if a.forged_auth:
+        forged = '<p class="summary"><b>Forged results below the receiver\'s:</b> %s</p>' % escape("; ".join(
+            "%s claimed as %s%s" % (claim["claim"], claim["authserv"],
+                                    " (your server's name)" if claim.get("impersonates") else "")
+            for claim in a.forged_auth[:6]))
+    server = (", written by <span class=\"mono\">%s</span>" % escape(defang_host(a.auth_receiver))
+              if a.auth_receiver else "")
+    if a.auth_header == "Authentication-Results" and a.auth_pinned:
+        source = "Authentication-Results headers from the servers named with --trusted-authserv%s." % server
+    elif a.auth_header == "Authentication-Results":
+        source = ("the topmost Authentication-Results headers%s. No --trusted-authserv was given: if your "
+                  "receiving server did not write them, a sender could have." % server)
+    elif a.auth_header:
+        source = "a Received-SPF header only; there is no Authentication-Results header."
+    else:
+        source = "nothing: the message carries no Authentication-Results header."
+    body = '%s%s%s<p class="source"><b>Read from</b> %s</p>' % (_alignment(a), table, forged, source)
+    return _panel("Authentication", body, anchor="%s-auth" % anchor)
+
+
+def _actions(a: Analysis, anchor: str) -> str:
     summary = " ".join(escape(s) for s in summary_sentences(a))
     steps = "".join("<li><span>%s</span></li>" % escape(x) for x in recommendations(a))
-    return _panel("Recommended actions", '<p class="summary">%s</p><ol class="steps">%s</ol>' % (summary, steps))
+    return _panel("Recommended actions", '<p class="summary">%s</p><ol class="steps">%s</ol>' % (summary, steps),
+                  anchor="%s-actions" % anchor)
+
+
+def _reputation(a: Analysis) -> str:
+    status = analysis_status(a)
+    note = ("A clean or empty reputation result does not prove an indicator is safe." if a.enrichment_sources
+            else "The absence of reputation data does not mean an indicator is safe.")
+    head = '<p class="summary"><b>%s</b> (%s). %s</p>' % (
+        escape(status["reputation"].capitalize()), escape(status["reputation_detail"]), escape(note))
+    rows = []
+    for domain, info in a.domain_intel.items():
+        if info.get("status") == "ok":
+            age = info["age_days"]
+            tone = "red" if age < 30 else ("amber" if age < 90 else "green")
+            detail = "registered %s (%s) &middot; %s" % (
+                escape(info["registered"]), _tone_text("%d days old" % age, tone),
+                escape(info.get("registrar") or "registrar unknown"))
+        else:
+            detail = _tone_text(LOOKUP_WORDS.get(info.get("status", ""), "Error: %s" % info.get("status")), "dim")
+        rows.append(("", ['<span class="mono ioc">%s</span>' % escape(defang_host(domain)), "RDAP domain age",
+                          detail]))
+    ip = a.ip_intel
+    if ip:
+        if ip.get("status") == "ok":
+            tone = "red" if ip["score"] >= 75 else ("amber" if ip["score"] >= 25 else "green")
+            detail = "%s &middot; %d reports &middot; %s %s" % (
+                _tone_text("confidence %d%%" % ip["score"], tone), ip.get("reports", 0),
+                escape(ip.get("country", "")), escape(ip.get("isp", "")))
+        else:
+            detail = _tone_text(LOOKUP_WORDS.get(ip.get("status", ""), "Error: %s" % ip.get("status")), "dim")
+        rows.append(("", ['<span class="mono ioc">%s</span>' % escape(defang_host(a.originating_ip)),
+                          "AbuseIPDB IP reputation", detail]))
+    table = _table(["Indicator", "Check", "Result"], [34, 22, 44], rows) if rows else ""
+    return _panel("Reputation and enrichment", head + table)
+
+
+def _provenance(a: Analysis, anchor: str, generated: str) -> str:
+    sha = a.evidence.get("sha256", "")
+    rows = [("Message SHA-256", '<span class="mono ioc sel">%s</span>' % escape(sha) if sha else "Not computed"),
+            ("Size", "%d bytes" % a.evidence["size"] if "size" in a.evidence else ""),
+            ("Source", '<span class="mono ioc">%s</span>' % escape(a.path)),
+            ("Kept as", '<span class="mono ioc">%s</span>' % escape(a.evidence["file"]) if a.evidence.get("file")
+             else "Not kept: --evidence DIR keeps a read-only copy"),
+            ("Custody record", '<span class="mono ioc sel">%s</span>' % escape(a.evidence["custody"])
+             if a.evidence.get("custody") else "Not recorded"),
+            ("Chain verification", "Not verified by this report: run <span class=\"mono\">phishhawk evidence "
+                                   "verify DIR --head VALUE</span>"),
+            ("Generated", '<span class="mono">%s</span> by PhishHawk %s, JSON report version %s'
+             % (escape(generated), __version__, REPORT_VERSION))]
+    return _panel("Evidence and provenance", _kv(rows), anchor="%s-evidence" % anchor)
+
+
+def _limitations(a: Analysis, anchor: str) -> str:
+    items = "".join("<li>%s</li>" % escape(note) for note in limitations(a))
+    return _panel("Limitations", '<ul class="limits">%s</ul>' % items, cls="caution", anchor="%s-limits" % anchor)
 
 
 def _severity_bar(a: Analysis) -> str:
@@ -782,7 +945,7 @@ def _tactic_strip(rows: list[dict]) -> str:
             per[tactic] += 1
     return '<ol class="tactics" aria-label="ATT&amp;CK tactics">%s</ol>' % "".join(
         '<li class="%s"><span class="t-name">%s</span><span class="t-n">%s</span></li>'
-        % ("on" if n else "", escape(t), _count(n, "technique") if n else "not seen") for t, n in per.items())
+        % ("on" if n else "", escape(t), _count(n, "technique") if n else "not observed") for t, n in per.items())
 
 
 def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]]]:
@@ -820,21 +983,22 @@ def _url_cell(ioc) -> str:
     return '<span class="mono ioc">%s</span>%s%s' % (escape(ioc.defanged), text, _notes(ioc.notes))
 
 
-def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
-    out = []
-    if '<ul class="why">' in (alignment := _alignment(a)):  # on paper only: on screen they sit in the card
-        out.append(_panel("Authentication", alignment, cls="print-only"))
+def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) -> list[str]:
+    out = [_message(a, anchor), _authentication(a, anchor)]
     if a.signals:
         rows = []
         for s in sorted_signals(a):
             techs = "".join(_link("https://attack.mitre.org/techniques/%s/" % t.replace(".", "/"), t, "chip")
                             for t in s.techniques)
-            rows.append(("", [_badge(s.severity, s.severity if s.severity in POINTS else "low"),
-                              escape(s.label), techs or '<span class="muted">-</span>']))
-        table = _table(["Severity", "Finding", "ATT&CK"], [13, 62, 25], rows)
-        out.append(_panel("Signals", _severity_bar(a) + table, len(a.signals),
+            why = WHY_IT_MATTERS.get(s.family)
+            rows.append(("", [_badge(s.severity, s.severity if s.severity in POINTS else "low"), escape(s.label),
+                              _why(why),
+                              techs or '<span class="muted">-</span>']))
+        table = _table(["Severity", "Finding", "Why it matters", "ATT&CK"], [12, 42, 28, 18], rows)
+        out.append(_panel("Findings", _severity_bar(a) + table, len(a.signals),
                           note="risk score %d = %s" % (a.score, " + ".join(
-                              "%d %s" % (p, s) for s, p in score_parts(a).items() if p)) if a.score else ""))
+                              "%d %s" % (p, s) for s, p in score_parts(a).items() if p)) if a.score else "",
+                          anchor="%s-findings" % anchor))
 
     if a.lookalikes:
         rows = [("flagged", ['<span class="mono ioc t-high">%s</span>' % escape(defang_host(h.domain)),
@@ -856,18 +1020,21 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
                          ['<span class="idx">%d</span>' % i, _url_cell(ioc),
                           '<span class="sub">%s</span>' % escape(", ".join(ioc.sources)),
                           _vt_cell(ioc.vt),
-                          _tone_text(scan_text, scan_tone) or '<span class="muted">-</span>']))
+                          _tone_text(scan_text, scan_tone) or '<span class="t-info">Not checked</span>']))
         flagged = sum(1 for u in a.urls if u.flagged)
         out.append(_panel("URLs", _table(["#", "URL (defanged)", "Seen in", "VirusTotal", "urlscan.io"],
-                                         [6, 46, 18, 15, 15], rows), len(a.urls), note="%d flagged" % flagged))
+                                         [6, 46, 18, 15, 15], rows), len(a.urls), note="%d flagged" % flagged,
+                          anchor="%s-urls" % anchor))
 
     if files:
         rows = []
         for f in top_level_files(a):
             if not f.inline:
                 rows += _file_rows(a, f, 0)
-        out.append(_panel("Attachments", _table(["File", "Type", "Hashes", "VirusTotal"], [27, 17, 40, 16], rows),
-                          len(files)))
+        body = _table(["File", "Type", "Hashes", "VirusTotal"], [27, 17, 40, 16], rows)
+    else:
+        body = '<p class="summary">No attachments were found.</p>'
+    out.append(_panel("Files", body, len(files), anchor="%s-files" % anchor))
 
     if a.qr_codes:
         rows = [("flagged" if code.get("url") else "",
@@ -923,32 +1090,6 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
                           len(a.hops), note="oldest hop first; only the receiving server's own entries are "
                                             "trustworthy"))
 
-    if a.domain_intel or a.ip_intel:
-        rows = []
-        for domain, info in a.domain_intel.items():
-            if info.get("status") == "ok":
-                age = info["age_days"]
-                tone = "red" if age < 30 else ("amber" if age < 90 else "green")
-                detail = "registered %s (%s) &middot; %s" % (
-                    escape(info["registered"]), _tone_text("%d days old" % age, tone),
-                    escape(info.get("registrar") or "registrar unknown"))
-            else:
-                detail = _tone_text("RDAP: %s" % info.get("status"), "dim")
-            rows.append(("", ['<span class="mono ioc">%s</span>' % escape(defang_host(domain)), "Domain age",
-                              detail]))
-        ip = a.ip_intel
-        if ip:
-            if ip.get("status") == "ok":
-                tone = "red" if ip["score"] >= 75 else ("amber" if ip["score"] >= 25 else "green")
-                detail = "%s &middot; %d reports &middot; %s %s" % (
-                    _tone_text("confidence %d%%" % ip["score"], tone), ip.get("reports", 0),
-                    escape(ip.get("country", "")), escape(ip.get("isp", "")))
-            else:
-                detail = _tone_text("AbuseIPDB: %s" % ip.get("status"), "dim")
-            rows.append(("", ['<span class="mono ioc">%s</span>' % escape(defang_host(a.originating_ip)),
-                              "IP reputation", detail]))
-        out.append(_panel("Infrastructure", _table(["Indicator", "Check", "Result"], [34, 18, 48], rows)))
-
     techniques = technique_rows(a)
     if techniques:
         order = {t: i for i, t in enumerate(TACTIC_ORDER)}
@@ -959,7 +1100,9 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
                            "; ".join(r["evidence"][:3]) + (" ..." if len(r["evidence"]) > 3 else ""))])
                  for r in techniques]
         out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(techniques) + _table(
-            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(techniques)))
+            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(techniques),
+            anchor="%s-attack" % anchor))
+    out.append(_reputation(a))
 
     iocs = _defanged_iocs(a)
     if iocs:
@@ -972,22 +1115,22 @@ def _evidence(a: Analysis, files: list[FileIoc]) -> list[str]:
         out.append(_panel("Indicators (defanged, copy-ready)", types + '<pre class="iocs">%s</pre>' % escape(text),
                           len(iocs)))
 
+    out.append(_provenance(a, anchor, generated))
+    out.append(_limitations(a, anchor))
     if a.errors:
         out.append(_panel("Processing notes", '<ul class="errors">%s</ul>'
                           % "".join("<li>%s</li>" % escape(e) for e in a.errors), len(a.errors)))
     return out
 
 
-def _section(a: Analysis, anchor: str) -> str:
+def _section(a: Analysis, anchor: str, generated: str) -> str:
     level = VERDICT_LEVEL.get(a.verdict, "ok")
     files = [f for f in a.attachments if not f.inline]
     out = ['<section class="msg" id="%s" aria-label="%s">' % (anchor, escape(a.subject or a.path)),
-           _hero(a, level), _kpis(a, files),
-           '<div class="grid-2">%s%s</div>' % (_sender(a), _actions(a))]
-    evidence = _evidence(a, files)
-    if evidence:
-        out.append('<div class="evidence stack">%s</div>' % "".join(evidence))
-    out.append("</section>")
+           _nav(a, anchor, files), _hero(a, level, anchor), _kpis(a, files),
+           '<div class="grid-2">%s%s</div>' % (_top_findings(a, anchor), _actions(a, anchor)),
+           '<div class="evidence stack">%s</div>' % "".join(_evidence(a, files, anchor, generated)),
+           "</section>"]
     return "\n".join(out)
 
 
@@ -1009,16 +1152,20 @@ def _theme_switch() -> str:
 def render(analyses: list[Analysis]) -> str:
     analyses = display_copy(analyses)  # escaped anyway; this also names bidi overrides
     title = "Phishing triage" if len(analyses) != 1 else "Phishing triage: %s" % analyses[0].verdict
+    generated = utc_now()
     body = ['<div class="wrap"><header class="topbar"><div class="brand">%s<span>PhishHawk</span></div>'
             '<span class="version">v%s</span><span class="pill">Generated <span class="mono">%s</span></span>%s'
-            "</header>" % (LOGO, __version__, utc_now(), _theme_switch()),
+            "</header>" % (LOGO, __version__, generated, _theme_switch()),
             '<main class="stack">']
     if len(analyses) > 1:
         body.append(_batch(analyses))
-    body += [_section(a, "msg-%d" % i) for i, a in enumerate(analyses, 1)]
+    body += [_section(a, "msg-%d" % i, generated) for i, a in enumerate(analyses, 1)]
     body.append("</main>")
-    body.append("<footer><span><b>PhishHawk</b> v%s</span><span>Every indicator is defanged. This report loads "
-                "nothing from the network and runs no scripts.</span></footer></div>" % __version__)
+    body.append("<footer><p><b>PhishHawk</b> v%s, a read-only analysis tool. Every indicator is defanged. This "
+                "report loads nothing from the network and runs no scripts.</p><p>This report is an investigation "
+                "aid: confirm indicators and follow your organisation's approved response process before blocking "
+                "or removing anything. It may contain sensitive message content, identifiers and indicators; "
+                "handle it under your organisation's evidence policy.</p></footer></div>" % __version__)
     return ("<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
             "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; "
