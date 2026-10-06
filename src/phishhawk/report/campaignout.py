@@ -44,7 +44,7 @@ def _span(cluster: dict[str, Any]) -> str:
 
 def render_console(result: dict[str, Any], colour: Palette) -> str:
     clusters = result["clusters"]
-    out = [colour("CAMPAIGNS: %s across %s (%d not linked to any other)"
+    out = [colour("CAMPAIGNS: %s across %s (%d not in any campaign)"
                   % (plural(len(clusters), "cluster"), plural(result["messages"], "message"),
                      len(result["unclustered"])), "bold")]
     for cluster in clusters:
@@ -54,7 +54,7 @@ def render_console(result: dict[str, Any], colour: Palette) -> str:
             plural(len(cluster["recipients"]), "recipient"))]
         links = ", ".join("%s %s (%d)" % (item["kind"], shown(item["kind"], item["value"]), item["messages"])
                           for item in cluster["shared"][:6])
-        out.append("    linked by : %s" % links)
+        out.append("    shared    : %s" % links)
         out.append("    senders   : %s" % ", ".join(shown("sender", s) for s in cluster["senders"][:6]))
         out.append("    messages  : %s" % ", ".join(printable(_name(m["path"])) for m in cluster["messages"][:6])
                    + (" ..." if cluster["size"] > 6 else ""))
@@ -77,7 +77,7 @@ def render_csv(result: dict[str, Any]) -> str:
 
 def render_markdown(result: dict[str, Any]) -> str:
     out = ["# Campaign correlation", "",
-           "%s across %s; %d not linked to any other." % (plural(len(result["clusters"]), "campaign"),
+           "%s across %s; %d not in any campaign." % (plural(len(result["clusters"]), "campaign"),
                                                           plural(result["messages"], "message"),
                                                           len(result["unclustered"])), ""]
     for cluster in result["clusters"]:
@@ -85,13 +85,14 @@ def render_markdown(result: dict[str, Any]) -> str:
                                            cluster["worst_verdict"]), "",
                 "- **Seen:** %s" % _span(cluster),
                 "- **Recipients (%d):** %s" % (len(cluster["recipients"]),
-                                               ", ".join(_code(r) for r in cluster["recipients"][:30])),
+                                               ", ".join(_code(printable(r)) for r in cluster["recipients"][:30])),
                 "- **Senders:** %s" % ", ".join(_code(shown("sender", s)) for s in cluster["senders"][:30]), "",
-                "| Linked by | Value | Messages |", "|---|---|---|"]
+                "| Shared | Value | Messages |", "|---|---|---|"]
         out += ["| %s | %s | %d |" % (item["kind"], _code(shown(item["kind"], item["value"])), item["messages"])
                 for item in cluster["shared"]]
         out += ["", "| Message | Date | Verdict |", "|---|---|---|"]
-        out += ["| %s | %s | %s |" % (_cell(_name(m["path"])), _cell(m["date"]), m["verdict"])
+        out += ["| %s | %s | %s |" % (_cell(printable(_name(m["path"]))), _cell(printable(m["date"])),
+                                         m["verdict"])
                 for m in cluster["messages"]]
         out.append("")
     return "\n".join(out)

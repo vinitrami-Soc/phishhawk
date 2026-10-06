@@ -28,11 +28,11 @@ import email.utils
 import re
 from collections import defaultdict
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from .extract import registrable_domain
 from .hosting import hosting_kind
-from .knowledge import FREEMAIL, RESERVED_DOMAINS, SHORTENERS
+from .knowledge import FREEMAIL, IPFS_GATEWAYS, RESERVED_DOMAINS, SHORTENERS
 from .models import Analysis
 
 # Mail and link-tracking services that carry countless unrelated senders' mail.
@@ -66,7 +66,8 @@ KNOWN_PLATFORMS = {
     "sa.com", "eu.com", "us.com", "uk.com", "gb.net", "za.com", "it.com", "br.com", "cn.com", "de.com",
     "jpn.com", "ru.com", "in.net", "us.org", "ae.org", "co.com", "co.ua", "com.ua", "run.app", "appspot.com",
     "cloudfunctions.net", "cloudfront.net", "azureedge.net", "zendesk.com", "freshdesk.com", "atlassian.net",
-    "sharepoint.com", "myshopify.com", "wordpress.com", "secureserver.net", "my.salesforce.com", "notion.site",
+    "sharepoint.com", "myshopify.com", "wordpress.com", "secureserver.net", "force.com", "site.com",
+    "notion.site",
 }
 STRONG_KINDS = ("attachment", "link", "domain", "host", "qr", "sender", "reply-to", "sender domain", "wallet",
                 "phone")
@@ -97,15 +98,29 @@ def _shared_service(a: Analysis, base: str) -> bool:
             or base in RESERVED_DOMAINS or base in WEB_PLUMBING or a.is_trusted_domain(base))
 
 
-def _link_key(url: str) -> str:
+# Query parameters that name the document on file-sharing and form sites
+# (forms.office.com ...?id=, drive.google.com/uc?id=, onedrive ...?resid=).
+DOCUMENT_PARAMETERS = {"id", "resid", "cid", "docid", "fileid", "formid", "file", "key"}
+
+
+def _link_key(url: str, document: bool = False) -> str:
     """scheme://host/path, without the query or fragment that phishing kits
-    fill with a per-recipient token."""
+    fill with a per-recipient token; for a shared document, with the query
+    parameters that say which document it is."""
     try:
         parts = urlsplit(url)
     except ValueError:
         return ""
     host = (parts.hostname or "").lower()
-    return "%s://%s%s" % (parts.scheme.lower(), host, parts.path or "/") if host else ""
+    if not host:
+        return ""
+    key = "%s://%s%s" % (parts.scheme.lower(), host, parts.path or "/")
+    if document:
+        named = sorted(pair for pair in parse_qsl(parts.query, keep_blank_values=True)
+                       if pair[0].lower() in DOCUMENT_PARAMETERS)
+        if named:
+            key += "?" + "&".join("%s=%s" % pair for pair in named)
+    return key
 
 
 _BUCKET_HOSTS = {"storage.googleapis.com": 1, "firebasestorage.googleapis.com": 3, "s3.amazonaws.com": 1}
@@ -119,6 +134,8 @@ def _bucket(url: str) -> str:
         return ""
     host = (parts.hostname or "").lower()
     depth = _BUCKET_HOSTS.get(host) or (1 if re.fullmatch(r"s3[.-][a-z0-9-]+\.amazonaws\.com", host) else 0)
+    if host in IPFS_GATEWAYS and (parts.path or "").startswith("/ipfs/"):
+        depth = 2  # the content identifier, not the gateway everyone uses
     segments = [s for s in (parts.path or "").split("/") if s][:depth]
     return "%s/%s" % (host, "/".join(segments)) if depth and len(segments) == depth else ""
 
@@ -148,7 +165,7 @@ def _traits(a: Analysis) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
         if _embedded(ioc.sources) or base in lists:
             continue  # logos and pixels: copied brand templates load the same ones whoever sends them
         if kind == "file sharing" or _bucket(ioc.url):
-            found["link"].add(_link_key(ioc.url))  # the tenant is in the path: one document, one link
+            found["link"].add(_link_key(ioc.url, document=True))  # the tenant is in the path: one document
             if _bucket(ioc.url):
                 found["host"].add(_bucket(ioc.url))
         elif kind in ("free hosting", "tunnel or IPFS"):
@@ -274,7 +291,8 @@ def correlate(items: list[tuple[str, Analysis]], min_size: int = 2, weak_cap: in
             for value in values:
                 holders[(kind, value)].append(index)
     weak_pairs: dict[tuple[int, int], set[str]] = defaultdict(set)
-    for (kind, _value), members in holders.items():
+    inactive: set[tuple[str, str]] = set()  # web traits of mostly clean mail: shared, but evidence of nothing
+    for (kind, value), members in holders.items():
         if kind in WEAK_KINDS:
             if len(members) > weak_cap:
                 continue
@@ -284,6 +302,8 @@ def correlate(items: list[tuple[str, Analysis]], min_size: int = 2, weak_cap: in
         elif kind not in WEB_KINDS or 2 * sum(suspicious[i] for i in members) >= len(members):
             for other in members[1:]:
                 groups.join(members[0], other)
+        else:
+            inactive.add((kind, value))
     for (first, second), kinds in weak_pairs.items():
         if len(kinds) >= 2:
             groups.join(first, second)
@@ -304,7 +324,8 @@ def correlate(items: list[tuple[str, Analysis]], min_size: int = 2, weak_cap: in
             for i in members:
                 for value in found[i].get(kind, ()):
                     counts[value] += 1
-            shared += [{"kind": kind, "value": value, "messages": n} for value, n in counts.items() if n >= 2]
+            shared += [{"kind": kind, "value": value, "messages": n} for value, n in counts.items()
+                       if n >= 2 and (kind, value) not in inactive]
         shared.sort(key=lambda item: (-item["messages"], (STRONG_KINDS + WEAK_KINDS).index(item["kind"]),
                                       item["value"]))
         moments = sorted(m for m in (_when(a.date) for a in analyses) if m is not None)

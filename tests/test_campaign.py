@@ -8,6 +8,7 @@ import json
 from phishhawk.campaign import correlate, normalise_subject
 from phishhawk.cli import main
 from phishhawk.pipeline import triage_bytes
+from phishhawk.report.console import Palette
 
 from conftest import build_eml
 
@@ -255,3 +256,71 @@ def test_cloud_storage_links_by_bucket():
     [cluster] = result["clusters"]
     assert _members(cluster) == ["m1.eml", "m2.eml"]
     assert {"kind": "host", "value": "storage.googleapis.com/koin", "messages": 2} in cluster["shared"]
+
+
+# ------------------------------------------------- 2.2 independent review --
+
+def test_ipfs_gateways_link_by_content_not_by_gateway():
+    result = _run(_mail(sender="<a@one.example>", subject="First thing here",
+                        html=_lure("https://ipfs.io/ipfs/bafyAAA/login.html")),
+                  _mail(sender="<b@two.example>", subject="Second thing there",
+                        html=_lure("https://ipfs.io/ipfs/bafyBBB/login.html")),
+                  _mail(sender="<c@three.example>", subject="Third thing",
+                        html=_lure("https://ipfs.io/ipfs/bafyAAA/other.html")))
+    [cluster] = result["clusters"]
+    assert _members(cluster) == ["m1.eml", "m3.eml"]
+    assert {"kind": "host", "value": "ipfs.io/ipfs/bafyaaa", "messages": 2} in cluster["shared"] or \
+        {"kind": "host", "value": "ipfs.io/ipfs/bafyAAA", "messages": 2} in cluster["shared"]
+
+
+def test_file_sharing_links_keep_the_document_id_in_their_query():
+    links = ["https://forms.office.com/Pages/ResponsePage.aspx?id=AAA111",
+             "https://forms.office.com/Pages/ResponsePage.aspx?id=BBB222",
+             "https://drive.google.com/uc?id=CCC333&export=download",
+             "https://drive.google.com/uc?id=DDD444&export=download",
+             "https://onedrive.live.com/redir?resid=EEE555&authkey=x"]
+    result = _run(*[_mail(sender="<s%d@sender%d.example>" % (i, i), subject="Message about %s" % "abcde"[i],
+                          html=_lure("http://198.51.100.%d/x" % i) + '<a href="%s">Open</a>' % link)
+                    for i, link in enumerate(links)])
+    assert result["clusters"] == []
+    form = '<a href="https://forms.office.com/Pages/ResponsePage.aspx?id=AAA111&r=%d">Open the form</a>'
+    same = _run(*[_mail(sender="<s%d@sender%d.example>" % (i, i), subject="Note %s" % "ab"[i],
+                        html=_lure("http://198.51.100.%d/x" % i) + form % i) for i in range(2)])
+    assert len(same["clusters"]) == 1
+
+
+def test_the_markdown_note_makes_recipients_and_dates_printable():
+    from phishhawk.report import campaignout
+
+    doc = (b"%PDF-1.4 x", "application", "pdf", "x.pdf")
+    result = _run(_mail(to="victim@corp.example", attachments=[doc]),
+                  _mail(to="other@corp.example", attachments=[doc]))
+    [cluster] = result["clusters"]
+    cluster["recipients"].append("vic\u202etim@corp.example")
+    cluster["senders"].append("evil\u202e@x.example")
+    cluster["messages"][0]["date"] = "Tue \u202e, 06 Oct 2026"
+    for output in (campaignout.render_markdown(result), campaignout.render_console(result, Palette(False))):
+        assert "\u202e" not in output
+
+
+def test_linked_by_lists_only_traits_that_link():
+    site = '<p>Interesting read: <a href="https://www.news-site.example/story">story</a></p>'
+    doc = (b"%PDF-1.4 x", "application", "pdf", "x.pdf")
+    result = _run(_mail(sender="<a@one.example>", subject="Weekend plans and more", html=site, attachments=[doc]),
+                  _mail(sender="<b@two.example>", subject="Minutes of the meeting", html=site, attachments=[doc]))
+    [cluster] = result["clusters"]
+    kinds = {item["kind"] for item in cluster["shared"]}
+    assert kinds == {"attachment"}  # the news site is shared, but clean mail's links never link
+
+
+def test_the_summary_counts_messages_outside_any_campaign(tmp_path, capsys):
+    for i in range(2):
+        (tmp_path / ("r%d.eml" % i)).write_bytes(_mail(sender="<s%d@x%d.example>" % (i, i)))
+    main(["campaign", str(tmp_path), "--no-color"])
+    assert "2 not in any campaign" in capsys.readouterr().out
+
+
+def test_salesforce_sites_are_platforms():
+    from phishhawk.campaign import KNOWN_PLATFORMS
+
+    assert {"force.com", "site.com"} <= KNOWN_PLATFORMS and "my.salesforce.com" not in KNOWN_PLATFORMS
