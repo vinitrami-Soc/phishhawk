@@ -23,6 +23,7 @@ from urllib.parse import quote
 GRAPH = "https://graph.microsoft.com/v1.0"
 GMAIL = "https://gmail.googleapis.com/gmail/v1"
 MAX_LISTED = 10_000
+MAX_PAGES = 100  # an API offering page after empty page must not keep us paging for ever
 # Folders Graph knows by name in every mailbox, whatever its language.
 WELL_KNOWN = {"inbox", "junkemail", "deleteditems", "archive", "drafts", "sentitems", "outbox", "clutter"}
 PERMISSION = {"Graph": "Mail.Read", "Gmail": "gmail.readonly"}
@@ -30,6 +31,10 @@ PERMISSION = {"Graph": "Mail.Read", "Gmail": "gmail.readonly"}
 
 class MailApiError(Exception):
     pass
+
+
+class NotFound(MailApiError):
+    """HTTP 404: the mailbox, folder or message is not (or no longer) there."""
 
 
 @dataclass
@@ -67,7 +72,7 @@ class _Client:
             raise MailApiError("%s refused the token (HTTP %d): it needs %s"
                                % (self.service, status, PERMISSION[self.service]))
         if status == 404:
-            raise MailApiError("%s: nothing at %s" % (self.service, url))
+            raise NotFound("%s: nothing at %s" % (self.service, url))
         if status == 429:
             raise MailApiError("%s is throttling requests: try again later" % self.service)
         if status >= 400:
@@ -164,7 +169,9 @@ def fetch_graph(source: ApiSource, max_bytes: int, seen: set[str] | frozenset[st
     url = "%s/mailFolders/%s/messages" % (base, quote(folder, safe=""))
     wanted = min(source.limit or MAX_LISTED, MAX_LISTED)
     listed: list[str] = []
-    while url and len(listed) < wanted:
+    pages = 0
+    while url and len(listed) < wanted and pages < MAX_PAGES:
+        pages += 1
         page = client.json(url, params)
         listed += _ids(page.get("value"))
         url, params = str(page.get("@odata.nextLink") or ""), None  # a next link carries its own query
@@ -203,7 +210,9 @@ def fetch_gmail(source: ApiSource, max_bytes: int, seen: set[str] | frozenset[st
     wanted = min(source.limit or MAX_LISTED, MAX_LISTED)
     params: dict[str, Any] = {"q": _gmail_query(source), "maxResults": min(wanted, 500)}
     listed: list[str] = []
-    while len(listed) < wanted:
+    for _ in range(MAX_PAGES):
+        if len(listed) >= wanted:
+            break
         page = client.json(base, params)
         listed += _ids(page.get("messages"))
         if not page.get("nextPageToken"):

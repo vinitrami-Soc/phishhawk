@@ -5,7 +5,7 @@
 <h1 align="center">PhishHawk</h1>
 
 <p align="center">
-  <b>Sharp-eyed phishing triage for the SOC.</b><br>
+  <b>Phishing email triage tool for SOC analysts.</b><br>
   Give it a reported email. It pulls out every indicator, checks the ones that matter,<br>
   maps what it finds to MITRE ATT&amp;CK and tells the analyst what to do next.
 </p>
@@ -30,6 +30,34 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
+| | |
+|---|---|
+| **What** | A command-line tool that triages reported phishing emails: a verdict, every indicator (defanged), the ATT&CK techniques and the next steps, in under a second |
+| **For** | SOC analysts, incident responders and threat-intelligence teams working a "report phishing" queue |
+| **Reads** | `.eml`, Outlook `.msg`, `.mbox`, folders and stdin; report mailboxes over IMAP, Microsoft Graph and the Gmail API, read-only |
+| **Finds** | Lookalike and spoofed senders, credential-phishing links, QR-code phishing, malicious attachments (opened in memory, never run), BEC and callback scams |
+| **Writes** | Terminal, HTML, Markdown, JSON, CSV, STIX 2.1 and MISP reports; campaign and mailbox-sweep results; an evidence custody log; sandbox packs |
+
+```text
+$ phishhawk scan samples/sample_benign.eml samples/sample_phish.eml --quiet --offline
+== samples/sample_benign.eml
+  1 URL found.
+  Verdict: NO STRONG INDICATORS (risk score 0)
+
+== samples/sample_phish.eml
+  6 URLs found.
+  1 attachment found.
+  1 lookalike domain detected.
+  9 high-severity signals raised.
+  Maps to 10 MITRE ATT&CK techniques.
+  Verdict: LIKELY PHISHING (risk score 35)
+
+-- BATCH SUMMARY (2 messages) --------------------------------------------
+  file                                   verdict               score  urls files
+  samples/sample_benign.eml              NO STRONG INDICATORS      0     1     0
+  samples/sample_phish.eml               LIKELY PHISHING          35     6     1
+```
+
 <p align="center">
   <img src="docs/images/banner.svg" width="560" alt="The PhishHawk start-up banner in a terminal: the hawk emblem, the PHISHHAWK lettering and the command overview">
 </p>
@@ -42,7 +70,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-kpis-dark.svg">
-  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 81.3% of 5,714 unseen real phishing emails flagged, up from 79.9% in 2.0. 46.9% of the same emails called likely phishing, up from 30.5% in 2.0. 0.8% false positives: 46 of 5,945 held-out real legitimate emails, down from 0.9% in 2.0. 528 automated tests, up from 403 in 2.0.">
+  <img src="docs/images/chart-kpis-light.svg" width="760" alt="Four headline numbers. 81.3% of 5,714 unseen real phishing emails flagged, up from 79.9% in 2.0. 46.9% of the same emails called likely phishing, up from 30.5% in 2.0. 0.8% false positives: 46 of 5,945 held-out real legitimate emails, down from 0.9% in 2.0. 641 automated tests, up from 403 in 2.0.">
 </picture>
 
 <sub>Measured offline, with no reputation lookups, on held-out real mail scored once after all tuning: 5,714
@@ -94,7 +122,7 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 | Area | What PhishHawk checks |
 |---|---|
 | **Reported mail** | Reads `.eml` and Outlook `.msg` files, folders, `.mbox` exports, and report mailboxes directly, read-only: over IMAP (`phishhawk imap`) or through Microsoft Graph and the Gmail API (`phishhawk graph`, `phishhawk gmail`). A phish forwarded as an attachment is unwrapped, up to three layers deep; every layer is analysed too, and emails attached deeper or beside it are still read, so a phish cannot hide behind a harmless attached message. For an inline forward, the original `From:` is recovered from the quoted header block in six languages. The mail path (every Received hop, with delays) is shown. |
-| **Sender** | Reply-To diversion; a brand in the display name that the domain does not back up, even when written `Trust-Wallet`, `PayPaI` or with Cyrillic letters; a brand's own domain in the From line without the authentication to back it (a forged sender); a From address hidden in quotes; senders on free web hosting; organisation-style names on free-mail; SPF, DKIM and DMARC believed only from your own mail server, with a pass forged further down flagged. |
+| **Sender** | Reply-To diversion; a brand in the display name that the domain does not back up, even when written `Trust-Wallet`, `PayPaI` or with Cyrillic letters; a brand's own domain in the From line without the authentication to back it (a forged sender); a From address hidden in quotes; senders on free web hosting; organisation-style names on free-mail; SPF, DKIM and DMARC believed only from your own mail server, with a pass forged further down flagged. Every report explains, in sentences for a ticket, whether the From domain is authenticated: which domain each check vouched for and whether it is the sender the reader sees. |
 | **Lookalike domains** | Homoglyphs (`micros0ft`, Cyrillic `а`, `rn` for `m`), punycode, typosquats, combosquats, TLD swaps and brands used as subdomains. Checked against 187 brands, any you add, and **your own domains**, read from the recipients automatically. With `--psl`, the full Public Suffix List decides what a registrable domain is, so a lookalike on shared hosting (`paypal-billing.github.io`) is its own domain. |
 | **Links** | Taken from text, HTML `href`/`src`, form actions, `meta refresh`, JavaScript redirects, headers, PDFs, Office relationships, shortcuts, calendar invitations and QR codes, read the way a browser reads them. Microsoft Safe Links, Proofpoint and Barracuda rewrites are unwrapped, and Google, Bing, Facebook, YouTube and LinkedIn redirectors are decoded. Also flagged: link text that shows a different domain, raw and disguised IPs (`http://3232235777/`), `@` tricks, `javascript:` and `data:` links, downloads of runnable files, shorteners, free hosting, tunnels, IPFS, file-sharing drops and credential-harvesting paths. |
 | **Attachments** | Every file is typed by its magic bytes, so a `.pdf` that is really HTML is caught. ZIP, gzip and tar are opened; 7z is decompressed in memory and RAR's stored files read, and both are listed even with encrypted headers; ISO, FAT and VHD/VHDX disk images are opened, partitions, FAT and NTFS volumes and all (their files skip the Mark of the Web); a password-protected ZIP is opened when the message gives the password. Office macros, XLM, DDE, remote templates and Follina-style links, PDF launch and JavaScript actions, RTF exploits, OneNote payloads, dangerous shortcuts, `winmail.dat` and calendar invitations are all read, in memory, and nothing is ever run. |
@@ -104,6 +132,8 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 | **Language and money** | Lure phrases in seven languages (credentials, delivery, payment, prizes, advance fee, extortion, crypto recovery, casino bonuses); callback phishing, with the number to call exported; crypto wallets (checksum-verified) and payment asks; business email compromise from free-mail or from a lookalike of your own domain; QR-code lure wording; letter-spaced text; hash-busting tokens. |
 | **Your rules** | A config file for your domains, partners (never flagged), a block list, your own brands and lure phrases, and your YARA rules, run on the message and every file inside it. |
 | **Reputation** *(optional)* | VirusTotal for URLs and file hashes, urlscan.io for hosts, RDAP for domain age, AbuseIPDB for the sending IP. All cached, rate-limited and switched off by `--offline`. |
+| **After triage** | `phishhawk campaign` groups a folder of reports into campaigns by shared attachments, phishing domains, links, QR payloads and senders, with each campaign's recipients and first and last sighting, offline. `phishhawk sweep` finds a reported message's other copies in Microsoft 365 or Gmail mailboxes, with whether each was read or replied to, read-only. `--sandbox` writes a pack for any sandbox: the message, every file in it and the links to detonate, encrypted with the password `infected`. |
+| **Evidence** | Every report names the SHA-256 of the exact bytes it analysed. `--evidence` keeps each message, read-only, with a hash-chained custody log; `phishhawk evidence verify --head` shows whether anything changed since the head you put in the ticket. |
 
 The full list of signals, their severities and the ATT&CK techniques behind
 each is in [docs/DETECTIONS.md](docs/DETECTIONS.md).
@@ -211,7 +241,7 @@ with `--build-arg BASE=public.ecr.aws/docker/library/python:3.12-slim`.
 
 ```console
 $ phishhawk doctor
-PhishHawk 2.1.0 doctor
+PhishHawk 2.2.0 doctor
 
   OK    Python             3.12.4
   OK    requests           2.32.3
@@ -379,12 +409,15 @@ phishhawk reported/ticket-4821.eml --html ticket-4821.html --md ticket-4821.md
 
 ### 2. A campaign that hit many inboxes
 
-Fifty people report the same lure. Scan the folder: the cache means each unique
-URL and hash is looked up only once, and the batch summary lists every report
-side by side with its verdict and score.
+Fifty people report the same lure. Scan the folder (the cache means each unique
+URL and hash is looked up only once), group the reports into campaigns to see
+what ties them together and who received them, then sweep every mailbox for
+the copies nobody reported, with who read them and who replied.
 
 ```bash
-phishhawk scan reported/2026-09-23/ --quiet --csv campaign-iocs.csv
+phishhawk scan reported/2026-09-23/ --quiet --csv campaign-iocs.csv --evidence /cases/4711
+phishhawk campaign reported/2026-09-23/ --md campaigns.md
+phishhawk sweep graph --like reported/2026-09-23/first.eml --mailboxes staff.txt --csv copies.csv
 ```
 
 ### 3. BEC and lookalikes of your own domain
@@ -441,7 +474,11 @@ MITRE ATT&CK technique.
 - **As an inline mail filter.** It analyses messages after delivery. It does not
   sit in the mail flow or block anything by itself.
 - **For detonating malware.** Attachments are typed, hashed and inspected
-  statically. Use a sandbox for dynamic analysis.
+  statically. Use a sandbox for dynamic analysis: `--sandbox` hands it
+  everything it needs in one password-protected pack.
+- **For quarantining or deleting mail.** PhishHawk only reads. Purge and block
+  with your mail platform, SOAR or EDR, using its indicators and `sweep`'s
+  list of copies.
 - **As a spam filter.** It targets credential theft, malware delivery,
   impersonation and BEC, not casino adverts.
 
@@ -454,26 +491,26 @@ messages.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-evaluation-dark.svg">
-  <img src="docs/images/chart-evaluation-light.svg" width="760" alt="Dumbbell chart, PhishHawk 2.0 against 2.1 on held-out real mail. Phishing flagged: 5,714 unseen emails from 2022 to 2026, 79.9% to 81.3%; the earlier 200-email sample, 76% to 76.5%; 2,279 phishing emails from 2005 to 2007, 57.7% to 56.9%. Called likely phishing: 30.5% to 46.9%, 28% to 43.5%, and 26.7% to 29.7%. Legitimate mail flagged by mistake: everyday mail 0.5% in both, spam-like mail 17.6% to 13.6%, Enron business mail 0.2% in both, mail-library edge cases 11% to 8.8%.">
+  <img src="docs/images/chart-evaluation-light.svg" width="760" alt="Dumbbell chart, PhishHawk 2.0 against 2.2 on held-out real mail. Phishing flagged: 5,714 unseen emails from 2022 to 2026, 79.9% to 81.3%; the earlier 200-email sample, 76% to 76.5%; 2,279 phishing emails from 2005 to 2007, 57.7% to 56.7%. Called likely phishing: 30.5% to 46.9%, 28% to 43.5%, and 26.7% to 29.7%. Legitimate mail flagged by mistake: everyday mail 0.5% in both, spam-like mail 17.6% to 13.6%, Enron business mail 0.2% in both, mail-library edge cases 11% to 8.8%.">
 </picture>
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-verdicts-dark.svg">
-  <img src="docs/images/chart-verdicts-light.svg" width="760" alt="Stacked bars of 2.1's verdicts. Unseen phishing, 5,714 emails: 2,679 likely phishing, 1,965 suspicious, 1,070 not flagged. Phishing from 2005 to 2007, 2,279 emails: 678 likely phishing, 618 suspicious, 983 not flagged. Held-out legitimate mail, 5,945 emails: 5,899 not flagged, 40 suspicious, 6 likely phishing.">
+  <img src="docs/images/chart-verdicts-light.svg" width="760" alt="Stacked bars of 2.2's verdicts. Unseen phishing, 5,714 emails: 2,679 likely phishing, 1,965 suspicious, 1,070 not flagged. Phishing from 2005 to 2007, 2,279 emails: 678 likely phishing, 615 suspicious, 986 not flagged. Held-out legitimate mail, 5,945 emails: 5,899 not flagged, 40 suspicious, 6 likely phishing.">
 </picture>
 
 | Data set | Emails | Flagged | Strict | False positives | Median time |
 |---|---|---|---|---|---|
 | Real phishing, **held out**, 2022 to 2026: every [phishing_pot](https://github.com/rf-peixoto/phishing_pot) honeypot email not used before, split at random | 5,714 | **81.3%** (2.0: 79.9%) | **46.9%** (2.0: 30.5%) | n/a | 9 ms |
-| Real phishing, **held out**, 2005 to 2007: Jose Nazario's phishing corpus | 2,279 | 56.9% (2.0: 57.7%) | 29.7% (2.0: 26.7%) | n/a | 6 ms |
-| Real phishing, earlier held-out sample | 200 | 76.5% (2.0: 76.0%) | 43.5% (2.0: 28.0%) | n/a | 8 ms |
-| Real phishing used while developing detections (the other part of the split, and an earlier sample) | 2,700 | 82.2% | 45.9% | n/a | 8 ms |
-| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.5%** (7; 2.0: 7) | 4 ms |
-| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 13.6% (17; 2.0: 22) | 22 ms |
+| Real phishing, **held out**, 2005 to 2007: Jose Nazario's phishing corpus | 2,279 | 56.7% (2.0: 57.7%) | 29.7% (2.0: 26.7%) | n/a | 7 ms |
+| Real phishing, earlier held-out sample | 200 | 76.5% (2.0: 76.0%) | 43.5% (2.0: 28.0%) | n/a | 10 ms |
+| Real phishing used while developing detections (the other part of the split, and an earlier sample) | 2,700 | 82.2% | 45.9% | n/a | 10 ms |
+| Real legitimate mail, **held out**: SpamAssassin `easy_ham_2` | 1,400 | n/a | n/a | **0.5%** (7; 2.0: 7) | 5 ms |
+| Real legitimate mail, **held out**: half of SpamAssassin `hard_ham` (legitimate mail that looks like spam) | 125 | n/a | n/a | 13.6% (17; 2.0: 22) | 25 ms |
 | Real legitimate mail, **held out**: Enron business mail | 4,279 | n/a | n/a | **0.2%** (10; 2.0: 10) | 3 ms |
-| Legitimate edge cases, **held out**: test messages of four mail libraries | 136 | n/a | n/a | 8.8% (12; 2.0: 15) | 4 ms |
-| Outlook `.msg` files, **held out** | 5 | n/a | n/a | 0% | 6 ms |
-| Real legitimate mail used while fixing false positives, and CPython's email test corpus | 2,673 | n/a | n/a | 0.9% (23) | 3 ms |
+| Legitimate edge cases, **held out**: test messages of four mail libraries | 136 | n/a | n/a | 8.8% (12; 2.0: 15) | 3 ms |
+| Outlook `.msg` files, **held out** | 5 | n/a | n/a | 0% | 7 ms |
+| Real legitimate mail used while fixing false positives, and CPython's email test corpus | 2,673 | n/a | n/a | 0.9% (23) | 4 ms |
 | Labelled synthetic corpus, including tricky legitimate mail | 167 | 100% | 71.6% | 0% | 2.2 ms |
 
 *Flagged* means `SUSPICIOUS` or worse; *strict* means `LIKELY PHISHING` or worse. *n/a* means the
@@ -496,6 +533,17 @@ the end, after all tuning was finished. Some things to know about them:
   spam-like mail); five are forged eBay and PayPal senders on the brands' own
   country domains (`ebay.ca`, `paypal.us`), which 2.1 no longer calls an
   impersonation without failed authentication, and 2005 mail carries none.
+  2.2 flags three fewer again (56.7%): senders on `paypal.co.us`,
+  `ebay.co.us` and `xbox.com.bo`, now that 2.2 reads `co.us` and `com.bo` as
+  the country suffixes they are, get the same allowance. No other held-out
+  verdict changed in 2.2.
+- **Campaigns can mix with legitimate mail through well-known sites.** Run
+  once over all 11,659 held-out messages, `phishhawk campaign` put 4,362 of
+  the 5,714 phishing emails into campaigns. 4 of its 742 campaigns mix
+  phishing and legitimate mail, each because phishing linked to a news or
+  reference site (`npr.org`, `wikipedia.org`, `unesco.org`) that a legitimate
+  email also linked to; one of them then pulls in 126 legitimate emails that
+  share senders. See [eval/README.md](eval/README.md).
 - **The edge-case set was studied.** 2.0's evaluation named its two false
   positives in it (a Russian name typed with one Latin letter and a mis-declared
   Big5 subject), and 2.1 fixes them on purpose, so its improvement is not a
@@ -559,6 +607,12 @@ lists only the techniques seen in that message, each linked to the signals behin
 - `phishhawk imap` only reads: the folder is opened read-only and messages are
   fetched without marking them read. Its password comes from the environment or
   a prompt, never the command line, and TLS certificates are always verified.
+- `phishhawk graph`, `gmail` and `sweep` only send `GET` requests, to your own
+  mail host. `sweep` sends it what it searches for: the reported message's
+  addresses, subject, Message-ID and phishing domains.
+- `campaign`, `--evidence` and `--sandbox` send nothing. `--evidence` and
+  `--sandbox` write the whole message to the folder you name: keep it where
+  your evidence goes.
 - Answers are cached in SQLite for 24 hours, in a file only you can read;
   errors are never cached. `phishhawk cache clear` empties the cache.
 - VirusTotal is paced to the free tier's 4 requests a minute and capped at 20 per
@@ -664,7 +718,8 @@ For extra isolation, use the Docker image with `--network none` and a read-only 
 ```text
 phishhawk/
 ├── src/phishhawk/
-│   ├── cli.py          scan / imap / graph / gmail / doctor / cache / techniques / help
+│   ├── cli.py          scan / imap / graph / gmail / campaign / sweep / evidence / doctor / cache /
+│   │                   techniques / help
 │   ├── banner.py       start-up banner (_logo_art.py is generated from docs/images/logo.svg)
 │   ├── mailpolicy.py   the email parser, hardened against headers written to break it
 │   ├── parse.py        MIME walk, unwrapping, inline forwards, hidden text, the mail path
@@ -684,11 +739,16 @@ phishhawk/
 │   ├── yararules.py    your YARA rules (optional extra)
 │   ├── imapfetch.py    read-only IMAP
 │   ├── mailapi.py      read-only Microsoft Graph and Gmail API
+│   ├── sweep.py        the other copies of a reported message, read-only
+│   ├── campaign.py     reports grouped into campaigns by what they share
+│   ├── alignment.py    authentication and alignment, explained for a ticket
+│   ├── evidence.py     message hashes, kept messages and the hash-chained custody log
+│   ├── sandbox.py      the password-protected pack for a sandbox
 │   ├── cache.py        SQLite TTL cache
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
-│   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV
+│   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV; campaign and sweep output
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              528 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
+├── tests/              641 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
 │                       and the evaluation gate
 ├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetchers, results.json
@@ -706,7 +766,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 528 tests, offline, under a minute
+pytest                                       # 641 tests, offline, under a minute
 ruff check src tests samples eval tools phishhawk
 mypy                                         # the package is fully typed
 coverage run -m pytest && coverage report    # CI requires 85%
@@ -731,6 +791,8 @@ explains how to add a detection.
 - [x] Pull reported mail through the Microsoft Graph and Gmail APIs (2.1)
 - [x] Optional full public suffix list (2.1)
 - [x] More brands and lure languages; weigh independent evidence (2.1)
+- [x] Campaign correlation, mailbox sweep, evidence custody log, sandbox handoff, authentication explained (2.2)
+- [ ] Submit a sandbox pack to a self-hosted CAPE through its API
 - [ ] Sign in to Microsoft Graph and Gmail from the command line (device-code flow)
 - [ ] Decompress RAR members, not only the stored ones
 - [ ] Packages on PyPI and GHCR

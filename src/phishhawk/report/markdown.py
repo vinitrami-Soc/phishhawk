@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from .. import __version__
+from ..alignment import assess
 from ..extract import defang_host
 from ..models import Analysis
 from .common import (
@@ -58,9 +59,25 @@ def render(a: Analysis) -> str:
         out.append("| **Authentication** | %s |" % " · ".join(
             "%s %s" % (k.upper(), v) for k, v in a.auth.items()))
     out.append("| **Message-ID** | %s |" % _code(a.message_id or "(none)"))
+    if a.evidence.get("sha256"):
+        out.append("| **Message SHA-256** | %s |" % _code(a.evidence["sha256"]))
+    if a.evidence.get("custody"):
+        out.append("| **Custody record** | %s |" % _code(a.evidence["custody"]))
     if a.reported_by:
         out.append("| **Reported by** | %s |" % _cell(a.reported_by.get("from", "")))
     out += ["", "**Summary:** " + " ".join(summary_sentences(a)), ""]
+
+    block = assess(a, defang_host)
+    out += ["### Authentication: %s" % block["status"].upper(), ""]
+    if block["checks"]:
+        out += ["| Check | Result | Domain | Aligned with From |", "|---|---|---|---|"]
+        out += ["| %s | %s | %s | %s |" % (row["check"], _cell(row["result"]),
+                                           _code(defang_host(row["domain"])) if row["domain"] else "",
+                                           {True: "yes", False: "no"}.get(row["aligned"], ""))
+                for row in block["checks"]]
+        out.append("")
+    out += ["- %s" % _cell(line) for line in block["explanation"]]
+    out.append("")
 
     signals = sorted_signals(a)
     if signals:

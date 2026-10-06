@@ -67,7 +67,7 @@ def legend(items, x, y, t):
 # ------------------------------------------------------------------ KPIs --
 
 HELD_OUT_LEGIT = ("ham_holdout", "enron", "fixtures", "msg")  # every legitimate set never tuned on
-BEFORE, BEFORE_NAME, AFTER_NAME = "2_0_0", "2.0", "2.1"  # the release compared against, and this one
+BEFORE, BEFORE_NAME, AFTER_NAME = "2_0_0", "2.0", "2.2"  # the release compared against, and this one
 REAL_SETS = ("pot_holdout", "pot_tune", "holdout", "tune", "nazario", "ham_holdout", "enron", "fixtures", "msg",
              "ham_tune", "cpython")
 

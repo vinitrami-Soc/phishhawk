@@ -123,6 +123,7 @@ MIME_TOO_DEEP = 1000  # Analysis.mime_depth when the parser could not follow the
 @dataclass
 class Analysis:
     path: str
+    evidence: dict[str, Any] = field(default_factory=dict)  # sha256 and size of the bytes analysed
     subject: str = ""
     date: str = ""
     message_id: str = ""
@@ -140,6 +141,7 @@ class Analysis:
     mailing_list: bool = False  # List-Post, Mailing-List, X-BeenThere or Precedence: list
     list_domains: list[str] = field(default_factory=list)  # where those list headers point
     auth: dict[str, str] = field(default_factory=dict)
+    auth_checks: list[dict[str, str]] = field(default_factory=list)  # method, result, domain checked
     forged_auth: list[dict[str, Any]] = field(default_factory=list)  # pass claims below the receiver's
     reported_by: dict[str, Any] | None = None
     forwarded_from: dict[str, str] | None = None  # original sender of an inline forward

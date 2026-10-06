@@ -306,6 +306,16 @@ def _unwrap(msg: Message, analysis: Analysis) -> tuple[Message, list[Message]]:
 _AUTH_MECHANISMS = ("spf", "dkim", "dmarc", "compauth")
 _AUTH_HEADERS = ("authentication-results", "received-spf")
 MAX_FORGED = 20
+MAX_CHECKS = 20
+_COMMENT_RE = re.compile(r"\([^()]*\)")
+_CHECK_RE = re.compile(r"(spf|dkim|dmarc)\s*=\s*([a-z]+)", re.I)  # matched at a clause's start, stripped
+# The identity each check vouched for (RFC 8601): SPF the envelope sender,
+# DKIM the signing domain (or the agent identity), DMARC the From domain.
+_CHECK_PROPERTIES = {"spf": ("smtp.mailfrom", "smtp.helo"), "dkim": ("header.d", "header.i"),
+                     "dmarc": ("header.from",)}
+_RECEIVED_SPF_DOMAIN_RE = re.compile(r'envelope-from\s*=\s*"?([^\s;"]{1,320})|domain of\s+(\S{1,320})\s+'
+                                     r"(?:designates|does not designate)", re.I)
+_CHECK_DOMAIN_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+")
 
 
 def _header_text(msg: Message, name: str, value: str) -> str:
@@ -323,9 +333,43 @@ def _authserv_id(value: str) -> str:
     return value.split(";", 1)[0].strip().lower()
 
 
-def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str, str], list[dict[str, Any]]]:
-    """SPF/DKIM/DMARC results from the receiving server, and any claims that
-    were forged below them.
+def _check_domain(value: str) -> str:
+    value = value.strip().strip('"<>').rsplit("@", 1)[-1].lower().rstrip(".")
+    return value if len(value) <= 253 and _CHECK_DOMAIN_RE.fullmatch(value) else ""
+
+
+def _auth_checks(values: list[str]) -> list[dict[str, str]]:
+    """Every SPF, DKIM and DMARC result in the receiver's headers, with the
+    domain it is about. Comments are dropped first: Gmail's "(domain of
+    x@y designates ...)" is prose, not the identity that was checked."""
+    checks: list[dict[str, str]] = []
+    for value in values:
+        text = value
+        for _ in range(4):  # comments can nest
+            text = _COMMENT_RE.sub(" ", text)
+        clauses = [clause.lstrip() for clause in text.split(";")]
+        if clauses and not _CHECK_RE.match(clauses[0]):
+            clauses = clauses[1:]  # the authserv-id (Exchange Online writes none)
+        for clause in clauses:
+            match = _CHECK_RE.match(clause)
+            if not match:
+                continue
+            method, domain = match.group(1).lower(), ""
+            for name in _CHECK_PROPERTIES[method]:
+                found = re.search(r"\b%s\s*=\s*([^\s;]+)" % re.escape(name), clause, re.I)
+                if found:
+                    domain = _check_domain(found.group(1))
+                    break
+            checks.append({"method": method, "result": match.group(2).lower(), "domain": domain})
+            if len(checks) >= MAX_CHECKS:
+                return checks
+    return checks
+
+
+def _auth_results(msg: Message, trusted: tuple[str, ...] = ()
+                  ) -> tuple[dict[str, str], list[dict[str, Any]], list[dict[str, str]]]:
+    """SPF/DKIM/DMARC results from the receiving server, any claims that were
+    forged below them, and each of the receiver's checks with its domain.
 
     Only the block of Authentication-Results headers at the top is trusted:
     the receiving server writes it, one header or (ProtonMail) one per check,
@@ -372,6 +416,7 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str
                 server = _authserv_id(items[i][1])
                 forged.append({"claim": "%s=pass" % mechanism, "authserv": server[:80],
                                "impersonates": bool(receiver) and server == receiver})
+    received_spf: dict[str, str] = {}
     if "spf" not in results:
         # Only the topmost Received-SPF, and only if it sits by the trusted block.
         near = trusted_block[0] if trusted_block else None
@@ -379,8 +424,14 @@ def _auth_results(msg: Message, trusted: tuple[str, ...] = ()) -> tuple[dict[str
             if name == "received-spf" and value:
                 if near is None or abs(i - near) <= 3:
                     results["spf"] = value.split()[0].lower().strip(";")
+                    found = _RECEIVED_SPF_DOMAIN_RE.search(value)
+                    received_spf = {"method": "spf", "result": results["spf"],
+                                    "domain": _check_domain(next(g for g in found.groups() if g)) if found else ""}
                 break
-    return results, forged
+    checks = _auth_checks([items[i][1] for i in trusted_block])
+    if received_spf and not any(check["method"] == "spf" for check in checks):
+        checks.insert(0, received_spf)
+    return results, forged, checks[:MAX_CHECKS]
 
 
 def _received(msg: Message) -> list[str]:
@@ -495,7 +546,7 @@ def _read_headers(msg: Message, analysis: Analysis, trusted_authserv: tuple[str,
     analysis.return_path_domain = domain_of_address(return_path)
 
     analysis.mailing_list, analysis.list_domains = _mailing_list(msg)
-    analysis.auth, analysis.forged_auth = _auth_results(msg, trusted_authserv)
+    analysis.auth, analysis.forged_auth, analysis.auth_checks = _auth_results(msg, trusted_authserv)
     received = _received(msg)
     analysis.originating_ip = _originating_ip(msg, received)
     analysis.hops = _hops(received)

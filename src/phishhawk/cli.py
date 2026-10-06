@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import datetime
 import getpass
 import hashlib
@@ -23,17 +24,30 @@ import textwrap
 import time
 from collections.abc import Callable, Iterator
 
-from . import __version__, banner, config, extract, imapfetch, mailapi, yararules
+from . import (
+    __version__,
+    banner,
+    campaign,
+    config,
+    evidence,
+    extract,
+    imapfetch,
+    mailapi,
+    sandbox,
+    sweep,
+    yararules,
+)
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
 from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
 from .pipeline import Options, triage_bytes
-from .report import console, csvout, html, markdown, misp, stix
+from .report import campaignout, console, csvout, html, markdown, misp, stix, sweepout
 from .report.common import printable, to_dict
 
-COMMANDS = ("scan", "imap", "graph", "gmail", "doctor", "cache", "techniques", "help")
+COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "sweep", "evidence", "doctor", "cache", "techniques",
+            "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -110,6 +124,56 @@ Only GET requests are sent: each message is read in raw form, and nothing is
 marked read, moved or deleted. The token is read from $PHISHHAWK_GMAIL_TOKEN,
 never the command line."""
 
+CAMPAIGN_EPILOG = """\
+examples:
+  phishhawk campaign reported/                        which reports belong together
+  phishhawk campaign reported/ --md campaigns.md      a ticket note per campaign
+  phishhawk campaign a.mbox b.mbox --json - | jq '.clusters[0].recipients'
+
+Messages are linked by one strong trait (an attachment, a phishing domain or
+link, a QR payload, a sender or reply-to address, a wallet, a phone number)
+or two weak ones (a subject differing only in numbers, a display name, an
+originating IP), and links are followed: A-B and B-C make one campaign. Known
+brands, your protected and allowed domains, shorteners, free-mail and bulk-mail
+services never link at domain level. Nothing is looked up: correlation is
+offline. Recipients come from each message's To line (the original's, for a
+reported message)."""
+
+SWEEP_EPILOG = """\
+examples:
+  export PHISHHAWK_GRAPH_TOKEN=...     (an app token with Mail.Read for every mailbox swept)
+  phishhawk sweep graph --like reported.eml --mailboxes staff.txt
+  phishhawk sweep graph --from billing@1nvoice-desk.top --mailbox alice@example.com --mailbox bob@example.com
+  phishhawk sweep gmail --like reported.eml --since 2026-09-01 --csv copies.csv
+
+--like reads the reported message (offline) and looks for its Message-ID, its
+sender and reply-to addresses, its subject and the phishing domains it links
+to; brands' own domains, free-mail providers and other shared services are
+never searched for. Each copy found is listed with its folder, whether it
+was read, and whether the mailbox's owner replied in its thread. Only GET
+requests are sent. Gmail tokens are per mailbox: sweep each with its own.
+Clicks and opened attachments are not in the mailbox: look in your proxy
+and EDR logs for the domains and hashes in the scan report.
+
+exit codes:
+  0  no copies found     1  copies found     3  a mailbox could not be searched"""
+
+EVIDENCE_EPILOG = """\
+examples:
+  phishhawk scan reported/ --evidence /cases/4711    keep each message and log its custody
+  phishhawk evidence verify /cases/4711               check every record and kept message
+
+With --evidence DIR, every message analysed is kept in DIR exactly as it was
+read, read-only and named by its SHA-256, and a record is appended to
+DIR/custody.jsonl: SHA-256, size, source, time, analyst ($PHISHHAWK_ANALYST, or
+the login name), tool version and verdict. Each record includes the hash of
+the one before it. verify recomputes that chain and every message's hash, and
+prints the last link: put it in the ticket, and the log as it was then can be
+proven unchanged later.
+
+exit codes:
+  0  every record and kept message checks out     1  something does not"""
+
 
 # ---------------------------------------------------------------------------
 # Parser
@@ -155,24 +219,8 @@ def _display_options() -> _Parser:
     return common
 
 
-def _triage_options(command: argparse.ArgumentParser) -> None:
-    """Report, detection, enrichment and cache options shared by scan and imap."""
-    command.add_argument("--config", metavar="PATH",
-                         help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
-    out = command.add_argument_group("reports")
-    out.add_argument("--json", metavar="PATH", help="full structured report ('-' for stdout)")
-    out.add_argument("--html", metavar="PATH", help="self-contained HTML report for tickets and L2")
-    out.add_argument("--stix", metavar="PATH", help="STIX 2.1 bundle for OpenCTI and Sentinel ('-' for stdout)")
-    out.add_argument("--misp", metavar="PATH", help="MISP event JSON, one event per message ('-' for stdout)")
-    out.add_argument("--md", metavar="PATH", help="Markdown ticket note ('-' for stdout)")
-    out.add_argument("--csv", metavar="PATH", help="CSV indicator list for blocklists ('-' for stdout)")
-    out.add_argument("--tlp", choices=("clear", "green", "amber", "amber+strict", "red"),
-                     help="TLP tag for the MISP event (default amber)")
-    out.add_argument("-q", "--quiet", action="store_true", help="one summary block per message")
-    out.add_argument("-v", "--verbose", action="store_true", help="every signal, MD5 hashes and all actions")
-    out.add_argument("--fail-on", choices=("never", "suspicious", "likely", "malicious"),
-                     help="exit 0 unless a verdict reaches this level (for pipelines; default: exit codes below)")
-
+def _detection_options(command: argparse.ArgumentParser) -> None:
+    """How messages are read and judged; shared by the triage commands and campaign."""
     det = command.add_argument_group("detection")
     det.add_argument("-p", "--protect", action="append", default=[], metavar="DOMAIN",
                      help="your organisation's domain (repeatable); lookalikes of it are flagged "
@@ -200,6 +248,27 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
                      help="a copy of the Public Suffix List (public_suffix_list.dat from publicsuffix.org), used "
                           "instead of the built-in approximation (default $PHISHHAWK_PSL)")
 
+
+def _triage_options(command: argparse.ArgumentParser) -> None:
+    """Report, detection, enrichment and cache options shared by scan and imap."""
+    command.add_argument("--config", metavar="PATH",
+                         help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
+    out = command.add_argument_group("reports")
+    out.add_argument("--json", metavar="PATH", help="full structured report ('-' for stdout)")
+    out.add_argument("--html", metavar="PATH", help="self-contained HTML report for tickets and L2")
+    out.add_argument("--stix", metavar="PATH", help="STIX 2.1 bundle for OpenCTI and Sentinel ('-' for stdout)")
+    out.add_argument("--misp", metavar="PATH", help="MISP event JSON, one event per message ('-' for stdout)")
+    out.add_argument("--md", metavar="PATH", help="Markdown ticket note ('-' for stdout)")
+    out.add_argument("--csv", metavar="PATH", help="CSV indicator list for blocklists ('-' for stdout)")
+    out.add_argument("--tlp", choices=("clear", "green", "amber", "amber+strict", "red"),
+                     help="TLP tag for the MISP event (default amber)")
+    out.add_argument("-q", "--quiet", action="store_true", help="one summary block per message")
+    out.add_argument("-v", "--verbose", action="store_true", help="every signal, MD5 hashes and all actions")
+    out.add_argument("--fail-on", choices=("never", "suspicious", "likely", "malicious"),
+                     help="exit 0 unless a verdict reaches this level (for pipelines; default: exit codes below)")
+
+    _detection_options(command)
+
     enr = command.add_argument_group("enrichment")
     enr.add_argument("-o", "--offline", action="store_true", help="no network access at all")
     enr.add_argument("--vt-key", default="", metavar="KEY", help="VirusTotal key (default: $VT_API_KEY)")
@@ -218,6 +287,14 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     enr.add_argument("--no-rdap", action="store_true", help="skip RDAP domain-age lookups")
     enr.add_argument("--timeout", type=float, default=20, metavar="SECONDS",
                      help="HTTP timeout per request (default 20)")
+
+    kept = command.add_argument_group("evidence")
+    kept.add_argument("--evidence", metavar="DIR",
+                      help="keep each message here, read-only and named by its SHA-256, with a hash-chained "
+                           "custody log (check it with: phishhawk evidence verify DIR)")
+    kept.add_argument("--sandbox", metavar="DIR",
+                      help="write a ZIP per message for your sandbox: the message, every file pulled out of it, "
+                           "the links to detonate and a manifest, encrypted with the password 'infected'")
 
     cache_opts = command.add_argument_group("cache")
     cache_opts.add_argument("--no-cache", action="store_true", help="do not read or write the lookup cache")
@@ -295,6 +372,72 @@ def build_parser() -> _Parser:
         box.add_argument("--watch", type=_seconds, default=0, metavar="SECONDS",
                          help="keep running and triage new messages every SECONDS (Ctrl+C stops)")
         _triage_options(api)
+
+    camp = commands.add_parser(
+        "campaign", parents=[display], formatter_class=_Formatter, epilog=CAMPAIGN_EPILOG,
+        help="group reported messages into campaigns by what they share, offline",
+        description="Group reported messages that share attachments, phishing domains, links, QR payloads, "
+                    "senders or other traits into campaigns, with who received them and when. Offline: "
+                    "nothing is looked up.")
+    camp.add_argument("inputs", nargs="+", metavar="PATH",
+                      help=".eml, .msg or .mbox files, directories (searched recursively) or '-' for stdin")
+    camp.add_argument("--config", metavar="PATH",
+                      help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
+    camp_out = camp.add_argument_group("reports")
+    camp_out.add_argument("--json", metavar="PATH",
+                          help="campaigns, what links them and their messages ('-' for stdout)")
+    camp_out.add_argument("--csv", metavar="PATH", help="one row per message with its campaign ('-' for stdout)")
+    camp_out.add_argument("--md", metavar="PATH", help="Markdown note per campaign ('-' for stdout)")
+    camp_out.add_argument("--min-size", type=int, default=2, metavar="N",
+                          help="smallest group reported as a campaign (default 2)")
+    _detection_options(camp)
+    camp.set_defaults(offline=True, vt_rate=None, vt_budget=None, fail_on=None, tlp=None)
+
+    sw = commands.add_parser(
+        "sweep", parents=[display], formatter_class=_Formatter, epilog=SWEEP_EPILOG,
+        help="find the other copies of a reported message in mailboxes, read-only",
+        description="Search mailboxes through Microsoft Graph or the Gmail API for copies of a reported "
+                    "message, and report where each sits, whether it was read and whether anyone replied. "
+                    "Only GET requests are sent.")
+    sw.add_argument("service", choices=("graph", "gmail"), help="where the mailboxes are")
+    sw.add_argument("--config", metavar="PATH",
+                    help="settings file (default $PHISHHAWK_CONFIG, then ~/.config/phishhawk/config.toml)")
+    look = sw.add_argument_group("what to look for (at least one)")
+    look.add_argument("--like", metavar="FILE", help="the reported .eml or .msg: its Message-ID, senders, subject "
+                                                     "and phishing domains")
+    look.add_argument("--from", dest="senders", action="append", default=[], metavar="ADDRESS",
+                      help="a sender or reply-to address (repeatable)")
+    look.add_argument("--subject", dest="subjects", action="append", default=[], metavar="TEXT",
+                      help="a subject; numbers may differ (repeatable)")
+    look.add_argument("--domain", dest="domains", action="append", default=[], metavar="DOMAIN",
+                      help="a domain the message links to (repeatable)")
+    look.add_argument("--message-id", dest="message_ids", action="append", default=[], metavar="ID",
+                      help="a Message-ID, with its angle brackets (repeatable)")
+    where = sw.add_argument_group("where to look")
+    where.add_argument("--mailbox", dest="mailboxes", action="append", default=[], metavar="ADDRESS",
+                       help="a mailbox (repeatable; default 'me': the token's own)")
+    where.add_argument("--mailboxes", dest="mailbox_file", metavar="FILE",
+                       help="a file with one mailbox per line (# starts a comment)")
+    where.add_argument("--since", metavar="YYYY-MM-DD", help="only messages received on or after this date")
+    where.add_argument("--limit", type=int, default=100, metavar="N",
+                       help="results per search and mailbox (default 100, at most 1000)")
+    where.add_argument("--timeout", type=float, default=30, metavar="SECONDS", help="HTTP timeout (default 30)")
+    sw_out = sw.add_argument_group("reports")
+    sw_out.add_argument("--json", metavar="PATH", help="every copy found and what matched ('-' for stdout)")
+    sw_out.add_argument("--csv", metavar="PATH", help="one row per copy ('-' for stdout)")
+    _detection_options(sw)
+    sw.set_defaults(offline=True, vt_rate=None, vt_budget=None, fail_on=None, tlp=None)
+
+    kept = commands.add_parser(
+        "evidence", parents=[display], formatter_class=_Formatter, epilog=EVIDENCE_EPILOG,
+        help="verify the messages and custody log kept with --evidence",
+        description="Check the messages kept with --evidence and their custody log: every record still "
+                    "follows the one before it and every kept message still has its recorded SHA-256.")
+    kept.add_argument("action", choices=("verify",), help="verify: check the log and every kept message")
+    kept.add_argument("directory", metavar="DIR", help="the folder given to --evidence")
+    kept.add_argument("--head", dest="heads", action="append", default=[], metavar="CHAIN",
+                      help="a head or custody value recorded earlier, e.g. in a ticket: it must still be in the "
+                           "log (repeatable)")
 
     doctor = commands.add_parser(
         "doctor", parents=[display], formatter_class=_Formatter,
@@ -483,7 +626,7 @@ def _settings(args: argparse.Namespace, error: Callable[[str], None]) -> tuple[O
                       qr=not args.no_qr, trusted_authserv=trusted,
                       allow_domains=[d.strip().lower() for d in args.allow] + settings.allow_domains,
                       block_domains=[d.strip().lower() for d in args.block] + settings.block_domains,
-                      yara=rules)
+                      yara=rules, keep_files=bool(getattr(args, "sandbox", None)))
     return options, settings
 
 
@@ -565,6 +708,23 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
         finally:
             if progress:
                 sys.stderr.write("\r%-66s\r" % "")
+        if args.sandbox and isinstance(data, bytes):
+            try:
+                written = sandbox.pack(args.sandbox, data, analysis)
+                print(err("[i] sandbox pack written to %s (password: infected)" % printable(written), "dim"),
+                      file=sys.stderr)
+            except (sandbox.SandboxError, OSError, ValueError) as exc:
+                print(err("[!] %s: no sandbox pack (%s)" % (printable(path), printable(str(exc))), "red"),
+                      file=sys.stderr)
+                failed = True
+        analysis.__dict__.pop("_files", None)  # the file bytes are needed only for the pack
+        if args.evidence and isinstance(data, bytes):
+            try:
+                evidence.keep(args.evidence, data, "<stdin>" if path == "-" else path, analysis)
+            except (evidence.EvidenceError, OSError, ValueError) as exc:
+                print(err("[!] %s: not kept as evidence (%s)" % (printable(path), printable(str(exc))), "red"),
+                      file=sys.stderr)
+                failed = True
         analyses.append(analysis)
         if per_message is not None:
             per_message(path, analysis)
@@ -886,6 +1046,156 @@ def cmd_techniques(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_campaign(args: argparse.Namespace, parser: _Parser) -> int:
+    command = parser.commands["campaign"]
+    outputs = {"json": args.json, "csv": args.csv, "md": args.md}
+    if list(outputs.values()).count("-") > 1:
+        command.error("only one report can go to stdout ('-')")
+    if args.min_size < 2:
+        command.error("--min-size must be 2 or more")
+    colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
+    err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    try:
+        options, _ = _settings(args, lambda message: print(err("[!] %s" % printable(message), "red"),
+                                                           file=sys.stderr))
+    except (config.ConfigError, yararules.YaraError):
+        return EXIT_ERROR
+    items: list[tuple[str, Analysis]] = []
+    failed = False
+    for path, data in iter_messages(expand_inputs(args.inputs), args.max_size * 1024 * 1024):
+        label = "<stdin>" if path == "-" else evidence.safe_text(path)
+        try:
+            if isinstance(data, Exception):
+                raise data
+            items.append((label, triage_bytes(data, label, options, None)))
+        except FileNotFoundError:
+            print(err("[!] %s: file not found" % printable(path), "red"), file=sys.stderr)
+            failed = True
+        except Exception as exc:  # one malformed mail must not stop the correlation
+            print(err("[!] %s: could not analyse (%s: %s)" % (printable(path), type(exc).__name__,
+                                                              printable(str(exc))), "red"), file=sys.stderr)
+            failed = True
+    result = campaign.correlate(items, args.min_size)
+    if "-" not in outputs.values():
+        print(campaignout.render_console(result, colour))
+    renderers = {"json": lambda: json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                 "csv": lambda: campaignout.render_csv(result), "md": lambda: campaignout.render_markdown(result)}
+    for kind, path in outputs.items():
+        if not path:
+            continue
+        try:
+            _write(path, renderers[kind]())
+            if path != "-":
+                print(err("[i] %s written to %s" % (kind.upper(), path), "dim"), file=sys.stderr)
+        except OSError as exc:
+            print(err("[!] could not write %s: %s" % (path, exc), "red"), file=sys.stderr)
+            failed = True
+    return EXIT_ERROR if failed else 0
+
+
+def _mailbox_list(path: str) -> list[str]:
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        lines = [line.strip() for line in handle.read().splitlines()[:sweep.MAX_MAILBOXES * 2]]
+    return [line for line in lines if line and not line.startswith("#")]
+
+
+def cmd_sweep(args: argparse.Namespace, parser: _Parser) -> int:
+    command = parser.commands["sweep"]
+    if [args.json, args.csv].count("-") > 1:
+        command.error("only one report can go to stdout ('-')")
+    if not 1 <= args.limit <= 1000:
+        command.error("--limit must be between 1 and 1000")
+    variable = "PHISHHAWK_%s_TOKEN" % args.service.upper()
+    token = os.environ.get(variable, "").strip()
+    if not token:
+        command.error("set %s to an access token (it is never taken on the command line)" % variable)
+    since = None
+    if args.since:
+        try:
+            since = datetime.date.fromisoformat(args.since)
+        except ValueError:
+            command.error("--since must be a date like 2026-09-01")
+    colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
+    err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    criteria = sweep.Criteria(senders=[s.strip().lower() for s in args.senders if s.strip()],
+                              subjects=[s.strip() for s in args.subjects if s.strip()],
+                              domains=[d.strip().lower() for d in args.domains if d.strip()],
+                              message_ids=[m.strip() for m in args.message_ids if m.strip()])
+    if args.like:
+        try:
+            options, _ = _settings(args, lambda message: print(err("[!] %s" % printable(message), "red"),
+                                                               file=sys.stderr))
+            reported = triage_bytes(read_input(args.like, args.max_size * 1024 * 1024), args.like, options, None)
+        except (config.ConfigError, yararules.YaraError):
+            return EXIT_ERROR
+        except Exception as exc:  # unreadable or too large
+            print(err("[!] %s: could not read (%s)" % (printable(args.like), printable(str(exc))), "red"),
+                  file=sys.stderr)
+            return EXIT_ERROR
+        derived = sweep.criteria_from(reported)
+        for name in ("senders", "subjects", "domains", "message_ids"):
+            merged = getattr(criteria, name) + getattr(derived, name)
+            setattr(criteria, name, list(dict.fromkeys(merged)))
+    if not criteria:
+        command.error("nothing to look for: give --like, --from, --subject, --domain or --message-id")
+    mailboxes = list(args.mailboxes)
+    if args.mailbox_file:
+        try:
+            mailboxes += _mailbox_list(args.mailbox_file)
+        except OSError as exc:
+            command.error("--mailboxes: %s" % exc)
+    mailboxes = list(dict.fromkeys(mailboxes or ["me"]))
+    if len(mailboxes) > sweep.MAX_MAILBOXES:
+        command.error("--mailboxes: at most %d mailboxes per sweep; split the list" % sweep.MAX_MAILBOXES)
+    search = sweep.sweep_graph if args.service == "graph" else sweep.sweep_gmail
+    try:
+        boxes = search(token, mailboxes, criteria, since=since, limit=args.limit, timeout=args.timeout)
+    except mailapi.MailApiError as exc:  # a malformed token, refused before any request
+        print(err("[!] %s" % printable(str(exc)), "red"), file=sys.stderr)
+        return EXIT_ERROR
+    result = {"service": args.service, "criteria": dataclasses.asdict(criteria), "since": args.since or "",
+              "mailboxes": boxes}
+    count = sweepout.totals(result)
+    result["found"] = count["copies"]
+    outputs = {"json": args.json, "csv": args.csv}
+    if "-" not in outputs.values():
+        print(sweepout.render_console(result, colour))
+    renderers = {"json": lambda: json.dumps(result, indent=2, ensure_ascii=False) + "\n",
+                 "csv": lambda: sweepout.render_csv(result)}
+    failed = bool(count["errors"] or count["incomplete"])
+    for kind, path in outputs.items():
+        if not path:
+            continue
+        try:
+            _write(path, renderers[kind]())
+            if path != "-":
+                print(err("[i] %s written to %s" % (kind.upper(), path), "dim"), file=sys.stderr)
+        except OSError as exc:
+            print(err("[!] could not write %s: %s" % (path, exc), "red"), file=sys.stderr)
+            failed = True
+    if failed:
+        return EXIT_ERROR
+    return 1 if count["copies"] else 0
+
+
+def cmd_evidence(args: argparse.Namespace) -> int:
+    colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
+    result = evidence.verify(args.directory, tuple(h.strip() for h in args.heads))
+    for problem in result.problems:
+        print(colour("[!] " + printable(problem), "red"))
+    if result.problems:
+        print("%s checked, %s" % (_count(result.records, "record"), _count(len(result.problems), "problem")))
+        return 1
+    print(colour("[ok] %s checked: every record follows the one before it and every kept message "
+                 "matches its SHA-256" % _count(result.records, "record"), "green"))
+    print("head %s" % result.head)
+    return 0
+
+
+def _count(number: int, noun: str) -> str:
+    return "%d %s%s" % (number, noun, "" if number == 1 else "s")
+
+
 # ---------------------------------------------------------------------------
 # entry point
 # ---------------------------------------------------------------------------
@@ -909,6 +1219,12 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_imap(args, parser)
     if args.command in ("graph", "gmail"):
         return cmd_mail_api(args, parser)
+    if args.command == "campaign":
+        return cmd_campaign(args, parser)
+    if args.command == "sweep":
+        return cmd_sweep(args, parser)
+    if args.command == "evidence":
+        return cmd_evidence(args)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "cache":

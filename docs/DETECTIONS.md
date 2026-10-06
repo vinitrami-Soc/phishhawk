@@ -77,6 +77,23 @@ the usual SOC threshold for calling something malicious. One engine, or
 score is therefore 35, and with at least two high signals the verdict is
 `LIKELY PHISHING`.
 
+**Authentication, explained.** Next to the signals, every report since 2.2
+carries an authentication block for the analyst: `pass`, `fail` or `unknown`
+for the domain the reader sees in From, which domain SPF, DKIM and DMARC each
+vouched for, and whether it is aligned with From (the same organisation, as
+DMARC's relaxed mode counts it). The receiver's DMARC result always wins; with
+none, an aligned SPF or DKIM pass decides. The block explains and never
+scores: the authentication signals in the catalogue below are what count.
+
+**Registrable domains.** Lookalike checks, the export policy and campaign
+correlation work on the registrable domain (`paypal-login.com.ar`, not
+`www.paypal-login.com.ar`). With `--psl`, the Public Suffix List decides it.
+Without one, a built-in approximation knows the common two-part suffixes
+(`co.uk`, `com.au` ...) and, since 2.2, takes `com`, `net`, `org`, `edu`,
+`gov`, `co`, `ac`, `or`, `ne`, `go`, `gob`, `gouv`, `mil`, `nom`, `sch`, `ltd`
+and `plc` under any two-letter country code as the registry's own
+(`com.ar`, `co.th`, `ne.jp`, `gouv.fr`).
+
 ## Signal catalogue
 
 Severities marked *varies* depend on context, explained in the notes. *none* in the

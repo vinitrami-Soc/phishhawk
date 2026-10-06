@@ -36,6 +36,11 @@ MULTI_TLDS = {
     "co.nz", "co.za", "com.br", "gov.br", "org.br", "net.br", "com.mx", "com.sg", "com.hk", "co.jp",
     "com.tr", "com.cn", "com.tw", "co.kr", "com.my", "co.id", "com.ph",
 }
+# Without the Public Suffix List, these names under a two-letter country code
+# are taken as the registry's (com.ar, gob.ar, co.th, ne.jp, or.at, gouv.fr):
+# otherwise every .com.ar site would be one organisation called com.ar.
+REGISTRY_SECOND_LEVEL = {"com", "net", "org", "edu", "gov", "co", "ac", "or", "ne", "go", "gob", "gouv", "mil",
+                         "nom", "sch", "ltd", "plc"}
 
 _REFANG_RULES = [
     (re.compile(r"h(?:xx|XX|\*\*)p(s?)\s*(?::|\[:\])//", re.I), r"http\1://"),
@@ -245,7 +250,8 @@ def registrable_domain(host: str) -> str:
         return _listed_registrable(labels, _SUFFIXES)
     if len(labels) < 3:
         return host
-    if ".".join(labels[-2:]) in MULTI_TLDS:
+    if ".".join(labels[-2:]) in MULTI_TLDS or (
+            len(labels[-1]) == 2 and labels[-1].isalpha() and labels[-2] in REGISTRY_SECOND_LEVEL):
         return ".".join(labels[-3:])
     return ".".join(labels[-2:])
 

@@ -8,12 +8,12 @@ detection rate can only go up.
 "Flagged" means a verdict of `SUSPICIOUS` or worse, the point at which a
 human should look. "Strict" means `LIKELY PHISHING` or worse.
 
-## Results (PhishHawk 2.1.0)
+## Results (PhishHawk 2.2.0)
 
 | Data set | Emails | Flagged recall | Strict recall | False-positive rate |
 |---|---|---|---|---|
 | Real phishing, **held out**, 2022 to 2026 (phishing_pot at `49f6377`, seed 2027) | 5,714 | **81.3%** | **46.9%** | n/a |
-| Real phishing, **held out**, 2005 to 2007 (Nazario's corpus) | 2,279 | 56.9% | 29.7% | n/a |
+| Real phishing, **held out**, 2005 to 2007 (Nazario's corpus) | 2,279 | 56.7% | 29.7% | n/a |
 | Real phishing, earlier **held-out** sample (phishing_pot, seed 7) | 200 | 76.5% | 43.5% | n/a |
 | Real phishing, tuning part of the 2022 to 2026 split | 2,500 | 82.2% | 46.6% | n/a |
 | Real phishing, earlier tuning sample (phishing_pot, seed 42) | 200 | 83.0% | 37.5% | n/a |
@@ -29,27 +29,82 @@ human should look. "Strict" means `LIKELY PHISHING` or worse.
 *n/a* means the measure does not apply: a set of only phishing has no legitimate
 mail to flag by mistake, and a set of only legitimate mail has no phishing to catch.
 
-Every set was also scored with the released 2.0.0, on the same messages:
+Every set was also scored with the released 2.0.0 and 2.1.0, on the same messages:
 
-| Data set | 2.0.0 | 2.1.0 |
-|---|---|---|
-| Phishing 2022 to 2026, held out (5,714) | 79.9% flagged, 30.5% strict | **81.3%** flagged, **46.9%** strict |
-| Phishing 2005 to 2007, held out (2,279) | 57.7%, 26.7% strict | 56.9%, 29.7% strict |
-| Earlier held-out phishing sample (200) | 76.0%, 28.0% strict | 76.5%, 43.5% strict |
-| Everyday legitimate mail, held out (1,400) | 0.5% false positives | 0.5% |
-| Spam-like legitimate mail, held out (125) | 17.6% | 13.6% |
-| Enron, held out (4,279) | 0.2% | 0.2% |
-| Mail-library edge cases, studied (136) | 11.0% | 8.8% |
-| All held-out legitimate mail (5,945) | 0.9% (54) | 0.8% (46) |
-| Called likely phishing among those 5,945 | 5 | 6 |
-| Median time per message, all 19,511 scored messages | 6 ms | 6 ms |
-| Slowest message | 1.1 s | 0.9 s |
+| Data set | 2.0.0 | 2.1.0 | 2.2.0 |
+|---|---|---|---|
+| Phishing 2022 to 2026, held out (5,714) | 79.9% flagged, 30.5% strict | 81.3%, 46.9% strict | **81.3%** flagged, **46.9%** strict |
+| Phishing 2005 to 2007, held out (2,279) | 57.7%, 26.7% strict | 56.9%, 29.7% strict | 56.7%, 29.7% strict |
+| Earlier held-out phishing sample (200) | 76.0%, 28.0% strict | 76.5%, 43.5% strict | 76.5%, 43.5% strict |
+| Everyday legitimate mail, held out (1,400) | 0.5% false positives | 0.5% | 0.5% |
+| Spam-like legitimate mail, held out (125) | 17.6% | 13.6% | 13.6% |
+| Enron, held out (4,279) | 0.2% | 0.2% | 0.2% |
+| Mail-library edge cases, studied (136) | 11.0% | 8.8% | 8.8% |
+| All held-out legitimate mail (5,945) | 0.9% (54) | 0.8% (46) | 0.8% (46) |
+| Called likely phishing among those 5,945 | 5 | 6 | 6 |
+| Median time per message, all 19,511 scored messages | 6 ms | 6 ms | 6 ms |
+| Slowest message | 1.1 s | 0.9 s | 1.4 s |
 
 Earlier releases: 1.2.0 flagged 75.4% of the held-out 2022 to 2026 phishing and
 1.0% of the held-out legitimate mail it could read; see the 2.0 section below.
 Before 1.2.0, the first real-mail evaluation found a parse that took 60
 seconds, and 1.1.0 flagged 23.3% of everyday legitimate mail; see the sections
 further down.
+
+## The 2.2 evaluation
+
+2.2 adds what an analyst does after the verdict (campaigns, mailbox sweeps,
+evidence, sandbox packs, the authentication explanation) and changes no signal
+or verdict rule. One fix does reach verdicts: without `--psl`, names such as
+`com.ar`, `co.us` and `gob.ar` under a two-letter country code are now read as
+suffixes, as the public suffix list does. It was developed against the tuning
+sets; on the 5,373 tuning messages no verdict changed. The held-out sets were
+then scored once, with the final code:
+
+- **Three verdicts changed, all in Nazario's 2005 to 2007 corpus**, all from
+  suspicious to not flagged (56.9% → 56.7%; strict unchanged at 29.7%). They
+  are senders on `paypal.co.us`, `ebay.co.us` and `xbox.com.bo`. 2.1 read those
+  domains as `co.us` and `com.bo`; read as the brands' names under a country
+  suffix, they get 2.1's allowance for a brand's own country domain without
+  failed authentication, as `paypal.us` already did. Reported, not tuned.
+- **Nothing else changed**: the 5,714 held-out phishing emails from 2022 to
+  2026, the earlier 200-email sample and all 5,945 held-out legitimate emails
+  got the same verdicts as with 2.1.0.
+
+**Campaign correlation.** `phishhawk campaign` was developed on the 2,500
+tuning phishing emails: they form 233 campaigns covering 1,683 emails, the
+largest 86. Mixed with the 2,625 tuning legitimate emails, no campaign mixes
+the two. Run once over all 11,659 held-out messages (5,714 phishing and 5,945
+legitimate):
+
+| | Held out |
+|---|---|
+| Campaigns | 742 |
+| Phishing emails in a campaign | 4,362 of 5,714 |
+| Legitimate emails in a campaign | 2,219 of 5,945, 2,089 of them in campaigns of only legitimate mail: the same people writing more than once |
+| Campaigns that mix phishing and legitimate mail | **4** |
+| Largest campaign | 496 phishing emails from 80 senders, August 2023 to April 2026 |
+
+The four mixed campaigns have one cause: phishing links to a well-known news
+or reference site (`npr.org`, `wired.com` and `thestreet.com` in one;
+`wikipedia.org`, `unesco.org`, `linuxgazette.com` and `berkshireeagle.com` in
+the others) that legitimate mail also links to, and at least half of the
+messages sharing it were judged suspicious, which is all the rule for web
+addresses asks. Three of the four are 2 to 5 messages; the fourth joins 12
+phishing emails to 126 legitimate ones, which link to each other by their
+senders. The largest campaign is joined mostly by a forged `reply@telekom.com`
+sender and lure domains imitating Morocco's railway (`oncf-voyages.ma`); over
+two and a half years it is more likely several waves sharing a kit than one
+send. This was found on held-out data, so it was not changed for 2.2: read a
+campaign's shared traits before treating it as one campaign.
+
+**Every message, every format.** All 19,917 real messages were run again
+through triage and every report format with the final code, the JSON checked
+against the schema: no errors and no schema violations. The median message
+takes 7 ms. The slowest took 1.6 s in that run, with other work on the
+machine; alone, the three slowest take 0.7 to 1.0 s (600 KB to 4 MB messages:
+images decoded for QR codes, a 2.8 MB HTML body, a 4 MB attachment), in code
+2.2 did not change.
 
 ## The 2.1 evaluation
 

@@ -2,6 +2,7 @@ import pytest
 
 from phishhawk.extract import (
     defang_url,
+    domain_label,
     parse_html,
     refang,
     registrable_domain,
@@ -83,3 +84,17 @@ def test_pdf_uri_extraction_handles_escaped_parens():
 ])
 def test_sniff_type(data, expected):
     assert sniff_type(data) == expected
+
+
+def test_country_registries_second_level_names_are_suffixes_without_a_psl():
+    # Found by campaign correlation: every .com.ar site was one "organisation", com.ar.
+    cases = {"www.sureingenieria.com.ar": "sureingenieria.com.ar", "x.gob.ar": "x.gob.ar",
+             "shop.co.th": "shop.co.th", "a.b.ne.jp": "b.ne.jp", "login.firma.or.at": "firma.or.at",
+             "portal.mairie.gouv.fr": "mairie.gouv.fr", "paypal-login.com.co": "paypal-login.com.co"}
+    for host, expected in cases.items():
+        assert registrable_domain(host) == expected, host
+    # Not a registry name: ordinary sites keep their own domain.
+    for host, expected in {"mail.web.de": "web.de", "x.example.de": "example.de", "a.b.example.com": "example.com",
+                           "x.com.example": "com.example"}.items():
+        assert registrable_domain(host) == expected, host
+    assert domain_label("paypal-login.com.ar") == "paypal-login"

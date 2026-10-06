@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..alignment import assess
 from ..extract import defang_host, defang_url
 from ..models import Analysis, vt_is_malicious
 from .common import (
@@ -51,6 +52,8 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     out.append("Subject    : %s" % (a.subject or "(none)"))
     out.append("Date       : %s" % (a.date or "(none)"))
     out.append("Message-ID : %s" % (a.message_id or "(none)"))
+    if a.evidence.get("sha256"):
+        out.append("SHA-256    : %s (%d bytes)" % (a.evidence["sha256"], a.evidence.get("size", 0)))
     if a.to:
         out.append("To         : %s" % a.to)
 
@@ -81,6 +84,10 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
         out.append("Auth         : %s" % "  ".join(bits))
     else:
         out.append("Auth         : %s" % colour("no Authentication-Results header", "dim"))
+    block = assess(a, defang_host)
+    tone = {"pass": "green", "fail": "red"}.get(block["status"], "amber")
+    out.append("Alignment    : %s  %s" % (colour(block["status"].upper(), tone), block["explanation"][0]))
+    out += ["               %s" % line for line in block["explanation"][1:]]
     if a.protected_domains:
         out.append("Protected    : %s" % colour(", ".join(a.protected_domains), "dim"))
 
