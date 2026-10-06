@@ -28,7 +28,7 @@ from importlib.resources import files as package_files
 
 from .. import __version__
 from ..alignment import assess
-from ..attack import TACTIC_ORDER, technique_tactic
+from ..attack import ENTERPRISE_TACTICS, TACTIC_ORDER, technique_tactic
 from ..extract import defang_host, defang_url
 from ..models import Analysis, FileIoc, signal_kind, vt_is_malicious
 from .common import (
@@ -69,6 +69,18 @@ WHY_IT_MATTERS = {
     "evasion": "The message hides or disguises content to get past mail filters.",
     "intel": "A reputation service already reports this indicator.",
     "policy": "It matches your organisation's own block list or YARA rules.",
+}
+
+# What the analyst can check next for each kind of finding.
+WHAT_TO_CHECK = {
+    "auth": "Read the receiving server's Authentication-Results and the sending domain's DMARC policy.",
+    "sender": "Confirm the sender through a channel you already trust, never the reply address.",
+    "link": "Do not open the link; look for visits to its host in the proxy logs.",
+    "attachment": "Do not open the file; detonate it in a sandbox and hunt its SHA-256 in EDR.",
+    "content": "Ask the recipient whether they acted on the request.",
+    "evasion": "Read the hidden content in the raw message: it shows what the filters were meant to miss.",
+    "intel": "Read the reputation result and how recent it is.",
+    "policy": "Read the rule that matched and why it was written.",
 }
 
 # Authentication results in the report's words; JSON keeps the raw tokens.
@@ -335,8 +347,55 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .badges{display:flex;flex-wrap:wrap;gap:5px}
 .summary{margin:0 0 12px;color:var(--ink-2);font-size:13px;line-height:1.6}
 .steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:step}
-.steps li{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;font-size:13.5px;
-  counter-increment:step}
+.steps li{counter-increment:step}
+/* each action is a checkbox: the analyst can tick it off; nothing is sent or saved */
+.steps label{display:grid;grid-template-columns:24px minmax(0,1fr);gap:10px;align-items:start;font-size:13.5px;
+  cursor:pointer}
+.steps input{position:absolute;width:1px;height:1px;margin:0;opacity:0}
+.steps .n{width:24px;height:24px;border-radius:var(--r-full);display:grid;place-items:center;
+  font:600 11.5px var(--sans);background:var(--brand-wash-2);color:var(--brand-ink-2);margin-top:-1px}
+.steps .n::before{content:counter(step)}
+.steps input:checked+.n{background:var(--sev-ok-bg);color:var(--sev-ok)}
+.steps input:checked+.n::before{content:"\\2713"}
+.steps input:checked~.t{color:var(--ink-3);text-decoration:line-through}
+.steps input:focus-visible+.n{outline:2px solid var(--brand);outline-offset:2px}
+.check{margin-top:4px;font-size:12px;color:var(--ink-2)}
+.check b{font-weight:600}
+.calc{margin:0 0 12px;border:1px solid var(--line);border-radius:var(--r);padding:8px 12px}
+.calc summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink-2)}
+.calc summary:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:4px}
+.calc[open] summary{margin-bottom:8px}
+.calc .summary{margin:10px 0 0}
+a[target="_blank"]::after{content:"\\2197";margin-left:2px;font-size:.85em}
+/* URLs, one card each */
+.urls,.looks{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.urlcard,.looks li{border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-width:0}
+.urlcard.flagged{box-shadow:inset 3px 0 0 var(--brand)}
+.u-head{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.u-head .ioc{flex:1 1 280px;min-width:0;font-size:12.5px}
+.tag.hot{background:var(--pill-high-bg);color:var(--pill-high);border-color:transparent}
+.u-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(170px,100%),1fr));gap:8px 18px;
+  margin:10px 0 0}
+.u-facts dt{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.u-facts dd{margin:2px 0 0;font-size:12.5px;min-width:0;overflow-wrap:anywhere}
+/* lookalikes: what the reader sees beside what it imitates */
+.pair{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:12px;align-items:end}
+.pair .label{display:block;margin-bottom:3px}
+.pair .ioc{font-size:13.5px}
+.pair .arrow{color:var(--ink-3);font-size:18px;line-height:1.6}
+.looks .sub{margin-top:8px}
+mark{background:var(--brand-wash-2);color:var(--brand-ink-2);border-radius:3px;padding:0 1px;font-weight:700}
+/* ATT&CK techniques, grouped under their tactic */
+.tgroup+.tgroup{margin-top:14px}
+.tgroup h3{margin:0 0 8px;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-3)}
+.techs{list-style:none;margin:0;padding:0;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));
+  gap:8px}
+.techs li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;padding:10px 12px;
+  border:1px solid var(--line);border-radius:var(--r-sm);min-width:0}
+.techs b{display:block;font-size:13px;font-weight:550;line-height:1.35}
+.techs .sub{display:block;margin-top:3px;overflow-wrap:anywhere}
 .top{list-style:none;margin:0;padding:0;display:grid;gap:12px}
 .top li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start}
 .top li .badge{margin-top:1px}
@@ -345,9 +404,6 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .more{margin:12px 0 0;font-size:12.5px}
 .caution{background:var(--amber-wash);border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
 .limits{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13px;color:var(--ink-2)}
-.steps li::before{content:counter(step);width:24px;height:24px;border-radius:var(--r-full);display:grid;
-  place-items:center;font:600 11.5px var(--sans);background:var(--brand-wash-2);color:var(--brand-ink-2);
-  margin-top:-1px}
 
 /* badges: a glyph and a word on every severity */
 .badge{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex:0 0 auto;
@@ -383,7 +439,7 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .sevbar .s-low{background:var(--fill-low);color:var(--on-low)}
 
 /* ATT&CK: where in an intrusion the evidence sits */
-.tactics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:0 0 14px;padding:0;
+.tactics{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin:0 0 14px;padding:0;
   list-style:none}
 .tactics li{position:relative;padding:10px 12px;border-radius:var(--r-sm);background:var(--ground);
   border:1px solid var(--line);min-width:0}
@@ -392,6 +448,8 @@ h2{font-size:14.5px;font-weight:600;letter-spacing:-.01em;margin:0}
 .tactics li.on .t-name{color:var(--brand-ink-2)}
 .tactics .t-n{display:block;margin-top:4px;font-size:11.5px;color:var(--ink-3)}
 .tactics li.on .t-n{color:var(--ink-2)}
+.tactics li.na{background:transparent;border-style:dashed}
+.tactics li.na .t-name,.tactics li.na .t-n{color:var(--ink-3)}
 
 /* tables */
 .table-wrap{min-width:0}
@@ -432,7 +490,7 @@ footer b{color:var(--ink-2);font-weight:600}
 @media (max-width:900px){
   .hero{grid-template-columns:minmax(0,1fr)}
   .hero-side{padding:16px 0 0;border-left:0;border-top:1px solid var(--line)}
-  .tactics{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .tactics{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 @media (max-width:760px){
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -442,6 +500,8 @@ footer b{color:var(--ink-2);font-weight:600}
 }
 @media (max-width:560px){
   .wrap{padding:16px 12px 40px}
+  .pair{grid-template-columns:minmax(0,1fr);gap:4px}
+  .pair .arrow{transform:rotate(90deg);justify-self:start}
   .kpi .val{font-size:26px}
   .hero{padding:18px 18px 16px 20px;gap:14px}
   .ring{width:112px;height:112px;flex-basis:112px}
@@ -501,8 +561,14 @@ footer b{color:var(--ink-2);font-weight:600}
   .kv>div{grid-template-columns:88px minmax(0,1fr);gap:8px;padding:5px 0;font-size:11.5px}
   .kv dt{font-size:11px}
   .steps{gap:5px}
-  .steps li{grid-template-columns:20px minmax(0,1fr);gap:8px;font-size:11.5px;line-height:1.45}
-  .steps li::before{width:20px;height:20px;font-size:10.5px}
+  .steps label{grid-template-columns:20px minmax(0,1fr);gap:8px;font-size:11.5px;line-height:1.45}
+  .steps .n{width:20px;height:20px;font-size:10.5px}
+  .calc{display:none}
+  a[target="_blank"]::after{content:none}
+  .urlcard,.looks li,.techs li{break-inside:avoid}
+  .urlcard,.looks li{padding:8px 10px}
+  .u-facts{margin-top:6px}
+  .techs li{padding:7px 9px}
   .secnav{display:none}
   .top{gap:7px}
   .top li>div>b{font-size:12px}
@@ -523,7 +589,7 @@ footer b{color:var(--ink-2);font-weight:600}
   .notes li,.shown{font-size:10.5px}
   .sevbar{margin-bottom:10px}
   .sevbar span{height:26px}
-  .tactics{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:10px}
+  .tactics{grid-template-columns:repeat(7,minmax(0,1fr));margin-bottom:10px}
   .tactics li{padding:7px 9px}
   .badge{padding:2px 8px 2px 7px;font-size:10px}
   .chip{font-size:10.5px;padding:1px 7px;margin-bottom:3px}
@@ -565,8 +631,10 @@ def _icon(name: str) -> str:
 
 
 def _link(url: str, text: str, cls: str = "") -> str:
+    """A link to VirusTotal or MITRE: the only links the report has."""
     klass = ' class="%s"' % cls if cls else ""
-    return '<a%s href="%s" target="_blank" rel="noopener noreferrer">%s</a>' % (klass, escape(url), escape(text))
+    return ('<a%s href="%s" target="_blank" rel="noopener noreferrer" aria-label="%s (opens in a new tab)">%s</a>'
+            % (klass, escape(url), escape(text), escape(text)))
 
 
 def _badge(text: str, level: str) -> str:
@@ -796,8 +864,41 @@ def _mono_host(value: str) -> str:
     return '<span class="mono ioc">%s</span>' % escape(defang_host(value)) if value else ""
 
 
-def _why(text: str | None) -> str:
-    return '<span class="sub">%s</span>' % escape(text) if text else '<span class="muted">-</span>'
+def _why(family: str) -> str:
+    if family not in WHY_IT_MATTERS:
+        return '<span class="muted">-</span>'
+    return '<span class="sub">%s</span><div class="check"><b>Check:</b> %s</div>' % (
+        escape(WHY_IT_MATTERS[family]), escape(WHAT_TO_CHECK[family]))
+
+
+def _score_breakdown(a: Analysis) -> str:
+    """Every signal with the points it added: high and medium count in full,
+    low ones once per kind and at most LOW_CAP between them (Analysis.score)."""
+    rows, seen, counted = [], set(), 0
+    for s in sorted_signals(a):
+        level = s.severity if s.severity in POINTS else "low"
+        note = ""
+        if s.severity != "low":
+            points = s.weight
+        else:
+            kind = signal_kind(s.label)
+            if kind in seen:
+                points, note = 0, "same kind as a low signal above"
+            elif counted >= LOW_CAP:
+                points, note = 0, "cap of %d low points reached" % LOW_CAP
+                seen.add(kind)
+            else:
+                points, counted = 1, counted + 1
+                seen.add(kind)
+        rows.append(("", [escape(s.label), _badge(s.severity, level),
+                          "%d%s" % (points, '<div class="sub">%s</div>' % note if note else "")]))
+    table = _table(["Finding", "Severity", "Points"], [66, 14, 20], rows)
+    return ('<details class="calc"><summary>How this score was calculated</summary>%s<p class="summary">Total: '
+            '<b>%d points</b>. A high-severity signal adds %d points and a medium one %d; low signals add 1 per '
+            'kind, at most %d between them. %d points make a message suspicious and %d likely phishing, with the '
+            'rules below.</p><p class="summary"><b>Verdict:</b> %s</p></details>'
+            % (table, a.score, POINTS["high"], POINTS["medium"], LOW_CAP, THRESHOLDS[0][0], THRESHOLDS[1][0],
+               verdict_reason(a)))
 
 
 def _top_findings(a: Analysis, anchor: str) -> str:
@@ -869,7 +970,8 @@ def _authentication(a: Analysis, anchor: str) -> str:
 
 def _actions(a: Analysis, anchor: str) -> str:
     summary = " ".join(escape(s) for s in summary_sentences(a))
-    steps = "".join("<li><span>%s</span></li>" % escape(x) for x in recommendations(a))
+    steps = "".join('<li><label><input type="checkbox"><span class="n" aria-hidden="true"></span>'
+                    '<span class="t">%s</span></label></li>' % escape(x) for x in recommendations(a))
     return _panel("Recommended actions", '<p class="summary">%s</p><ol class="steps">%s</ol>' % (summary, steps),
                   anchor="%s-actions" % anchor)
 
@@ -882,16 +984,7 @@ def _reputation(a: Analysis) -> str:
         escape(status["reputation"].capitalize()), escape(status["reputation_detail"]), escape(note))
     rows = []
     for domain, info in a.domain_intel.items():
-        if info.get("status") == "ok":
-            age = info["age_days"]
-            tone = "red" if age < 30 else ("amber" if age < 90 else "green")
-            detail = "registered %s (%s) &middot; %s" % (
-                escape(info["registered"]), _tone_text("%d days old" % age, tone),
-                escape(info.get("registrar") or "registrar unknown"))
-        else:
-            detail = _tone_text(LOOKUP_WORDS.get(info.get("status", ""), "Error: %s" % info.get("status")), "dim")
-        rows.append(("", ['<span class="mono ioc">%s</span>' % escape(defang_host(domain)), "RDAP domain age",
-                          detail]))
+        rows.append(("", [_mono_host(domain), "RDAP domain age", _domain_age(info)]))
     ip = a.ip_intel
     if ip:
         if ip.get("status") == "ok":
@@ -938,14 +1031,22 @@ def _severity_bar(a: Analysis) -> str:
 
 
 def _tactic_strip(rows: list[dict]) -> str:
+    """Every Enterprise tactic: observed, not observed, or outside what a
+    message can show (not assessed), so a blank never has two meanings."""
     per = {t: 0 for t in TACTIC_ORDER}
     for r in rows:
         tactic = technique_tactic(r["id"])
         if tactic in per:
             per[tactic] += 1
-    return '<ol class="tactics" aria-label="ATT&amp;CK tactics">%s</ol>' % "".join(
-        '<li class="%s"><span class="t-name">%s</span><span class="t-n">%s</span></li>'
-        % ("on" if n else "", escape(t), _count(n, "technique") if n else "not observed") for t, n in per.items())
+    items = []
+    for t in ENTERPRISE_TACTICS:
+        if t not in per:
+            cls, text = "na", "not assessed"
+        else:
+            cls, text = ("on", _count(per[t], "technique")) if per[t] else ("", "not observed")
+        items.append('<li class="%s"><span class="t-name">%s</span><span class="t-n">%s</span></li>'
+                     % (cls, escape(t), text))
+    return '<ol class="tactics" aria-label="ATT&amp;CK tactics">%s</ol>' % "".join(items)
 
 
 def _file_rows(a: Analysis, f: FileIoc, depth: int) -> list[tuple[str, list[str]]]:
@@ -972,7 +1073,16 @@ def _defanged_iocs(a: Analysis) -> list[tuple[str, str]]:
     return [(ioc["type"], defang_ioc(ioc["type"], ioc["value"])) for ioc in a.iocs()]
 
 
-def _url_cell(ioc) -> str:
+def _domain_age(info: dict) -> str:
+    if info.get("status") != "ok":
+        return _tone_text(LOOKUP_WORDS.get(info.get("status", ""), "Error: %s" % info.get("status")), "dim")
+    age = info["age_days"]
+    tone = "red" if age < 30 else ("amber" if age < 90 else "green")
+    return "registered %s (%s) &middot; %s" % (escape(info["registered"]), _tone_text("%d days old" % age, tone),
+                                              escape(info.get("registrar") or "registrar unknown"))
+
+
+def _url_card(a: Analysis, index: int, ioc) -> str:
     shown = [t for t in ioc.anchor_texts if t.strip() and t.strip() != ioc.url]
     text = ""
     if shown:
@@ -980,7 +1090,36 @@ def _url_cell(ioc) -> str:
         if len(label) > 90:
             label = label[:90] + "..."
         text = '<div class="shown">Link text: <q>%s</q></div>' % escape(label)
-    return '<span class="mono ioc">%s</span>%s%s' % (escape(ioc.defanged), text, _notes(ioc.notes))
+    scan_text, scan_tone = urlscan_text(ioc.urlscan)
+    facts = [("Found in", escape(", ".join(ioc.sources)) or "-"), ("Domain", _mono_host(ioc.domain) or "-"),
+             ("VirusTotal", _vt_cell(ioc.vt)),
+             ("urlscan.io", _tone_text(scan_text, scan_tone) or '<span class="t-info">Not checked</span>')]
+    if ioc.domain in a.domain_intel:
+        facts.append(("Domain age", _domain_age(a.domain_intel[ioc.domain])))
+    if ioc.redirect_to:
+        facts.append(("Redirects to", '<span class="mono ioc">%s</span>' % escape(defang_url(ioc.redirect_to))))
+    if ioc.wrapped_by:
+        facts.append(("Wrapped by", '<span class="mono ioc">%s</span>' % escape(defang_host(ioc.wrapped_by))))
+    status = '<span class="tag hot">Flagged</span>' if ioc.flagged else '<span class="tag">Not flagged</span>'
+    return ('<li class="urlcard%s"><div class="u-head"><span class="idx">%d</span><span class="mono ioc sel">%s'
+            '</span>%s</div>%s<dl class="u-facts">%s</dl>%s</li>'
+            % (" flagged" if ioc.flagged else "", index, escape(ioc.defanged), status, text,
+               "".join("<div><dt>%s</dt><dd>%s</dd></div>" % f for f in facts), _notes(ioc.notes)))
+
+
+def _compare(observed: str, target: str) -> tuple[str, str]:
+    """Both domains defanged, with the characters that differ marked when the
+    two are the same length (a swapped letter); other lookalikes are shown
+    as they are, since there is no one character to point at."""
+    same = len(observed) == len(target)
+
+    def show(text: str, other: str) -> str:
+        out = []
+        for i, ch in enumerate(text):
+            piece = "[.]" if ch == "." else escape(ch)
+            out.append("<mark>%s</mark>" % piece if same and ch != other[i] else piece)
+        return "".join(out)
+    return show(observed, target), show(target, observed)
 
 
 def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) -> list[str]:
@@ -990,40 +1129,31 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
         for s in sorted_signals(a):
             techs = "".join(_link("https://attack.mitre.org/techniques/%s/" % t.replace(".", "/"), t, "chip")
                             for t in s.techniques)
-            why = WHY_IT_MATTERS.get(s.family)
             rows.append(("", [_badge(s.severity, s.severity if s.severity in POINTS else "low"), escape(s.label),
-                              _why(why),
-                              techs or '<span class="muted">-</span>']))
-        table = _table(["Severity", "Finding", "Why it matters", "ATT&CK"], [12, 42, 28, 18], rows)
-        out.append(_panel("Findings", _severity_bar(a) + table, len(a.signals),
+                              _why(s.family), techs or '<span class="muted">-</span>']))
+        table = _table(["Severity", "Finding", "Why it matters", "ATT&CK"], [12, 38, 32, 18], rows)
+        out.append(_panel("Findings", _severity_bar(a) + _score_breakdown(a) + table, len(a.signals),
                           note="risk score %d = %s" % (a.score, " + ".join(
                               "%d %s" % (p, s) for s, p in score_parts(a).items() if p)) if a.score else "",
                           anchor="%s-findings" % anchor))
 
     if a.lookalikes:
-        rows = [("flagged", ['<span class="mono ioc t-high">%s</span>' % escape(defang_host(h.domain)),
-                             '<span class="tag">%s</span>' % escape(h.method),
-                             '<span class="mono ioc">%s</span>%s' % (
-                                 escape(defang_host(h.target)),
-                                 ' <span class="tag own">YOUR DOMAIN</span>' if h.target in a.protected_domains
-                                 else ""),
-                             escape(h.where)])
-                for h in a.lookalikes]
-        out.append(_panel("Lookalike domains", _table(["Domain", "Technique", "Imitates", "Seen as"],
-                                                      [34, 16, 34, 16], rows), len(a.lookalikes)))
+        cards = []
+        for h in a.lookalikes:
+            observed, imitates = _compare(h.domain, h.target)
+            own = ' <span class="tag own">YOUR DOMAIN</span>' if h.target in a.protected_domains else ""
+            cards.append('<li><div class="pair"><div><span class="label">Observed</span><span class="mono ioc '
+                          't-high">%s</span></div><span class="arrow" aria-hidden="true">&#8594;</span><div>'
+                          '<span class="label">Imitates</span><span class="mono ioc">%s</span>%s</div></div>'
+                          '<div class="sub">%s lookalike, seen as %s.</div></li>'
+                          % (observed, imitates, own, escape(h.method.capitalize()), escape(h.where)))
+        out.append(_panel("Lookalike domains", '<ul class="looks">%s</ul>' % "".join(cards), len(a.lookalikes),
+                          note="a lookalike is a reason to look closer, not proof the domain is malicious"))
 
     if a.urls:
-        rows = []
-        for i, ioc in enumerate(a.urls, 1):
-            scan_text, scan_tone = urlscan_text(ioc.urlscan)
-            rows.append(("flagged" if ioc.flagged else "",
-                         ['<span class="idx">%d</span>' % i, _url_cell(ioc),
-                          '<span class="sub">%s</span>' % escape(", ".join(ioc.sources)),
-                          _vt_cell(ioc.vt),
-                          _tone_text(scan_text, scan_tone) or '<span class="t-info">Not checked</span>']))
+        url_cards = "".join(_url_card(a, i, ioc) for i, ioc in enumerate(a.urls, 1))
         flagged = sum(1 for u in a.urls if u.flagged)
-        out.append(_panel("URLs", _table(["#", "URL (defanged)", "Seen in", "VirusTotal", "urlscan.io"],
-                                         [6, 46, 18, 15, 15], rows), len(a.urls), note="%d flagged" % flagged,
+        out.append(_panel("URLs", '<ol class="urls">%s</ol>' % url_cards, len(a.urls), note="%d flagged" % flagged,
                           anchor="%s-urls" % anchor))
 
     if files:
@@ -1094,14 +1224,17 @@ def _evidence(a: Analysis, files: list[FileIoc], anchor: str, generated: str) ->
     if techniques:
         order = {t: i for i, t in enumerate(TACTIC_ORDER)}
         techniques = sorted(techniques, key=lambda r: (order.get(technique_tactic(r["id"]), 99), r["id"]))
-        cells = [("", ['<span class="sub">%s</span>' % escape(technique_tactic(r["id"])),
-                       _link(r["url"], r["id"], "chip"), escape(r["name"]),
-                       '<span class="sub">%s</span>' % escape(
-                           "; ".join(r["evidence"][:3]) + (" ..." if len(r["evidence"]) > 3 else ""))])
-                 for r in techniques]
-        out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(techniques) + _table(
-            ["Tactic", "Technique", "Name", "Evidence"], [16, 13, 26, 45], cells), len(techniques),
-            anchor="%s-attack" % anchor))
+        groups: dict[str, list[dict]] = {}
+        for r in techniques:
+            groups.setdefault(technique_tactic(r["id"]) or "Other", []).append(r)
+        body = "".join('<div class="tgroup"><h3>%s</h3><ul class="techs">%s</ul></div>' % (escape(tactic), "".join(
+            '<li>%s<div><b>%s</b><span class="sub">%s</span></div></li>'
+            % (_link(r["url"], r["id"], "chip"), escape(r["name"]), escape(
+                "From: " + "; ".join(r["evidence"][:3]) + (" and %d more" % (len(r["evidence"]) - 3)
+                                                           if len(r["evidence"]) > 3 else "")))
+            for r in rows)) for tactic, rows in groups.items())
+        out.append(_panel("MITRE ATT&amp;CK", _tactic_strip(techniques) + body, len(techniques),
+                          anchor="%s-attack" % anchor))
     out.append(_reputation(a))
 
     iocs = _defanged_iocs(a)

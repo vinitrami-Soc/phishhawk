@@ -21,6 +21,19 @@ the JSON and STIX output are the public interface.
   the custody record, and that this report does not verify the chain); and
   Limitations. The footer says the report is an investigation aid that may
   hold sensitive content. Still no script and no network access.
+- **HTML report: the analyst's working view.** The recommended actions are a
+  checklist the analyst can tick off (no script; nothing is saved or sent).
+  "How this score was calculated" lists every signal with the points it
+  added, shows which low signals did not count (same kind, or past the cap
+  of 3) and names the verdict rule. Each finding says what to check next.
+  Each URL is a card: where it was found, its domain, VirusTotal and
+  urlscan.io, domain age, redirect and link wrapper. A lookalike is shown
+  beside the domain it imitates, with the changed characters marked when
+  one was swapped, and the reminder that a lookalike is not proof. ATT&CK
+  groups the techniques under their tactic and shows all 14 tactics as
+  observed, not observed or not assessed (what happens after delivery, such
+  as persistence, cannot be seen in a message). Links to VirusTotal and
+  MITRE say that they open in a new tab.
 - **JSON:** `analysis_status` (`complete` or `incomplete` with the reasons;
   reputation `checked`, `partially checked` or `not checked`),
   `limitations[]`, and `auth_header`, `auth_receiver` and `auth_pinned`

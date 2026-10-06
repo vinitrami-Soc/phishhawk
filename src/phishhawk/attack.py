@@ -89,6 +89,15 @@ def technique_url(technique_id: str) -> str:
 TACTIC_ORDER: tuple[str, ...] = (
     "Reconnaissance", "Resource Development", "Initial Access", "Execution", "Defense Evasion", "Impact",
 )
+
+# Every tactic of the Enterprise matrix. The ones outside TACTIC_ORDER happen
+# after delivery (persistence, lateral movement, ...): a message cannot show
+# them, so a report marks them "not assessed" rather than "not observed".
+ENTERPRISE_TACTICS: tuple[str, ...] = (
+    "Reconnaissance", "Resource Development", "Initial Access", "Execution", "Persistence", "Privilege Escalation",
+    "Defense Evasion", "Credential Access", "Discovery", "Lateral Movement", "Collection", "Command and Control",
+    "Exfiltration", "Impact",
+)
 TACTICS: dict[str, str] = {
     "T1598": "Reconnaissance",
     "T1583": "Resource Development",
