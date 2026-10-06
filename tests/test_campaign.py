@@ -8,6 +8,7 @@ import json
 from phishhawk.campaign import correlate, normalise_subject
 from phishhawk.cli import main
 from phishhawk.pipeline import triage_bytes
+from phishhawk.report import campaignout
 from phishhawk.report.console import Palette
 
 from conftest import build_eml
@@ -324,3 +325,15 @@ def test_salesforce_sites_are_platforms():
     from phishhawk.campaign import KNOWN_PLATFORMS
 
     assert {"force.com", "site.com"} <= KNOWN_PLATFORMS and "my.salesforce.com" not in KNOWN_PLATFORMS
+
+
+def test_campaign_csv_cells_cannot_start_a_formula():
+    # Path, sender and subject come from attacker mail; a cell opening with
+    # = + - or @ runs as a formula when an analyst opens the CSV in Excel.
+    for prefix in ("=", "+", "-", "@"):
+        attack = prefix + 'HYPERLINK("http://evil.example","x")'
+        message = {"path": attack, "date": attack, "from": attack, "subject": attack,
+                   "verdict": "SUSPICIOUS", "score": 5, "sha256": "a" * 64}
+        rows = list(csv.DictReader(io.StringIO(campaignout.render_csv(
+            {"messages": 1, "clusters": [], "unclustered": [message], "platforms": []}))))
+        assert [rows[0][key] for key in ("path", "date", "from", "subject")] == ["'" + attack] * 4
