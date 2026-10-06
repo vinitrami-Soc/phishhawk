@@ -43,6 +43,18 @@ the JSON and STIX output are the public interface.
   the page number, and cards, findings and list items no longer split
   across a page break. Checked at 320, 375, 768, 1024 and 1440 px: no
   sideways scrolling.
+- **HTML report: accessibility.** A skip link leads to the verdict. The page
+  has one `h1` (a batch gets its own, and each message's headings move down
+  a level), headings never skip a level, every section is a named region,
+  every table has a caption, and lists styled without bullets keep their
+  list semantics. Focus is always visible and is kept clear of the sticky
+  bar. A lookalike's changed characters are also said in words for screen
+  readers. Text dimmed with opacity is gone. A test checks every text
+  colour against its background in both themes for WCAG AA (4.5:1), and
+  that no id repeats. Checked in Chromium: 40 presses of Tab, each with a
+  visible focus ring; the accessibility tree has one level-1 heading, a
+  banner, main, navigation and contentinfo, and 14 named regions; forced
+  colours and greyscale keep every meaning.
 - **JSON:** `analysis_status` (`complete` or `incomplete` with the reasons;
   reputation `checked`, `partially checked` or `not checked`),
   `limitations[]`, and `auth_header`, `auth_receiver` and `auth_pinned`
