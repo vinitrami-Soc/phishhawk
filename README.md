@@ -748,7 +748,7 @@ phishhawk/
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV; campaign and sweep output
 │   └── pipeline.py     parse → detect → enrich
-├── tests/              641 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
+├── tests/              643 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
 │                       and the evaluation gate
 ├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetchers, results.json
@@ -766,7 +766,7 @@ git clone https://github.com/vinitrami-Soc/phishhawk.git && cd phishhawk
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                                       # 641 tests, offline, under a minute
+pytest                                       # 643 tests, offline, under a minute
 ruff check src tests samples eval tools phishhawk
 mypy                                         # the package is fully typed
 coverage run -m pytest && coverage report    # CI requires 85%

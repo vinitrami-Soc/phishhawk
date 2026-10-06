@@ -4,6 +4,8 @@ The HTTP layer is faked (see test_mailapi); the contract that matters: only
 GET requests, the token only in the Authorization header and only to the
 API's own host, and every value an attacker wrote is treated as data."""
 
+import csv
+import io
 import json
 
 import pytest
@@ -12,6 +14,7 @@ import requests
 from phishhawk import sweep
 from phishhawk.cli import main
 from phishhawk.pipeline import triage_bytes
+from phishhawk.report import sweepout
 from test_mailapi import GMAIL, GRAPH, Api, Response
 
 from conftest import build_eml
@@ -421,3 +424,15 @@ def test_too_many_mailboxes_are_refused_not_cut_silently(monkeypatch, tmp_path, 
     with pytest.raises(SystemExit):
         main(["sweep", "graph", "--from", "x@evil.example", "--mailboxes", str(boxes)])
     assert "at most 2 mailboxes" in capsys.readouterr().err
+
+
+def test_sweep_csv_cells_cannot_start_a_formula():
+    # Sender, subject and Message-ID of each copy come from attacker mail.
+    for prefix in ("=", "+", "-", "@"):
+        attack = prefix + 'HYPERLINK("http://evil.example","x")'
+        match = {"received": "2026-10-06T09:00:00Z", "folder": attack, "read": False, "replied": False,
+                 "from": attack, "subject": attack, "matched": [attack], "message_id": attack, "id": attack}
+        rows = list(csv.DictReader(io.StringIO(sweepout.render_csv(
+            {"mailboxes": [{"mailbox": "alice@corp.example", "error": "", "matches": [match]}]}))))
+        assert [rows[0][key] for key in ("folder", "from", "subject", "matched", "message_id", "id")] == \
+            ["'" + attack] * 6

@@ -138,7 +138,7 @@ checked by pip-audit and gitleaks, which now run in CI.
 | Script injection in the HTML report (`<script>`, `onerror`) | Escaped; the report's Content-Security-Policy also blocks scripts and remote requests |
 | Spreadsheet formula injection in the CSV (`=HYPERLINK(...)`) | Every cell starting with `= + - @` or a control character is neutralised, in the indicator CSV and in the campaign and sweep CSVs |
 | Tampering with the custody log | A record edited, removed or reordered, and a kept message changed or deleted, are each reported by `evidence verify`. A planted file or a symlink under a message's name is refused; the log and every kept message are opened without following symlinks and must be regular files |
-| The sandbox pack | Every member encrypted; the names inside are fixed (`message.eml`, `files/<sha256>-<safe name>`, `urls.txt`, `manifest.json`) and can hold no path; written 0600 without following a symlink or blocking on a FIFO; at most 50 MB of files. Opened by Python's `zipfile` and Info-ZIP `unzip` |
+| The sandbox pack | Every member encrypted; the names inside are fixed (`message.eml`, or `message.msg` for an Outlook message; `files/<first 16 hex digits of the SHA-256>-<safe name>`; `urls.txt`; `manifest.json`) and can hold no path; written 0600 without following a symlink or blocking on a FIFO; at most 50 MB of files. Opened by Python's `zipfile` and Info-ZIP `unzip` |
 | Search injection in `sweep` | A Graph `$search` value cannot leave its quotes, and Graph's hits are checked against what was asked before they count; OData filter values double their quotes; Gmail phrases are quoted. Only GET requests, the token only to the API's host |
 | Hostile corpora for `campaign` | Weak traits shared by more than 200 messages are ignored, so pairing cannot grow without bound; 5,125 real messages correlate in 45 s, triage included |
 | Dependencies | pip-audit finds no known vulnerability in anything PhishHawk installs (requests, urllib3, idna, certifi, charset-normalizer, pillow, zxing-cpp); checked in CI on every change |
@@ -169,8 +169,10 @@ checked by pip-audit and gitleaks, which now run in CI.
 - **Images on remote servers are never fetched**, so a QR code hosted on a web
   server is not decoded. Fetching attacker content from an analyst's machine
   would be worse.
-- **GitHub Actions are pinned to version tags**, not commit hashes; Dependabot
-  keeps them current.
+- **A GitHub Action's own code is trusted** at the commit it is pinned to.
+  Every action is pinned to a full commit SHA (its version in a comment), so
+  a moved tag or branch cannot change what CI runs; Dependabot proposes each
+  update as a reviewable change.
 - **An IMAP server is trusted** to send what it says it sends: `imaplib` reads
   a whole message literal into memory whatever its declared size. Point
   `phishhawk imap` only at your own mail server.

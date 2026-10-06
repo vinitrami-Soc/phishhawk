@@ -267,12 +267,18 @@ more:
 | Option | What it writes |
 |---|---|
 | `--evidence DIR` | Each message, exactly as read, as `DIR/<sha256>.eml` (or `.msg`), read-only; and one record per analysis appended to `DIR/custody.jsonl`: SHA-256, size, source (file, `mbox#n`, `imap://`, `graph://`, `gmail://`), time, analyst (`$PHISHHAWK_ANALYST`, else the login name), tool version, verdict and score. Each record includes the hash of the one before it; the record's own hash (`custody` in the report's `evidence` block) is shown in every report. A message seen again is kept once and recorded again. |
-| `--sandbox DIR` | `DIR/<message sha256>.zip`, encrypted with the password `infected`: `message.eml`, every file pulled out of it under `files/` (archive members too, so a payload behind a password PhishHawk guessed arrives unpacked), `urls.txt` (the links worth detonating: not defanged, not trusted brands) and `manifest.json` (each file's name, hashes, type, parent and notes; the message's SHA-256 and verdict). Up to 50 MB of files per pack; the rest is listed in the manifest. Nothing is sent anywhere: upload the pack to your sandbox. |
+| `--sandbox DIR` | `DIR/<message sha256>.zip`, encrypted with the password `infected`: `message.eml` (`message.msg` for an Outlook message), every file pulled out of it as `files/<first 16 hex digits of its SHA-256>-<name>` (archive members too, so a payload behind a password PhishHawk guessed arrives unpacked), `urls.txt` (the links worth detonating: not defanged, not trusted brands) and `manifest.json` (each file's name, hashes, type, parent and notes; the message's SHA-256 and verdict). Up to 50 MB of files per pack; the rest is listed in the manifest. Nothing is sent anywhere: upload the pack to your sandbox. |
 
 ```bash
 phishhawk scan reported/ --quiet --evidence /cases/4711 --sandbox /cases/4711/sandbox
 phishhawk evidence verify /cases/4711
 ```
+
+The sandbox pack is encrypted with ZipCrypto and the password `infected`,
+the convention sandboxes and analysts expect. That keeps it from being opened
+by accident or quarantined in transit; it is not confidentiality against a
+determined reader. A pack is not a secure evidence vault: it holds the
+message, so store it like evidence, and keep evidence with `--evidence`.
 
 `phishhawk evidence verify DIR` recomputes the chain and every kept message's
 hash, reports any record changed, removed or reordered and any message changed
@@ -366,6 +372,21 @@ was found, `1` when copies were, `3` when a mailbox could not be searched, or
 only partly. Whether
 anyone clicked a link or opened an attachment is not in the mailbox: search
 your proxy and EDR logs for the domains and hashes in the scan report.
+
+**What `sweep` sends, and to whom.** `sweep` is online by design, and it talks
+only to the provider that already holds the mail, Microsoft Graph or the Gmail
+API. It sends as search terms the reported message's sender and reply-to
+addresses, its subject, its Message-ID and the phishing domains it links to
+(or the values given with `--from`, `--subject`, `--domain` and
+`--message-id`), for Gmail the `--since` date, and the mailbox names in the
+request paths. To tell whether someone replied, it also lists each copy's own
+thread, by the provider's conversation or thread id. Recipients' addresses are
+never search terms. PhishHawk sends only GET requests, with the
+token in the Authorization header and only to the API's host, but what a token
+can do is set by its scope: give it a read-only one (`Mail.Read`,
+`gmail.readonly`), and to sweep many Microsoft 365 mailboxes, limit an
+application token to them with an application access policy (see
+[INTEGRATIONS.md](INTEGRATIONS.md)).
 
 ## The config file
 
