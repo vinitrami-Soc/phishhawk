@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ a.report_id }} · PhishHawk{% endblock %}
+{% block main %}
+<section class="card bar" aria-label="Summary">
+  <h1>{% with verdict=a.verdict %}{% include "_verdict.html" %}{% endwith %} <span class="score">score {{ a.score }}</span></h1>
+  <dl>
+    <dt>Report ID</dt><dd class="mono">{{ a.report_id }}</dd>
+    <dt>SHA-256</dt><dd class="mono">{{ a.sha256 }}</dd>
+    <dt>Submitted</dt><dd>{{ a.created_at[:16]|replace('T', ' ') }} UTC by {{ submitter or 'system' }} ({{ a.source }})</dd>
+    <dt>Lookups</dt><dd>{% if a.offline %}none: submitted offline{% elif a.providers %}{{ a.providers|join(', ') }}{% else %}none: no provider is enabled{% endif %}</dd>
+    {% if a.hold %}<dt>Hold</dt><dd>on hold: kept past the retention period</dd>{% endif %}
+  </dl>
+  {% if a.tier1_deleted_at %}
+  <p>The message and its reports were deleted on {{ a.tier1_deleted_at[:10] }}. The verdict, indicators and audit trail remain.</p>
+  {% else %}
+  <ul class="downloads" aria-label="Downloads">
+    {% for f in a.files %}<li><a href="/analyses/{{ a.id }}/files/{{ f.name }}?download=1">{{ f.type }}</a> <span class="mono hash">{{ f.sha256[:16] }}…</span></li>{% endfor %}
+    {% if can_delete %}<li><a href="/api/v1/messages/{{ a.message_id }}/raw">Raw message</a></li>{% endif %}
+  </ul>
+  {% endif %}
+  {% if a.lookups %}
+  <details><summary>Outbound lookups ({{ a.lookups|length }})</summary>
+    <ul>{% for l in a.lookups %}<li><span class="mono">{{ l.provider }} {{ l.method }} {{ l.url|printable }}</span></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+  <div class="actions">
+    {% if not a.tier1_deleted_at %}
+    <form method="post" action="/analyses/{{ a.id }}/reanalyze"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><button type="submit">Re-analyze</button></form>
+    {% endif %}
+    {% if can_delete and not a.tier1_deleted_at and not a.hold %}
+    <form method="post" action="/messages/{{ a.message_id }}/delete"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><input type="hidden" name="scope" value="tier1"><button type="submit" class="danger">Delete now</button></form>
+    {% endif %}
+    {% if actor.is_admin %}
+    <form method="post" action="/messages/{{ a.message_id }}/hold"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><input type="hidden" name="hold" value="{{ 'false' if a.hold else 'true' }}"><button type="submit">{{ 'Release hold' if a.hold else 'Hold' }}</button></form>
+    {% if not a.hold %}<form method="post" action="/messages/{{ a.message_id }}/delete"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><input type="hidden" name="scope" value="all"><button type="submit" class="danger">Delete completely</button></form>{% endif %}
+    {% endif %}
+  </div>
+</section>
+{% if report and report.available %}
+<p><a href="/analyses/{{ a.id }}/files/{{ report.name }}" target="_blank" rel="noopener">Open full report</a> (for printing)</p>
+<iframe class="report" title="HTML report" src="/analyses/{{ a.id }}/files/{{ report.name }}" sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"></iframe>
+{% endif %}
+{% endblock %}

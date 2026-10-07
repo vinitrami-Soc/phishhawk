@@ -24,6 +24,9 @@ MATRIX = [
     ("POST", "/api/v1/users", (401, 403, 201, 403, 403)),
     ("GET", "/api/v1/tokens", (401, 403, 200, 403, 403)),
     ("GET", "/api/v1/audit", (401, 200, 200, 200, 200)),
+    ("GET", "/settings", (303, 403, 200, 403, 403)),
+    ("GET", "/users", (303, 403, 200, 403, 403)),
+    ("GET", "/queue", (303, 200, 200, 200, 200)),
 ]
 BODIES = {("PATCH", "/api/v1/settings"): {"retention_days": 20},
           ("POST", "/api/v1/users"): {"username": "carol", "password": "another long password", "role": "analyst"}}

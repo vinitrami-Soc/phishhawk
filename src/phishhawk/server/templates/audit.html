@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Audit · PhishHawk{% endblock %}
+{% block main %}
+<h1>Audit log{% if not actor.is_admin %}: your actions{% endif %}</h1>
+<table class="list">
+  <caption class="sr-only">Audit records, newest first</caption>
+  <thead><tr><th scope="col">Time (UTC)</th><th scope="col">Who</th><th scope="col">Action</th><th scope="col">Object</th><th scope="col">Details</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr><td data-label="Time">{{ r.at.isoformat()[:19]|replace('T', ' ') }}</td><td data-label="Who">{{ r.actor|printable }}</td><td data-label="Action">{{ r.action }}</td>
+    <td data-label="Object">{{ r.object_type }} {{ r.object_id }}</td><td data-label="Details" class="mono">{{ r.details|tojson|printable }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<nav class="pager" aria-label="Pages">{% if rows|length == 100 %}<a href="/audit?offset={{ offset + 100 }}">Older</a>{% endif %}</nav>
+{% endblock %}
