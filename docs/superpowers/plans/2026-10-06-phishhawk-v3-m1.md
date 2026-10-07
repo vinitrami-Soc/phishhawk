@@ -4,7 +4,7 @@
 
 **Goal:** An analyst logs in to a self-hosted PhishHawk web app, submits one reported message, sees the verdict and the full report, and downloads all six formats, with encrypted storage, retention, hold and deletion, a verifiable audit log and a Docker Compose deployment (milestone M1 of the v3 design).
 
-**Architecture:** A new `phishhawk.server` package behind a `server` extra, in the same repository (design approach A). It reaches the engine only through `phishhawk.analysis.analyze()`. FastAPI serves a JSON API under `/api/v1` and server-rendered pages; a worker process claims jobs from a database table and analyses each message in a child process with memory and CPU limits. Tier 1 (raw message, full report, exports) is sealed with AES-256-GCM on disk; tier 2 (verdict, indicators, hashes, campaign traits) lives in SQLite.
+**Architecture:** A new `phishhawk.server` package behind a `server` extra, in the same repository (design approach A). It reaches the engine only through `phishhawk.analysis.analyze()`. FastAPI serves a JSON API under `/api/v1`, server-rendered pages (the backup and admin interface) and, at `/app/`, the owner's own frontend built in Google AI Studio; a worker process claims jobs from a database table and analyses each message in a child process with memory and CPU limits. Tier 1 (raw message, full report, exports) is sealed with AES-256-GCM on disk; tier 2 (verdict, indicators, hashes, campaign traits) lives in SQLite.
 
 **Tech Stack:** Python 3.10 to 3.13; FastAPI, uvicorn, Jinja2, SQLAlchemy 2, Alembic, pydantic-settings, argon2-cffi, cryptography (AESGCM), python-multipart; pytest with Starlette's TestClient (httpx2); Playwright with headless Chromium for one browser test; Docker Compose.
 
@@ -29,7 +29,7 @@ Every task's requirements include these. Quotes are from the spec.
 
 ## How this plan was checked
 
-Before writing it, the whole milestone was built and tested as a prototype; every code block below is that code. Then the plan itself was replayed, task by task, on a fresh clone of `main` (7a50cfa). Each task's tests were run before its code and failed on the missing code (each task quotes the first error); with the code they passed, the whole suite stayed green, ruff and mypy stayed clean, every diff applied with `git apply` and every commit left a clean tree. The suite grew from 690 tests to 795 passed, 1 skipped. At the end, with the server extra: 795 passed, 1 skipped, coverage 90%; without it: 693 passed, 1 skipped, coverage 90% (the server's code left out, as in CI's base job). The Docker image and Compose stack were built from the same code and passed the smoke check, the audit log check and a clean stop.
+Before writing it, the whole milestone was built and tested as a prototype; every code block below is that code. Then the plan itself was replayed, task by task, on a fresh clone of `main` (7a50cfa). Each task's tests were run before its code and failed on the missing code (each task quotes the first error); with the code they passed, the whole suite stayed green, ruff and mypy stayed clean, every diff applied with `git apply` and every commit left a clean tree. The suite grew from 690 tests to 800 passed, 1 skipped. At the end, with the server extra: 800 passed, 1 skipped, coverage 90%; without it: 693 passed, 1 skipped, coverage 90% (the server's code left out, as in CI's base job). The Docker image and Compose stack were built from the same code and passed the smoke check, the audit log check and a clean stop, with a frontend build mounted and served at `/app/`.
 
 Along the way the prototype found and fixed: a worker left running after SIGTERM (uvicorn raises the signal again after shutdown), a read-only API token that could download raw messages, SQLAlchemy 2.0 not mapping `list[Any]` columns, white text on the dark-mode button at 2.26:1 contrast, a favicon 404 that showed as a console error, and test literals the secret scan would have failed on. Each has a test. The replay found one more: `tools/make_openapi.py` did not create `docs/api/` on a fresh checkout; it does now.
 
@@ -50,6 +50,7 @@ Along the way the prototype found and fixed: a worker left running after SIGTERM
 4. **SQLite only in M1.** `PHISHHAWK_DATABASE_URL` exists, but Postgres and several workers are built and tested in M2. SQLite's busy timeout (30 s) does the waiting the spec calls "retried with backoff".
 5. **Session IDs are an HMAC under `SECRET_KEY`**, so `SECRET_KEY` "signs sessions" as spec 5.2 says and a new value logs everyone out. CSRF tokens are random per session.
 6. **`POST /submissions` and re-analyze answer with the submission** (the shape of `GET /submissions/{id}`); batch IDs come with M2.
+7. **The owner's own frontend** (decided after the spec): the main UI is built in Google AI Studio and served by this server at `/app/`, on the same origin as the API, so the cookie stays `SameSite=Strict`, no CORS is needed and the app's CSP covers it. `GET /api/v1/session` tells it who is logged in after a reload. The built-in pages stay as the backup and admin interface (task 13; the rules for that frontend are in docs/FRONTEND.md, task 18).
 
 ## Not in M1
 
@@ -74,12 +75,13 @@ Planned for later milestones, not forgotten: batch upload and combined exports, 
 | `src/phishhawk/server/intake.py`, `processing.py`, `retention.py`, `worker.py` | One message from upload to stored analysis; retention; the worker loop and its schedule. |
 | `src/phishhawk/server/rotation.py` | Encryption key rotation. |
 | `src/phishhawk/server/security.py`, `deps.py`, `views.py`, `routes/files.py`, `routes/api.py`, `app.py` | Headers and CSPs, request dependencies (DB, actor, CSRF), shared queries, file serving, the JSON API, the app factory. |
-| `src/phishhawk/server/routes/pages.py`, `templates/`, `static/` | The pages. |
+| `src/phishhawk/server/routes/pages.py`, `templates/`, `static/` | The built-in pages: the backup and admin interface. |
+| `src/phishhawk/server/frontend.py` | Serves the owner's own frontend build at `/app/`. |
 | `src/phishhawk/server/cli.py` | `phishhawk server run / worker / migrate / create-admin / rotate-key / audit verify`. |
 | `tools/make_openapi.py`, `docs/api/openapi.json` | The API description and its generator. |
 | `server.Dockerfile`, `compose.yaml`, `tools/server_smoke.py` | Image, Compose stack, outside-in smoke check. |
 | `.github/workflows/ci.yml` | Base job without the extra; `server` job on 3.10 to 3.13; Compose job; browser test on 3.12. |
-| `docs/SERVER.md` | The admin guide. |
+| `docs/SERVER.md`, `docs/FRONTEND.md` | The admin guide; the rules and API guide for your own frontend, with a starting prompt for Google AI Studio. |
 
 ## Pull requests
 
@@ -92,9 +94,9 @@ The spec asks for small PRs with the CLI working after each one. Group the tasks
 | PR 3 | 5, 6, 7, 8 | Audit log, users and tokens, stored settings, jobs and limits. |
 | PR 4 | 9, 10 | Intake, worker, retention, key rotation. |
 | PR 5 | 11 | The JSON API. |
-| PR 6 | 12 | The pages. |
-| PR 7 | 13, 14 | `phishhawk server`, the OpenAPI document. |
-| PR 8 | 15, 16, 17 | Docker and Compose, the browser test, the documentation. |
+| PR 6 | 12, 13 | The pages; your own frontend at `/app/` and `GET /api/v1/session`. |
+| PR 7 | 14, 15 | `phishhawk server`, the OpenAPI document. |
+| PR 8 | 16, 17, 18 | Docker and Compose, the browser test, the documentation. |
 
 ## Tasks
 
@@ -3398,7 +3400,7 @@ Re-encrypt every stored blob and secret under a new key, then record the rotatio
 
 **Notes:**
 
-- Run with the server stopped: a worker writing new blobs under the old key mid-rotation would leave them behind. The CLI task (13) and docs/SERVER.md say so.
+- Run with the server stopped: a worker writing new blobs under the old key mid-rotation would leave them behind. The CLI task (14) and docs/SERVER.md say so.
 - The trait key is re-encrypted like any secret, but its value stays the same (spec 5.2).
 
 - [ ] **Step 1: Write the failing tests**
@@ -4586,22 +4588,15 @@ The browser side: log in, submit (upload, paste or drag and drop), the queue wit
 - Consumes:
   - `phishhawk.report.common` (main): `printable(text: str) -> str`
   - `phishhawk.server.appsettings` (task 7): `KEYED`; `LIMITS`; `LISTS`; `PROVIDERS_ALL`; `limit(db: Session, settings: ServerSettings, name: str) -> int`; `public_view(db: Session, box: Box, settings: ServerSettings) -> dict[str, Any]`
-  - `phishhawk.server.auth` (task 6): `ROLES`; `TOKEN_SCOPES`; `class LoginThrottle`
-  - `phishhawk.server.config` (task 2): `class ServerSettings(BaseSettings)`; `load_settings() -> ServerSettings`
-  - `phishhawk.server.crypto` (task 2): `class Box`
-  - `phishhawk.server.db` (task 3): `make_engine(url: str) -> Engine`; `make_sessionmaker(engine: Engine) -> sessionmaker[Session]`; `transaction(factory: sessionmaker[Session]) -> Iterator[Session]`
+  - `phishhawk.server.auth` (task 6): `ROLES`; `TOKEN_SCOPES`
   - `phishhawk.server.deps` (task 11): `Admin = Annotated[Actor, Depends(require_admin)]`; `COOKIE`; `CurrentActor = Annotated[Actor, Depends(require_actor)]`; `DB = Annotated[Session, Depends(get_db, scope='function')]`; `optional_actor(request: Request, db: DB) -> Actor | None`; `services(request: Request) -> Services`
   - `phishhawk.server.intake` (task 9): `accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: int | None, actor: str, offline: bool, max_bytes: int) -> Submission`; `class IntakeError(ValueError)`
-  - `phishhawk.server.models` (task 3): `class Analysis(Base)`; `class ApiToken(Base)`; `class AuditRecord(Base)`; `class Job(Base)`; `class Submission(Base)`; `class User(Base)`
-  - `phishhawk.server.processing` (task 9): `class Services`
-  - `phishhawk.server.routes.api` (task 11): `class NewToken(BaseModel)`; `class NewUser(BaseModel)`; `class SettingsPatch(BaseModel)`; `class UserPatch(BaseModel)`; `create_token`; `create_user`; `delete_message`; `delete_session`; `get_file`; `hold`; `login_response(request: Request, db: DB, username: str, password: str) -> tuple[str, str] | JSONResponse`; `patch_settings`; `patch_user`; `reanalyze`; `release`; `revoke_token`; `router`; `set_cookie(request: Request, response: Response, cookie: str) -> None`; `submission_view(db: DB, submission: Submission) -> dict[str, Any]`
-  - `phishhawk.server.security` (task 11): `APP_CSP`; `BASE_HEADERS`; `HSTS`
-  - `phishhawk.server.store` (task 4): `class BlobStore`
+  - `phishhawk.server.models` (task 3): `class Analysis(Base)`; `class ApiToken(Base)`; `class AuditRecord(Base)`; `class Submission(Base)`; `class User(Base)`
+  - `phishhawk.server.routes.api` (task 11): `class NewToken(BaseModel)`; `class NewUser(BaseModel)`; `class SettingsPatch(BaseModel)`; `class UserPatch(BaseModel)`; `create_token`; `create_user`; `delete_message`; `delete_session`; `get_file`; `hold`; `login_response(request: Request, db: DB, username: str, password: str) -> tuple[str, str] | JSONResponse`; `patch_settings`; `patch_user`; `reanalyze`; `release`; `revoke_token`; `set_cookie(request: Request, response: Response, cookie: str) -> None`; `submission_view(db: DB, submission: Submission) -> dict[str, Any]`
   - `phishhawk.server.views` (task 11): `PAGE`; `find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None`; `is_owner(db: Session, message_id: int, user_id: int) -> bool`; `listing(db: Session, store: BlobStore, q: str='', verdict: str='', offset: int=0) -> list[dict[str, Any]]`; `summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission, with_report: bool=False) -> dict[str, Any]`; `usernames(db: Session) -> dict[int, str]`
-  - `phishhawk` (main): `__version__`
 - Produces:
   - `phishhawk.server.routes.pages`: `MB`; `VERDICTS`; `GET /login` → `login_page`; `POST /login` → `login`; `POST /logout` → `logout`; `GET /` → `home`; `POST /` → `submit`; `GET /submissions/{submission_id}` → `submission_page`; `GET /queue` → `queue`; `GET /analyses/{analysis_id}` → `analysis_page`; `GET /analyses/{analysis_id}/files/{name}` → `analysis_file`; `POST /analyses/{analysis_id}/reanalyze` → `reanalyze`; `POST /messages/{message_id}/delete` → `delete`; `POST /messages/{message_id}/hold` → `hold`; `GET /settings` → `settings_page`; `POST /settings` → `save_settings`; `GET /users` → `users_page`; `POST /users` → `add_user`; `POST /users/{user_id}` → `change_user`; `POST /tokens` → `add_token`; `POST /tokens/{token_id}/revoke` → `revoke`; `GET /audit` → `audit_page`
-  - `phishhawk.server.app`: `build_services(settings: ServerSettings) -> Services`; `create_app(settings: ServerSettings | None=None, services: Services | None=None) -> FastAPI`; `ERROR_CODES`; `html_response(request: Request, template: str, context: dict[str, Any], status: int=200) -> HTMLResponse`
+  - `phishhawk.server.app`: `html_response(request: Request, template: str, context: dict[str, Any], status: int=200) -> HTMLResponse`
 
 **Notes:**
 
@@ -5764,7 +5759,234 @@ git add src/phishhawk/server/app.py src/phishhawk/server/routes/pages.py src/phi
 git commit -m "Add the web app's pages, with the hostile-payload and contrast tests"
 ```
 
-### Task 13: The phishhawk server command
+### Task 13: Your own frontend at /app/, and who is logged in
+
+*PR 6.*
+
+The owner builds the main frontend in Google AI Studio and serves it from this server, so it shares the API's origin: no CORS, the session cookie stays `SameSite=Strict`, and the app's CSP covers it. When `PHISHHAWK_FRONTEND_DIR` names a build folder, it is served at `/app/`, with `index.html` for the frontend's own routes. `GET /api/v1/session` tells a frontend after a reload who is logged in, with which role, and the CSRF token it must send. The built-in pages stay as the backup and admin interface.
+
+**Files:**
+
+- Create: `src/phishhawk/server/frontend.py`
+- Modify: `src/phishhawk/server/config.py`
+- Modify: `src/phishhawk/server/routes/api.py`
+- Modify: `src/phishhawk/server/app.py`
+- Test: `tests/server/test_frontend.py` (new)
+- Test: `tests/server/test_rbac.py` (changed)
+
+**Interfaces:**
+
+- Consumes: nothing from earlier tasks.
+- Produces:
+  - `phishhawk.server.frontend`: `class Frontend(StaticFiles)`: `__init__(directory: str) -> None`; `get_response(path: str, scope: Scope) -> Response`
+  - `phishhawk.server.config`: `class ServerSettings(BaseSettings)`: `data_dir: Path`; `database_url: str`; `secret_key: SecretStr`; `encryption_key: SecretStr`; `retention_days: int`; `max_upload_mb: int`; `max_batch_messages: int`; `campaign_window_days: int`; `host: str`; `port: int`; `tls_cert: str`; `tls_key: str`; `session_idle_minutes: int`; `analysis_memory_mb: int`; `analysis_cpu_seconds: int`; `cookie_secure: bool`; `frontend_dir: str`; `property db_url() -> str`
+  - `phishhawk.server.routes.api`: `GET /api/v1/session` → `current_session`
+
+**Notes:**
+
+- The mount exists only when `PHISHHAWK_FRONTEND_DIR` is set; otherwise `/app/` is a 404.
+- A path without a file extension falls back to `index.html`, so `/app/analyses/12` reloads; a missing asset stays a 404. Starlette's `StaticFiles` refuses paths outside the build folder (the test sends `%2e%2e`).
+- The security-headers middleware gives the frontend the same CSP as the pages: scripts, styles, fonts and requests from this origin only. A build that loads anything from a CDN, Google Fonts or Gemini will not run; docs/FRONTEND.md (task 18) says so and gives a starting prompt for AI Studio.
+- Returning the CSRF token from a GET is safe here: the cookie is `SameSite=Strict` and the API sends no CORS headers, so no other site can make the call with the cookie or read the answer.
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/server/test_frontend.py`:
+
+```python
+"""A frontend built elsewhere (the owner builds one in Google AI Studio),
+served from this origin at /app/ under the app's CSP, and the endpoint it
+asks after a reload who is logged in."""
+
+import pytest
+
+PAGE = '<!doctype html><title>PhishHawk</title><div id="root"></div>' \
+       '<script type="module" src="/app/assets/app.js"></script>'
+
+
+@pytest.fixture
+def built(tmp_path):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text(PAGE)
+    (dist / "assets" / "app.js").write_text("document.title = 'PhishHawk'")
+    (tmp_path / "secret.txt").write_text("outside the build")
+    return dist
+
+
+@pytest.fixture
+def frontend(services, built):
+    from fastapi.testclient import TestClient
+
+    from phishhawk.server.app import create_app
+
+    services.settings.frontend_dir = str(built)
+    return TestClient(create_app(services=services))
+
+
+def test_the_frontend_is_served_under_the_app_csp_and_its_own_routes_reload(frontend):
+    for path in ("/app/", "/app/queue", "/app/analyses/12"):
+        page = frontend.get(path)
+        assert page.status_code == 200 and 'id="root"' in page.text, path
+        assert "script-src 'self'" in page.headers["content-security-policy"], path
+    script = frontend.get("/app/assets/app.js")
+    assert script.status_code == 200 and "javascript" in script.headers["content-type"]
+
+
+def test_a_missing_file_or_a_path_outside_the_build_is_not_found(frontend):
+    assert frontend.get("/app/assets/missing.js").status_code == 404
+    assert frontend.get("/app/%2e%2e/secret.txt").status_code == 404
+
+
+def test_without_a_built_frontend_nothing_is_served_at_app(anon):
+    assert anon.get("/app/").status_code == 404
+
+
+def test_the_session_endpoint_says_who_is_calling(alice, anon):
+    assert anon.get("/api/v1/session").status_code == 401
+    assert alice.get("/api/v1/session").json() == {"username": "alice", "role": "analyst", "via": "session",
+                                                   "scope": "full", "csrf": alice.headers["X-CSRF-Token"]}
+```
+
+Change `tests/server/test_rbac.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/tests/server/test_rbac.py
++++ b/tests/server/test_rbac.py
+@@ -10,6 +10,7 @@
+ 
+ # (method, path, (anonymous, analyst, admin, read token, submit token))
+ MATRIX = [
++    ("GET", "/api/v1/session", (401, 200, 200, 200, 200)),
+     ("GET", "/api/v1/analyses", (401, 200, 200, 200, 200)),
+     ("GET", "/api/v1/analyses/{analysis}", (401, 200, 200, 200, 200)),
+     ("GET", "/api/v1/submissions/{submission}", (401, 200, 200, 200, 200)),
+```
+
+- [ ] **Step 2: Run them and watch them fail**
+
+Run:
+
+```bash
+python -m pytest tests/server/test_frontend.py tests/server/test_rbac.py
+```
+
+Expected: FAIL. The first error is `ValueError: "ServerSettings" object has no field "frontend_dir"`.
+
+- [ ] **Step 3: Write the code**
+
+Create `src/phishhawk/server/frontend.py`:
+
+```python
+"""A frontend built elsewhere (docs/FRONTEND.md), served from this origin at
+/app/: its files, and its index.html for any path without a file extension,
+so the frontend's own routes survive a reload. Everything else in the build
+folder's parent stays out of reach."""
+
+from __future__ import annotations
+
+from starlette.exceptions import HTTPException
+from starlette.responses import Response
+from starlette.staticfiles import StaticFiles
+from starlette.types import Scope
+
+
+class Frontend(StaticFiles):
+    def __init__(self, directory: str) -> None:
+        super().__init__(directory=directory, html=True)
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        try:
+            return await super().get_response(path, scope)
+        except HTTPException as exc:
+            if exc.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+                return await super().get_response("index.html", scope)
+            raise
+```
+
+Change `src/phishhawk/server/config.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/config.py
++++ b/src/phishhawk/server/config.py
+@@ -32,6 +32,7 @@
+     analysis_memory_mb: int = 2048
+     analysis_cpu_seconds: int = 120
+     cookie_secure: bool = True  # False only for plain-HTTP local testing
++    frontend_dir: str = ""  # a frontend's build, served at /app/ (docs/FRONTEND.md)
+ 
+     @property
+     def db_url(self) -> str:
+```
+
+Change `src/phishhawk/server/routes/api.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/routes/api.py
++++ b/src/phishhawk/server/routes/api.py
+@@ -57,6 +57,13 @@
+     response = JSONResponse({"csrf": outcome[1]})
+     set_cookie(request, response, outcome[0])
+     return response
++
++
++@router.get("/session")
++def current_session(actor: CurrentActor) -> dict[str, Any]:
++    """Who is calling, for a frontend after a reload; the CSRF token too."""
++    return {"username": actor.username, "role": actor.role, "via": actor.via, "scope": actor.scope,
++            "csrf": actor.csrf}
+ 
+ 
+ @router.delete("/session", status_code=204)
+```
+
+Change `src/phishhawk/server/app.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/app.py
++++ b/src/phishhawk/server/app.py
+@@ -19,6 +19,7 @@
+ from .config import ServerSettings, load_settings
+ from .crypto import Box
+ from .db import make_engine, make_sessionmaker, transaction
++from .frontend import Frontend
+ from .models import Job
+ from .processing import Services
+ from .security import APP_CSP, BASE_HEADERS, HSTS
+@@ -83,6 +84,8 @@
+     app.include_router(api.router)
+     app.include_router(pages.router)
+     app.mount("/static", StaticFiles(directory=str(files("phishhawk.server") / "static")), name="static")
++    if services.settings.frontend_dir:
++        app.mount("/app", Frontend(services.settings.frontend_dir), name="frontend")
+     return app
+ 
+ 
+```
+
+- [ ] **Step 4: Run the tests again**
+
+Run, in order:
+
+```bash
+python -m pytest tests/server/test_frontend.py tests/server/test_rbac.py
+```
+Expected: 22 passed.
+
+```bash
+ruff check src tests && mypy
+```
+
+Everything passes, and ruff and mypy report nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/phishhawk/server/app.py src/phishhawk/server/config.py src/phishhawk/server/frontend.py src/phishhawk/server/routes/api.py tests/server/test_frontend.py tests/server/test_rbac.py
+git commit -m "Serve a frontend built elsewhere at /app/ and tell it who is logged in"
+```
+
+### Task 14: The phishhawk server command
 
 *PR 7.*
 
@@ -5782,7 +6004,6 @@ git commit -m "Add the web app's pages, with the hostile-payload and contrast te
 **Interfaces:**
 
 - Consumes:
-  - `phishhawk.report.bundle` (task 1): `BEFORE_HTML`; `REPORT_TYPES`; `manifest(analyses: list[Analysis], files: list[dict[str, Any]]) -> dict[str, Any]`; `render(kind: str, analyses: list[Analysis], tlp: str='amber') -> str`
   - `phishhawk.server.app` (task 11): `build_services(settings: ServerSettings) -> Services`
   - `phishhawk.server.audit` (task 5): `record(db: Session, actor: str, action: str, object_type: str='', object_id: object='', details: dict[str, Any] | None=None) -> AuditRecord`; `verify(db: Session) -> list[str]`
   - `phishhawk.server.auth` (task 6): `class AuthError(ValueError)`; `create_user(db: DbSession, username: str, password: str, role: str) -> User`
@@ -6338,7 +6559,7 @@ git add src/phishhawk/cli.py src/phishhawk/server/cli.py tests/server/serverkit.
 git commit -m "Add the phishhawk server command and hand it over from the main CLI"
 ```
 
-### Task 14: The OpenAPI document
+### Task 15: The OpenAPI document
 
 *PR 7.*
 
@@ -6354,25 +6575,9 @@ git commit -m "Add the phishhawk server command and hand it over from the main C
 
 **Interfaces:**
 
-- Consumes:
-  - `phishhawk.report.common` (main): `printable(text: str) -> str`
-  - `phishhawk.server.appsettings` (task 7): `KEYED`; `LIMITS`; `LISTS`; `PROVIDERS_ALL`; `limit(db: Session, settings: ServerSettings, name: str) -> int`; `public_view(db: Session, box: Box, settings: ServerSettings) -> dict[str, Any]`
-  - `phishhawk.server.auth` (task 6): `ROLES`; `TOKEN_SCOPES`; `class LoginThrottle`
-  - `phishhawk.server.config` (task 2): `class ServerSettings(BaseSettings)`; `load_settings() -> ServerSettings`
-  - `phishhawk.server.crypto` (task 2): `class Box`
-  - `phishhawk.server.db` (task 3): `make_engine(url: str) -> Engine`; `make_sessionmaker(engine: Engine) -> sessionmaker[Session]`; `transaction(factory: sessionmaker[Session]) -> Iterator[Session]`
-  - `phishhawk.server.deps` (task 11): `Admin = Annotated[Actor, Depends(require_admin)]`; `COOKIE`; `CurrentActor = Annotated[Actor, Depends(require_actor)]`; `DB = Annotated[Session, Depends(get_db, scope='function')]`; `optional_actor(request: Request, db: DB) -> Actor | None`; `services(request: Request) -> Services`
-  - `phishhawk.server.intake` (task 9): `accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: int | None, actor: str, offline: bool, max_bytes: int) -> Submission`; `class IntakeError(ValueError)`
-  - `phishhawk.server.models` (task 3): `class Analysis(Base)`; `class ApiToken(Base)`; `class AuditRecord(Base)`; `class Job(Base)`; `class Submission(Base)`; `class User(Base)`
-  - `phishhawk.server.processing` (task 9): `class Services`
-  - `phishhawk.server.routes.api` (task 11): `class NewToken(BaseModel)`; `class NewUser(BaseModel)`; `class SettingsPatch(BaseModel)`; `class UserPatch(BaseModel)`; `create_token`; `create_user`; `delete_message`; `delete_session`; `get_file`; `hold`; `login_response(request: Request, db: DB, username: str, password: str) -> tuple[str, str] | JSONResponse`; `patch_settings`; `patch_user`; `reanalyze`; `release`; `revoke_token`; `router`; `set_cookie(request: Request, response: Response, cookie: str) -> None`; `submission_view(db: DB, submission: Submission) -> dict[str, Any]`
-  - `phishhawk.server.security` (task 11): `APP_CSP`; `BASE_HEADERS`; `HSTS`
-  - `phishhawk.server.store` (task 4): `class BlobStore`
-  - `phishhawk.server.views` (task 11): `PAGE`; `find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None`; `is_owner(db: Session, message_id: int, user_id: int) -> bool`; `listing(db: Session, store: BlobStore, q: str='', verdict: str='', offset: int=0) -> list[dict[str, Any]]`; `summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission, with_report: bool=False) -> dict[str, Any]`; `usernames(db: Session) -> dict[int, str]`
-  - `phishhawk` (main): `__version__`
+- Consumes: nothing from earlier tasks.
 - Produces:
-  - `phishhawk.server.app`: `build_services(settings: ServerSettings) -> Services`; `create_app(settings: ServerSettings | None=None, services: Services | None=None) -> FastAPI`; `openapi_json(app: FastAPI) -> str`; `ERROR_CODES`; `html_response(request: Request, template: str, context: dict[str, Any], status: int=200) -> HTMLResponse`
-  - `phishhawk.server.routes.pages`: `MB`; `VERDICTS`; `GET /login` → `login_page`; `POST /login` → `login`; `POST /logout` → `logout`; `GET /` → `home`; `POST /` → `submit`; `GET /submissions/{submission_id}` → `submission_page`; `GET /queue` → `queue`; `GET /analyses/{analysis_id}` → `analysis_page`; `GET /analyses/{analysis_id}/files/{name}` → `analysis_file`; `POST /analyses/{analysis_id}/reanalyze` → `reanalyze`; `POST /messages/{message_id}/delete` → `delete`; `POST /messages/{message_id}/hold` → `hold`; `GET /settings` → `settings_page`; `POST /settings` → `save_settings`; `GET /users` → `users_page`; `POST /users` → `add_user`; `POST /users/{user_id}` → `change_user`; `POST /tokens` → `add_token`; `POST /tokens/{token_id}/revoke` → `revoke`; `GET /audit` → `audit_page`
+  - `phishhawk.server.app`: `openapi_json(app: FastAPI) -> str`
 
 **Notes:**
 
@@ -6431,7 +6636,7 @@ Change `src/phishhawk/server/app.py` (apply with `git apply`, or edit by hand):
  import shutil
  from importlib.resources import files
  from typing import Any
-@@ -86,6 +87,14 @@
+@@ -89,6 +90,14 @@
      return app
  
  
@@ -6537,7 +6742,7 @@ git add docs/api/openapi.json src/phishhawk/server/app.py src/phishhawk/server/r
 git commit -m "Publish the API description and test it against the routes"
 ```
 
-### Task 15: Docker image, Compose and the smoke check
+### Task 16: Docker image, Compose and the smoke check
 
 *PR 8.*
 
@@ -6716,8 +6921,11 @@ services:
     environment:
       # false only to test over plain HTTP with a client other than a browser (CI does)
       PHISHHAWK_COOKIE_SECURE: ${PHISHHAWK_COOKIE_SECURE:-true}
+      # your own frontend's build, served at /app/ (docs/FRONTEND.md), with the mount below
+      # PHISHHAWK_FRONTEND_DIR: /frontend
     volumes:
       - phishhawk-data:/data
+      # - ./frontend-dist:/frontend:ro
     secrets:
       - phishhawk_secret_key
       - phishhawk_encryption_key
@@ -6833,7 +7041,7 @@ git add .github/workflows/ci.yml .gitignore compose.yaml server.Dockerfile tools
 git commit -m "Add the web app's Docker image, Compose file and smoke check"
 ```
 
-### Task 16: Browser test
+### Task 17: Browser test
 
 *PR 8.*
 
@@ -7015,15 +7223,16 @@ git add .github/workflows/ci.yml src/phishhawk/server/static/favicon.svg src/phi
 git commit -m "Test the web app in a real browser and give it an icon"
 ```
 
-### Task 17: Documentation and the milestone check
+### Task 18: Documentation and the milestone check
 
 *PR 8.*
 
-docs/SERVER.md for admins (start, settings, roles, providers, what is stored and for how long, backups, keys, the audit log, upgrades, troubleshooting), the README and USAGE pointers, the changelog entry, and the check that M1 is done.
+docs/SERVER.md for admins (start, settings, roles, providers, what is stored and for how long, backups, keys, the audit log, upgrades, troubleshooting), docs/FRONTEND.md for whoever builds a frontend of their own (the rules, the API in five calls, build and deploy, and a starting prompt for Google AI Studio), the README and USAGE pointers, the changelog entry, and the check that M1 is done.
 
 **Files:**
 
 - Create: `docs/SERVER.md`
+- Create: `docs/FRONTEND.md`
 - Modify: `README.md`
 - Modify: `docs/USAGE.md`
 - Modify: `CHANGELOG.md`
@@ -7131,6 +7340,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_SESSION_IDLE_MINUTES` | `480` | A session not used for this long ends. |
 | `PHISHHAWK_ANALYSIS_MEMORY_MB`, `PHISHHAWK_ANALYSIS_CPU_SECONDS` | `2048`, `120` | Limits for the process that analyses one message. A message that exceeds them fails; the server does not. |
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
+| `PHISHHAWK_FRONTEND_DIR` | empty | The build of your own frontend, served at `/app/`; see [FRONTEND.md](FRONTEND.md). |
 
 An admin can change the retention period and the upload limit on the Settings
 page; the value set there wins over the variable.
@@ -7157,7 +7367,9 @@ messages). A token is shown once. Send it as `Authorization: Bearer phk_...`.
 Admin actions, raw message downloads and deletions need a logged-in session;
 a token cannot do them, whoever it belongs to.
 
-The API is described in [docs/api/openapi.json](api/openapi.json).
+The API is described in [docs/api/openapi.json](api/openapi.json). To build
+your own frontend on it (for example in Google AI Studio) and serve it from
+this server at `/app/`, see [FRONTEND.md](FRONTEND.md).
 
 ## Reputation lookups
 
@@ -7278,12 +7490,129 @@ Exit codes: 0 done, 1 the audit log failed verification, 2 a usage error,
 3 a setting or input problem (the message says which).
 ````
 
+Create `docs/FRONTEND.md`:
+
+````markdown
+# Your own frontend
+
+The web app comes with its own pages, but you can build a frontend of your own,
+for example in Google AI Studio, and let PhishHawk serve it at `/app/`. It runs
+on the same origin as the API, so it needs no CORS and the session cookie
+stays `SameSite=Strict`. The built-in pages keep working beside it, as the
+backup and admin interface.
+
+- [The rules](#the-rules)
+- [The API in five calls](#the-api-in-five-calls)
+- [Build and deploy](#build-and-deploy)
+- [A starting prompt for Google AI Studio](#a-starting-prompt-for-google-ai-studio)
+
+## The rules
+
+Everything in a reported email is written by the attacker: the subject, the
+sender's name, every indicator, every value in the report. Your frontend shows
+that text to your analysts, so it is part of the defence.
+
+1. **Show message data as text, never as HTML.** In React, `{value}` is safe.
+   Never pass message data to `dangerouslySetInnerHTML`, `innerHTML`, a
+   Markdown-to-HTML renderer, or an `href`. That includes `subject`, `sender`,
+   `sender_domain`, file names, indicators and anything inside `report`.
+2. **Open the full report only in a sandboxed frame**, from the server:
+
+   ```html
+   <iframe sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"
+           src="/analyses/{id}/files/{html file name}"></iframe>
+   ```
+
+   Never fetch the report and insert it into your page.
+3. **Load nothing from other sites.** The app's Content-Security-Policy allows
+   scripts, styles, fonts, images and requests from this server only. No CDN,
+   no import map that points at a CDN, no Google Fonts: install packages with
+   npm and let the build bundle them.
+4. **Send no message data anywhere else.** No Gemini or other AI calls, no
+   analytics. PhishHawk is self-hosted so that reported mail stays on your
+   server; the CSP blocks such requests anyway.
+5. **Use relative URLs** (`/api/v1/...`), so the browser sends the session
+   cookie, and send the CSRF token on every request that changes something.
+
+## The API in five calls
+
+The full description is [docs/api/openapi.json](api/openapi.json). Errors are
+JSON: `{"error": "<code>", "detail": "<text>"}`.
+
+| Step | Call | Notes |
+|---|---|---|
+| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"username", "role", "via", "scope", "csrf"}`; keep `csrf` in memory. |
+| Log in | `POST /api/v1/session` with JSON `{"username", "password"}` | 200: `{"csrf"}` and the session cookie. 401: wrong details. 429: wait (the `Retry-After` header says how long). |
+| Submit | `POST /api/v1/submissions`, multipart: `file` (an .eml or .msg) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202: `{"id", "status", "error", "analysis_id", "submitted_at"}`. |
+| Wait | `GET /api/v1/submissions/{id}` every second or two | Until `status` is `done` (then `analysis_id` is set) or `failed` (then `error` says why). |
+| Show | `GET /api/v1/analyses/{id}` | `verdict`, `score`, `report_id`, `sha256`, `sender`, `subject`, `techniques`, `lookups`, `hold`, `files` (each with `name`, `kind`, `type`, `size`, `sha256`, `available`) and `report` (the full JSON report while the message is kept). |
+
+Also useful: `GET /api/v1/analyses?q=&verdict=&offset=` (the queue, 50 at a
+time; `q` matches a SHA-256, a report ID or an indicator), downloads at
+`/api/v1/analyses/{id}/files/{name}?download=1`, `DELETE /api/v1/session` to
+log out, and `GET /api/v1/audit`. Settings, users and tokens are admin calls;
+the built-in pages already cover them.
+
+Roles: analysts submit and read everything, and delete their own submissions;
+admins also hold, release and delete completely. Show only the buttons the
+user's `role` allows; the server refuses the rest (403) whatever the frontend
+shows.
+
+## Build and deploy
+
+1. Build static files with base path `/app/`. With Vite, set `base: '/app/'` in
+   `vite.config.ts`, then run `npm run build`. The result is a `dist/` folder.
+2. Copy `dist/` to the server, for example to `/srv/phishhawk-frontend`.
+3. Set `PHISHHAWK_FRONTEND_DIR=/srv/phishhawk-frontend` and restart. With
+   Compose, mount the folder read-only and set the variable; `compose.yaml`
+   has the two lines, commented out.
+4. Open `/app/`. Your frontend's own routes (`/app/queue`, `/app/analyses/12`)
+   load `index.html`, so a reload works.
+
+If the page stays blank, open the browser's console. A "Content Security
+Policy" error names the script, style or font that came from another site;
+bundle it instead.
+
+## A starting prompt for Google AI Studio
+
+Attach `docs/api/openapi.json` and paste:
+
+```text
+Build a web frontend for PhishHawk, a phishing triage service, in React and
+TypeScript with Vite. The attached OpenAPI file describes its API.
+
+- It is served by the PhishHawk server at /app/ on the same origin: set Vite's
+  base to '/app/' and call the API with relative URLs such as /api/v1/session.
+- Install every library with npm. Do not load scripts, styles or fonts from a
+  CDN or Google Fonts, and do not use an import map. Do not call Gemini or any
+  other external service.
+- On start, GET /api/v1/session. On 401 show a login form that POSTs
+  {"username", "password"} to /api/v1/session. Keep the returned "csrf" value
+  in memory and send it as the X-CSRF-Token header on every POST, PATCH and
+  DELETE.
+- Pages: Submit (upload an .eml or .msg file, or paste raw text, with an
+  "Offline" checkbox; then poll GET /api/v1/submissions/{id} until status is
+  done or failed), Queue (GET /api/v1/analyses with search and a verdict
+  filter), and Analysis (GET /api/v1/analyses/{id}: verdict, score, report ID,
+  sender, the downloads, and the full report in
+  <iframe sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"
+  src="/analyses/{id}/files/{name of the file whose kind is html}">).
+- Every value that comes from an email is attacker-controlled. Render it as
+  text only: never dangerouslySetInnerHTML, innerHTML, a Markdown renderer, or
+  a link built from it.
+- Accessible: one h1 per page, labels on every field, visible keyboard focus,
+  WCAG AA contrast in light and dark.
+```
+
+Review what it produces against [the rules](#the-rules) before you deploy it.
+````
+
 Change `README.md` (apply with `git apply`, or edit by hand):
 
 ````diff
 --- a/README.md
 +++ b/README.md
-@@ -237,6 +237,14 @@
+@@ -237,6 +237,15 @@
  ```bash
  ./phishhawk suspicious.eml      # straight from the checkout; needs `requests` importable
  ```
@@ -7294,11 +7623,12 @@ Change `README.md` (apply with `git apply`, or edit by hand):
 +paste a reported message, read the report and download every format, with
 +encrypted storage, retention and an audit log. It needs the `server` extra
 +(`pip install "phishhawk[server]"`) or Docker Compose (`docker compose up -d`).
-+Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md).
++Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md). To put your own frontend
++on its API, for example one built in Google AI Studio: [docs/FRONTEND.md](docs/FRONTEND.md).
  
  ### Check the install
  
-@@ -721,7 +729,7 @@
+@@ -721,7 +730,7 @@
  phishhawk/
  ├── src/phishhawk/
  │   ├── cli.py          scan / imap / graph / gmail / campaign / sweep / evidence / doctor / cache /
@@ -7307,7 +7637,7 @@ Change `README.md` (apply with `git apply`, or edit by hand):
  │   ├── banner.py       start-up banner (_logo_art.py is generated from docs/images/logo.svg)
  │   ├── mailpolicy.py   the email parser, hardened against headers written to break it
  │   ├── parse.py        MIME walk, unwrapping, inline forwards, hidden text, the mail path
-@@ -749,15 +757,19 @@
+@@ -749,15 +758,20 @@
  │   ├── cache.py        SQLite TTL cache
  │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
  │   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV; campaign and sweep output
@@ -7321,7 +7651,8 @@ Change `README.md` (apply with `git apply`, or edit by hand):
  ├── eval/               labelled corpus, evaluation runner, real-corpus fetchers, results.json
  ├── tools/              scripts that draw the logo, banner, demo and charts in docs/images
 -├── docs/               usage, detections, integrations and security review; the JSON Schema; images
-+├── docs/               usage, web app, detections, integrations and security review; the JSON Schema;
++├── docs/               usage, the web app and your own frontend, detections, integrations and security
++│                       review; the JSON Schema;
 +│                       the API description (api/openapi.json); images
  ├── install.sh          user-level installer (pipx or virtualenv)
 -├── Dockerfile          non-root image
@@ -7352,7 +7683,7 @@ Change `CHANGELOG.md` (apply with `git apply`, or edit by hand):
 ```diff
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -9,6 +9,17 @@
+@@ -9,6 +9,19 @@
  
  ### Added
  
@@ -7364,7 +7695,9 @@ Change `CHANGELOG.md` (apply with `git apply`, or edit by hand):
 +  with encrypted keys (all off by default), AES-256-GCM encryption of every
 +  stored message and report, 30-day retention with hold and deletion, a
 +  hash-chained audit log with `phishhawk server audit verify`, key rotation,
-+  `/healthz`, and a Docker image with a Compose file. The command line is
++  `/healthz`, and a Docker image with a Compose file. A frontend of your own
++(for example from Google AI Studio) can be served from the same server at
++`/app/` ([docs/FRONTEND.md](docs/FRONTEND.md)). The command line is
 +  unchanged; the base install still needs only `requests`. See
 +  [docs/SERVER.md](docs/SERVER.md).
  - **HTML report: decisions first.** Each message opens with section links
@@ -7391,7 +7724,7 @@ python -m venv /tmp/phishhawk-base && /tmp/phishhawk-base/bin/pip install -e ".[
 /tmp/phishhawk-base/bin/coverage run -m pytest && /tmp/phishhawk-base/bin/coverage report --omit='*/phishhawk/server/*'
 ```
 
-Expected: with the extra, `795 passed, 1 skipped` and total coverage 90%; without it, `693 passed, 1 skipped` and 90%. ruff and mypy report nothing.
+Expected: with the extra, `800 passed, 1 skipped` and total coverage 90%; without it, `693 passed, 1 skipped` and 90%. ruff and mypy report nothing.
 
 Then tick off the spec's "done when" for M1, each against the test that proves it:
 
@@ -7405,7 +7738,7 @@ Then tick off the spec's "done when" for M1, each against the test that proves i
 - [ ] **Step 3: Commit**
 
 ```bash
-git add CHANGELOG.md README.md docs/SERVER.md docs/USAGE.md
+git add CHANGELOG.md README.md docs/FRONTEND.md docs/SERVER.md docs/USAGE.md
 git commit -m "Document the web app for admins and record it in the changelog"
 ```
 
@@ -7422,12 +7755,13 @@ How each M1 requirement in the spec maps to the tasks above.
 | 5.3 | Hourly retention sweep, delete now, delete completely, hold, all audited | 9, 11, 12 |
 | 6.1 | Upload or paste, size and magic-byte checks, 202, worker in a limited child, tier 1 and 2 stored, page waits for the verdict, files served side by side | 9, 11, 12 |
 | 6.5 | Job claim, heartbeat, no retry on input failures, requeue a dead worker's job at most twice, scheduler in the worker | 8, 9 |
-| 7.2 | argon2id, throttle per user and address, `create-admin`, cookie flags, eight-hour idle timeout, CSRF, scoped tokens shown once, the role table | 6, 11, 12, 13 |
-| 7.3 | CSP on every response, nosniff, no-referrer, HSTS over TLS, autoescape plus `printable()`, sandboxed report, attachments | 11, 12 |
+| 7.2 | argon2id, throttle per user and address, `create-admin`, cookie flags, eight-hour idle timeout, CSRF, scoped tokens shown once, the role table | 6, 11, 12, 14 |
+| 7.3 | CSP on every response, nosniff, no-referrer, HSTS over TLS, autoescape plus `printable()`, sandboxed report, attachments | 11, 12, 13 |
 | 7.4 | Upload limits, resource limits, lookups recorded and shown | 1, 8, 9, 12 |
-| 7.6 | Secrets only from the environment or files; the audited events; `audit verify` | 2, 5, 11, 13 |
-| 8 | Login, submit, queue (verdict filter and search), analysis, settings, users, audit pages; light and dark; WCAG AA; keyboard | 12, 16 |
-| 9 | `/api/v1` routes for M1, JSON errors, `/healthz`, `docs/api/openapi.json` with a test | 11, 14 |
-| 10 | Sanitised failure reasons, limits, health, backups documented | 9, 11, 17 |
-| 11 (M1) | Docker image and Compose file | 15 |
-| 12 | Role matrix, CSRF, session expiry, throttle, scopes, store, jobs, decompression bomb, duplicates, hostile payload on every page, CSP, sandbox, attachments, audit tampering, browser, performance, CI jobs | 2 to 16 |
+| 7.6 | Secrets only from the environment or files; the audited events; `audit verify` | 2, 5, 11, 14 |
+| 8 | Login, submit, queue (verdict filter and search), analysis, settings, users, audit pages; light and dark; WCAG AA; keyboard | 12, 17 |
+| 9 | `/api/v1` routes for M1, JSON errors, `/healthz`, `docs/api/openapi.json` with a test | 11, 13, 15 |
+| 10 | Sanitised failure reasons, limits, health, backups documented | 9, 11, 18 |
+| 11 (M1) | Docker image and Compose file | 16 |
+| 12 | Role matrix, CSRF, session expiry, throttle, scopes, store, jobs, decompression bomb, duplicates, hostile payload on every page, CSP, sandbox, attachments, audit tampering, browser, performance, CI jobs | 2 to 17 |
+| Owner | The main frontend built in Google AI Studio, served at `/app/` on the same origin, with its rules documented | 13, 18 |
