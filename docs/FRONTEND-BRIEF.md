@@ -8,8 +8,9 @@
    - `docs/api/openapi.json`, the API;
    - `docs/report.schema.json`, the full analysis report.
 
-   `openapi.json` is added by milestone M1 (task 15 of its plan). Until then,
-   the examples in section 7 describe the API; parts written as `<...>` or
+   `openapi.json` describes the M1 API. Until M1 is merged, it comes from
+   the tested M1 prototype and there is no server to call yet: build against
+   the mock API from section 3. Examples in this brief that show `<...>` or
    `"...": "..."` are abbreviated (rule 10 in section 2.2).
 3. Then ask for one screen at a time, in the order of section 7.
 4. Sections 2, 4, 5 and 6 are rules. Section 1 is yours to play with. Section
