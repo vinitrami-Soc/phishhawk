@@ -29,7 +29,7 @@ Every task's requirements include these. Quotes are from the spec.
 
 ## How this plan was checked
 
-Before writing it, the whole milestone was built and tested as a prototype; every code block below is that code. Then the plan itself was replayed, task by task, on a fresh clone of `main` (7a50cfa). Each task's tests were run before its code and failed on the missing code (each task quotes the first error); with the code they passed, the whole suite stayed green, ruff and mypy stayed clean, every diff applied with `git apply` and every commit left a clean tree. The suite grew from 690 tests to 800 passed, 1 skipped. At the end, with the server extra: 800 passed, 1 skipped, coverage 90%; without it: 693 passed, 1 skipped, coverage 90% (the server's code left out, as in CI's base job). The Docker image and Compose stack were built from the same code and passed the smoke check, the audit log check and a clean stop, with a frontend build mounted and served at `/app/`.
+Before writing it, the whole milestone was built and tested as a prototype; every code block below is that code. Then the plan itself was replayed, task by task, on a fresh clone of `main` (7a50cfa). Each task's tests were run before its code and failed on the missing code (each task quotes the first error); with the code they passed, the whole suite stayed green, ruff and mypy stayed clean, every diff applied with `git apply` and every commit left a clean tree. The suite grew from 690 tests to 801 passed, 1 skipped. At the end, with the server extra: 801 passed, 1 skipped, coverage 90%; without it: 693 passed, 1 skipped, coverage 90% (the server's code left out, as in CI's base job). The Docker image and Compose stack were built from the same code and passed the smoke check, the audit log check and a clean stop, with a frontend build mounted and served at `/app/`.
 
 Along the way the prototype found and fixed: a worker left running after SIGTERM (uvicorn raises the signal again after shutdown), a read-only API token that could download raw messages, SQLAlchemy 2.0 not mapping `list[Any]` columns, white text on the dark-mode button at 2.26:1 contrast, a favicon 404 that showed as a console error, and test literals the secret scan would have failed on. Each has a test. The replay found one more: `tools/make_openapi.py` did not create `docs/api/` on a fresh checkout; it does now.
 
@@ -6589,8 +6589,9 @@ git commit -m "Add the phishhawk server command and hand it over from the main C
 **Notes:**
 
 - The pages router is left out of the schema; the document covers `/api/v1` and `/healthz`.
-- The release number is dropped from the document, so a version bump alone does not change it.
+- `info.version` is the API version, `v1`, not the release number: OpenAPI requires the field, and a version bump alone should not change the document.
 - Regenerate with `python tools/make_openapi.py`; never edit the JSON by hand.
+- `main` may already carry `docs/api/openapi.json`, generated from the prototype so the frontend could start early. The tool then rewrites it, and `git diff docs/api/openapi.json` should show no change.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -6600,6 +6601,7 @@ Create `tests/server/test_openapi.py`:
 """docs/api/openapi.json is the contract other tools build on, so it must
 match the routes. After changing an API route: python tools/make_openapi.py"""
 
+import json
 import os
 
 from phishhawk.server.app import openapi_json
@@ -6616,6 +6618,11 @@ def test_it_describes_the_api_and_health_but_not_the_pages(app):
     paths = app.openapi()["paths"]
     assert "/healthz" in paths and "/api/v1/submissions" in paths
     assert all(path == "/healthz" or path.startswith("/api/v1/") for path in paths)
+
+
+def test_it_carries_the_api_version_not_the_release(app):
+    # info.version is required by OpenAPI; the release number would change it on every bump.
+    assert json.loads(openapi_json(app))["info"]["version"] == "v1"
 ```
 
 - [ ] **Step 2: Run them and watch them fail**
@@ -6643,15 +6650,16 @@ Change `src/phishhawk/server/app.py` (apply with `git apply`, or edit by hand):
  import shutil
  from importlib.resources import files
  from typing import Any
-@@ -89,6 +90,14 @@
+@@ -89,6 +90,15 @@
      return app
  
  
 +def openapi_json(app: FastAPI) -> str:
-+    """The API description as docs/api/openapi.json holds it: without the
-+    release number, so a version bump alone does not change the contract."""
++    """The API description as docs/api/openapi.json holds it: versioned as
++    the API (v1), not the release, so a version bump alone does not change
++    the contract."""
 +    document = app.openapi()
-+    document["info"].pop("version", None)
++    document["info"]["version"] = "v1"
 +    return json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 +
 +
@@ -6734,7 +6742,7 @@ Run, in order:
 ```bash
 python -m pytest tests/server/test_openapi.py
 ```
-Expected: 2 passed.
+Expected: 3 passed.
 
 ```bash
 ruff check src tests tools && mypy
@@ -7731,7 +7739,7 @@ python -m venv /tmp/phishhawk-base && /tmp/phishhawk-base/bin/pip install -e ".[
 /tmp/phishhawk-base/bin/coverage run -m pytest && /tmp/phishhawk-base/bin/coverage report --omit='*/phishhawk/server/*'
 ```
 
-Expected: with the extra, `800 passed, 1 skipped` and total coverage 90%; without it, `693 passed, 1 skipped` and 90%. ruff and mypy report nothing.
+Expected: with the extra, `801 passed, 1 skipped` and total coverage 90%; without it, `693 passed, 1 skipped` and 90%. ruff and mypy report nothing.
 
 Then tick off the spec's "done when" for M1, each against the test that proves it:
 
