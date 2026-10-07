@@ -3605,7 +3605,7 @@ Everything the pages and other tools need, under `/api/v1`: sessions, submission
   - `phishhawk` (main): `__version__`
 - Produces:
   - `phishhawk.server.security`: `APP_CSP`; `REPORT_CSP`; `BASE_HEADERS`; `HSTS`
-  - `phishhawk.server.views`: `PAGE`; `report_data(store: BlobStore, analysis: Analysis) -> dict[str, Any] | None`; `summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission, with_report: bool=False) -> dict[str, Any]`; `find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None`; `listing(db: Session, store: BlobStore, q: str='', verdict: str='', offset: int=0) -> list[dict[str, Any]]`; `is_owner(db: Session, message_id: int, user_id: int) -> bool`; `usernames(db: Session) -> dict[int, str]`
+  - `phishhawk.server.views`: `PAGE`; `report_data(store: BlobStore, analysis: Analysis) -> dict[str, Any] | None`; `summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission, with_report: bool=False, submitter: str | None=None) -> dict[str, Any]`; `find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None`; `listing(db: Session, store: BlobStore, q: str='', verdict: str='', offset: int=0) -> list[dict[str, Any]]`; `is_owner(db: Session, message_id: int, user_id: int) -> bool`; `usernames(db: Session) -> dict[int, str]`
   - `phishhawk.server.deps`: `COOKIE`; `SAFE_METHODS`; `services(request: Request) -> Services`; `secret(request: Request) -> str`; `get_db(request: Request) -> Iterator[Session]`; `DB = Annotated[Session, Depends(get_db, scope='function')]`; `optional_actor(request: Request, db: DB) -> Actor | None`; `require_actor(request: Request, current: Annotated[Actor | None, Depends(optional_actor)]) -> Actor`; `require_admin(current: Annotated[Actor, Depends(require_actor)]) -> Actor`; `CurrentActor = Annotated[Actor, Depends(require_actor)]`; `Admin = Annotated[Actor, Depends(require_admin)]`
   - `phishhawk.server.routes.files`: `MEDIA`; `serve_file(store: BlobStore, analysis: Analysis, name: str, download: bool) -> Response`
   - `phishhawk.server.routes.api`: `MB`; `class Login(BaseModel)`: `username: str`; `password: str`; `login_response(request: Request, db: DB, username: str, password: str) -> tuple[str, str] | JSONResponse`; `set_cookie(request: Request, response: Response, cookie: str) -> None`; `POST /api/v1/session` → `create_session`; `DELETE /api/v1/session` → `delete_session`; `POST /api/v1/submissions` → `submit`; `submission_view(db: DB, submission: Submission) -> dict[str, Any]`; `GET /api/v1/submissions/{submission_id}` → `get_submission`; `GET /api/v1/analyses` → `list_analyses`; `GET /api/v1/analyses/{analysis_id}` → `get_analysis`; `GET /api/v1/analyses/{analysis_id}/files/{name}` → `get_file`; `POST /api/v1/analyses/{analysis_id}/reanalyze` → `reanalyze`; `GET /api/v1/messages/{message_id}/raw` → `get_raw`; `DELETE /api/v1/messages/{message_id}` → `delete_message`; `POST /api/v1/messages/{message_id}/hold` → `hold`; `DELETE /api/v1/messages/{message_id}/hold` → `release`; `class SettingsPatch(BaseModel)`: `providers: list[str] | None`; `protected_domains: list[str] | None`; `allow_domains: list[str] | None`; `block_domains: list[str] | None`; `trusted_authserv: list[str] | None`; `retention_days: int | None`; `max_upload_mb: int | None`; `max_batch_messages: int | None`; `campaign_window_days: int | None`; `keys: dict[str, str] | None`; `GET /api/v1/settings` → `get_settings`; `PATCH /api/v1/settings` → `patch_settings`; `apply_settings(db: DB, s: Any, body: SettingsPatch) -> list[str]`; `class NewUser(BaseModel)`: `username: str`; `password: str`; `role: str`; `class UserPatch(BaseModel)`: `role: str | None`; `disabled: bool | None`; `password: str | None`; `GET /api/v1/users` → `list_users`; `POST /api/v1/users` → `create_user`; `PATCH /api/v1/users/{user_id}` → `patch_user`; `class NewToken(BaseModel)`: `name: str`; `scope: str`; `user_id: int`; `GET /api/v1/tokens` → `list_tokens`; `POST /api/v1/tokens` → `create_token`; `DELETE /api/v1/tokens/{token_id}` → `revoke_token`; `GET /api/v1/audit` → `list_audit`
@@ -3760,6 +3760,7 @@ def test_submit_analyse_view_and_download(alice, services):
     body = alice.get("/api/v1/analyses/%d" % analysis_id).json()
     assert body["verdict"] == "LIKELY PHISHING" and body["report"]["verdict"] == "LIKELY PHISHING"
     assert body["subject"].startswith("Urgent") and body["lookups"] == []
+    assert body["submitted_by_name"] == "alice"  # a frontend shows who submitted it without the users list
     names = {f["kind"]: f["name"] for f in body["files"]}
     report = alice.get("/api/v1/analyses/%d/files/%s" % (analysis_id, names["html"]))
     assert report.status_code == 200 and report.headers["content-security-policy"] == REPORT_CSP
@@ -3920,11 +3921,12 @@ def report_data(store: BlobStore, analysis: Analysis) -> dict[str, Any] | None:
 
 
 def summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission,
-            with_report: bool = False) -> dict[str, Any]:
+            with_report: bool = False, submitter: str | None = None) -> dict[str, Any]:
     report = report_data(store, analysis)
     view = {
         "id": analysis.id, "message_id": message.id, "submission_id": submission.id,
-        "submitted_by": submission.user_id, "source": submission.source, "offline": submission.offline,
+        "submitted_by": submission.user_id, "submitted_by_name": submitter, "source": submission.source,
+        "offline": submission.offline,
         "sha256": message.sha256, "report_id": analysis.report_id, "verdict": analysis.verdict,
         "score": analysis.score, "sender": message.sender, "sender_domain": message.sender_domain,
         "subject": report["subject"] if report else None, "created_at": analysis.created_at.isoformat(),
@@ -3962,7 +3964,8 @@ def listing(db: Session, store: BlobStore, q: str = "", verdict: str = "",
                                 Analysis.id.in_(select(Indicator.analysis_id)
                                                 .where(Indicator.value.contains(q, autoescape=True)))))
     rows = db.execute(query.offset(max(0, offset)).limit(PAGE)).all()
-    return [summary(store, a, m, s) for a, m, s in rows]
+    names = usernames(db)
+    return [summary(store, a, m, s, submitter=names.get(s.user_id or 0)) for a, m, s in rows]
 
 
 def is_owner(db: Session, message_id: int, user_id: int) -> bool:
@@ -4211,7 +4214,9 @@ def _found(db: DB, analysis_id: int) -> tuple[Any, Message, Submission]:
 @router.get("/analyses/{analysis_id}")
 def get_analysis(request: Request, db: DB, actor: CurrentActor, analysis_id: int) -> dict[str, Any]:
     analysis, message, submission = _found(db, analysis_id)
-    return views.summary(services(request).store, analysis, message, submission, with_report=True)
+    submitter = views.usernames(db).get(submission.user_id or 0)
+    return views.summary(services(request).store, analysis, message, submission, with_report=True,
+                         submitter=submitter)
 
 
 @router.get("/analyses/{analysis_id}/files/{name}")
@@ -4593,7 +4598,7 @@ The browser side: log in, submit (upload, paste or drag and drop), the queue wit
   - `phishhawk.server.intake` (task 9): `accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: int | None, actor: str, offline: bool, max_bytes: int) -> Submission`; `class IntakeError(ValueError)`
   - `phishhawk.server.models` (task 3): `class Analysis(Base)`; `class ApiToken(Base)`; `class AuditRecord(Base)`; `class Submission(Base)`; `class User(Base)`
   - `phishhawk.server.routes.api` (task 11): `class NewToken(BaseModel)`; `class NewUser(BaseModel)`; `class SettingsPatch(BaseModel)`; `class UserPatch(BaseModel)`; `create_token`; `create_user`; `delete_message`; `delete_session`; `get_file`; `hold`; `login_response(request: Request, db: DB, username: str, password: str) -> tuple[str, str] | JSONResponse`; `patch_settings`; `patch_user`; `reanalyze`; `release`; `revoke_token`; `set_cookie(request: Request, response: Response, cookie: str) -> None`; `submission_view(db: DB, submission: Submission) -> dict[str, Any]`
-  - `phishhawk.server.views` (task 11): `PAGE`; `find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None`; `is_owner(db: Session, message_id: int, user_id: int) -> bool`; `listing(db: Session, store: BlobStore, q: str='', verdict: str='', offset: int=0) -> list[dict[str, Any]]`; `summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission, with_report: bool=False) -> dict[str, Any]`; `usernames(db: Session) -> dict[int, str]`
+  - `phishhawk.server.views` (task 11): `PAGE`; `find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None`; `is_owner(db: Session, message_id: int, user_id: int) -> bool`; `listing(db: Session, store: BlobStore, q: str='', verdict: str='', offset: int=0) -> list[dict[str, Any]]`; `summary(store: BlobStore, analysis: Analysis, message: Message, submission: Submission, with_report: bool=False, submitter: str | None=None) -> dict[str, Any]`; `usernames(db: Session) -> dict[int, str]`
 - Produces:
   - `phishhawk.server.routes.pages`: `MB`; `VERDICTS`; `GET /login` → `login_page`; `POST /login` → `login`; `POST /logout` → `logout`; `GET /` → `home`; `POST /` → `submit`; `GET /submissions/{submission_id}` → `submission_page`; `GET /queue` → `queue`; `GET /analyses/{analysis_id}` → `analysis_page`; `GET /analyses/{analysis_id}/files/{name}` → `analysis_file`; `POST /analyses/{analysis_id}/reanalyze` → `reanalyze`; `POST /messages/{message_id}/delete` → `delete`; `POST /messages/{message_id}/hold` → `hold`; `GET /settings` → `settings_page`; `POST /settings` → `save_settings`; `GET /users` → `users_page`; `POST /users` → `add_user`; `POST /users/{user_id}` → `change_user`; `POST /tokens` → `add_token`; `POST /tokens/{token_id}/revoke` → `revoke`; `GET /audit` → `audit_page`
   - `phishhawk.server.app`: `html_response(request: Request, template: str, context: dict[str, Any], status: int=200) -> HTMLResponse`
@@ -5842,10 +5847,12 @@ def test_without_a_built_frontend_nothing_is_served_at_app(anon):
     assert anon.get("/app/").status_code == 404
 
 
-def test_the_session_endpoint_says_who_is_calling(alice, anon):
+def test_the_session_endpoint_says_who_is_calling(alice, admin, anon):
     assert anon.get("/api/v1/session").status_code == 401
-    assert alice.get("/api/v1/session").json() == {"username": "alice", "role": "analyst", "via": "session",
-                                                   "scope": "full", "csrf": alice.headers["X-CSRF-Token"]}
+    alice_id = next(u["id"] for u in admin.get("/api/v1/users").json() if u["username"] == "alice")
+    assert alice.get("/api/v1/session").json() == {"user_id": alice_id, "username": "alice", "role": "analyst",
+                                                   "via": "session", "scope": "full",
+                                                   "csrf": alice.headers["X-CSRF-Token"]}
 ```
 
 Change `tests/server/test_rbac.py` (apply with `git apply`, or edit by hand):
@@ -5933,8 +5940,8 @@ Change `src/phishhawk/server/routes/api.py` (apply with `git apply`, or edit by 
 +@router.get("/session")
 +def current_session(actor: CurrentActor) -> dict[str, Any]:
 +    """Who is calling, for a frontend after a reload; the CSRF token too."""
-+    return {"username": actor.username, "role": actor.role, "via": actor.via, "scope": actor.scope,
-+            "csrf": actor.csrf}
++    return {"user_id": actor.user_id, "username": actor.username, "role": actor.role, "via": actor.via,
++            "scope": actor.scope, "csrf": actor.csrf}
  
  
  @router.delete("/session", status_code=204)
@@ -7541,11 +7548,11 @@ JSON: `{"error": "<code>", "detail": "<text>"}`.
 
 | Step | Call | Notes |
 |---|---|---|
-| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"username", "role", "via", "scope", "csrf"}`; keep `csrf` in memory. |
+| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf"}`; keep `csrf` in memory. |
 | Log in | `POST /api/v1/session` with JSON `{"username", "password"}` | 200: `{"csrf"}` and the session cookie. 401: wrong details. 429: wait (the `Retry-After` header says how long). |
 | Submit | `POST /api/v1/submissions`, multipart: `file` (an .eml or .msg) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202: `{"id", "status", "error", "analysis_id", "submitted_at"}`. |
 | Wait | `GET /api/v1/submissions/{id}` every second or two | Until `status` is `done` (then `analysis_id` is set) or `failed` (then `error` says why). |
-| Show | `GET /api/v1/analyses/{id}` | `verdict`, `score`, `report_id`, `sha256`, `sender`, `subject`, `techniques`, `lookups`, `hold`, `files` (each with `name`, `kind`, `type`, `size`, `sha256`, `available`) and `report` (the full JSON report while the message is kept). |
+| Show | `GET /api/v1/analyses/{id}` | `verdict`, `score`, `report_id`, `sha256`, `sender`, `subject`, `submitted_by` (a user ID) and `submitted_by_name`, `techniques`, `lookups`, `hold`, `files` (each with `name`, `kind`, `type`, `size`, `sha256`, `available`) and `report` (the full JSON report while the message is kept). |
 
 Also useful: `GET /api/v1/analyses?q=&verdict=&offset=` (the queue, 50 at a
 time; `q` matches a SHA-256, a report ID or an indicator), downloads at
