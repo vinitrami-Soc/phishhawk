@@ -42,6 +42,7 @@ phishhawk [-h] [-V] <command> ...
   doctor       check dependencies, API keys, cache and network
   cache        show or clear the lookup cache
   techniques   list the MITRE ATT&CK techniques PhishHawk can evidence
+  server       run the web app (needs: pip install 'phishhawk[server]'); see docs/SERVER.md
   help         show help for a command
 ```
 

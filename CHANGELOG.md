@@ -9,6 +9,19 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Web app, milestone 1 (preview).** `pip install "phishhawk[server]"` adds
+  `phishhawk server`: a web app and API for a small team on one machine. Log
+  in, upload or paste a reported message, see the verdict and the full HTML
+  report (sandboxed), and download all six formats and the manifest. Admin
+  and analyst roles, API tokens scoped to read or submit, provider settings
+  with encrypted keys (all off by default), AES-256-GCM encryption of every
+  stored message and report, 30-day retention with hold and deletion, a
+  hash-chained audit log with `phishhawk server audit verify`, key rotation,
+  `/healthz`, and a Docker image with a Compose file. A frontend of your own
+(for example from Google AI Studio) can be served from the same server at
+`/app/` ([docs/FRONTEND.md](docs/FRONTEND.md)). The command line is
+  unchanged; the base install still needs only `requests`. See
+  [docs/SERVER.md](docs/SERVER.md).
 - **HTML report: decisions first.** Each message opens with section links
   (plain anchors, no script), the verdict and why, whether the analysis was
   complete, whether reputation was checked and whether custody was
