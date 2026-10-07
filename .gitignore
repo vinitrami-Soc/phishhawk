@@ -10,3 +10,4 @@ dist/
 /*.csv
 /*.md.out
 .coverage
+/secrets/

@@ -108,6 +108,41 @@ jobs:
           coverage run -m pytest
           coverage report
 
+  server-docker:
+    name: web app in Docker Compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Keys, made the way docs/SERVER.md says
+        run: |
+          mkdir -m 700 secrets
+          openssl rand -base64 32 > secrets/phishhawk_secret_key
+          openssl rand -base64 32 > secrets/phishhawk_encryption_key
+          chmod 644 secrets/*
+      - name: Build and start, then wait for the health check
+        env:
+          PHISHHAWK_COOKIE_SECURE: "false"  # the check below talks plain HTTP to 127.0.0.1
+        run: docker compose up -d --build --wait
+      - name: Log in, submit a sample, fetch every file, verify the audit log
+        run: |
+          SMOKE_PASSWORD="smoke-$(openssl rand -hex 12)"
+          export SMOKE_PASSWORD
+          printf '%s\n' "$SMOKE_PASSWORD" |
+            docker compose exec -T phishhawk phishhawk server create-admin smoke --password-stdin
+          python -m pip install requests
+          python tools/server_smoke.py http://127.0.0.1:8000 --user smoke
+          docker compose exec -T phishhawk phishhawk server audit verify
+      - name: Stop cleanly
+        run: |
+          docker compose stop
+          test "$(docker inspect "$(docker compose ps -aq phishhawk)" --format '{{.State.ExitCode}}')" -eq 0
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+
   installer:
     runs-on: ubuntu-latest
     steps:
