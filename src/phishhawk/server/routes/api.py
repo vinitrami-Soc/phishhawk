@@ -59,6 +59,13 @@ def create_session(request: Request, db: DB, body: Login) -> Response:
     return response
 
 
+@router.get("/session")
+def current_session(actor: CurrentActor) -> dict[str, Any]:
+    """Who is calling, for a frontend after a reload; the CSRF token too."""
+    return {"user_id": actor.user_id, "username": actor.username, "role": actor.role, "via": actor.via,
+            "scope": actor.scope, "csrf": actor.csrf}
+
+
 @router.delete("/session", status_code=204)
 def delete_session(request: Request, db: DB, actor: CurrentActor) -> Response:
     auth.close_session(db, request.cookies.get(COOKIE, ""), secret(request))

@@ -19,6 +19,7 @@ from .auth import LoginThrottle
 from .config import ServerSettings, load_settings
 from .crypto import Box
 from .db import make_engine, make_sessionmaker, transaction
+from .frontend import Frontend
 from .models import Job
 from .processing import Services
 from .security import APP_CSP, BASE_HEADERS, HSTS
@@ -83,6 +84,8 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     app.include_router(api.router)
     app.include_router(pages.router)
     app.mount("/static", StaticFiles(directory=str(files("phishhawk.server") / "static")), name="static")
+    if services.settings.frontend_dir:
+        app.mount("/app", Frontend(services.settings.frontend_dir), name="frontend")
     return app
 
 

@@ -10,6 +10,7 @@ from conftest import sample
 
 # (method, path, (anonymous, analyst, admin, read token, submit token))
 MATRIX = [
+    ("GET", "/api/v1/session", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/analyses", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/analyses/{analysis}", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/submissions/{submission}", (401, 200, 200, 200, 200)),
