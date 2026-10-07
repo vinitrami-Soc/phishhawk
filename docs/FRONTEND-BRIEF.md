@@ -9,9 +9,11 @@
    - `docs/report.schema.json`, the full analysis report.
 
    `openapi.json` is added by milestone M1 (task 15 of its plan). Until then,
-   the examples in section 7 are the contract.
+   the examples in section 7 describe the API; parts written as `<...>` or
+   `"...": "..."` are abbreviated (rule 10 in section 2.2).
 3. Then ask for one screen at a time, in the order of section 7.
-4. Sections 2, 4, 5 and 6 are rules. Section 1 is yours to play with.
+4. Sections 2, 4, 5 and 6 are rules. Section 1 is yours to play with. Section
+   12 is the order of work.
 
 ---
 
@@ -77,14 +79,29 @@ backend. It limits *how* you build things, not *what they look like*.
 1. **Render every value that comes from an email as plain text**: React
    `{value}` or `textContent`. Section 5 lists those values.
 2. **Show indicators defanged**, for example `hxxps://evil-login[.]top/...`.
-   Use `urls[].defanged` where the report gives it. For other values, use the
-   `defang()` helper in section 5.2.
-3. **Show the full HTML report only in this iframe**, exactly as written:
+   Use `urls[].defanged` where the report gives it. For other indicators, use
+   the `showIndicator()` helper in section 5.2.
+3. **Show the full HTML report only inside this exact sandboxed iframe:**
+
    ```html
-   <iframe sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"
-           src="/analyses/{id}/files/{name of the file whose kind is html}"
-           title="Full report"></iframe>
+   <iframe
+     sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"
+     src="/api/v1/analyses/{id}/files/{html-file-name}"
+     title="Full report"
+     loading="lazy">
+   </iframe>
    ```
+
+   `{id}` is the analysis ID and `{html-file-name}` is the `name` of the
+   `files[]` entry whose `kind` is `html`, passed through `encodeURIComponent`.
+   The server serves that file with its own sandboxing policy.
+
+   The parent application must never read, query, modify or inject content into
+   the iframe DOM. Never fetch the HTML report and insert it into the parent
+   page.
+
+   Do not add `allow-scripts` or `allow-same-origin`. Do not loosen or remove
+   any existing sandbox permission.
 4. **Use relative URLs** for every request (`/api/v1/...`), so the browser
    sends the session cookie.
 5. **Keep the CSRF token in memory only** (a variable or React state). Send it
@@ -94,39 +111,99 @@ backend. It limits *how* you build things, not *what they look like*.
    `@fontsource/*` packages), icons and images.
 7. **Ask before destructive actions.** "Delete now" and "Delete completely"
    need a confirmation that says what will be lost.
-8. **Handle every error status** in section 4.4 with a clear, human message.
+8. **Handle every error status** in section 4.5 with a clear, human message.
 9. **Start downloads only when the user clicks.** The server records every
    download in the audit log.
 10. **Treat the role as a display hint.** The server enforces permissions;
     you only hide buttons a user cannot use (section 6).
+11. **Use an explicit route allowlist.** The frontend may navigate only to
+    routes defined in the frontend route section (section 7.1) and to
+    same-origin API/file URLs defined in the backend contract.
+12. **Use an explicit vocabulary allowlist.** Values such as verdict, severity,
+    role, status, source, kind and action must be mapped through fixed lookup
+    tables. Never use API values directly as CSS classes, inline styles, HTML
+    attributes or component names.
+13. **Keep API data in memory only.** In-memory query/cache state is allowed
+    during the current page session, but it must be cleared on logout,
+    session expiry and a 401 response.
+14. **Use AbortController** for polling, search, route changes and any request
+    that can become irrelevant when the user leaves a screen.
 
 ### 2.2 Don't
 
 1. **Never** pass email data to `dangerouslySetInnerHTML`, `innerHTML`,
    `outerHTML`, `insertAdjacentHTML`, `document.write` or a Markdown, HTML or
    rich-text renderer.
-2. **Never** build `href`, `src`, `action`, `style`, CSS or class names from
-   email data, and never make an indicator clickable. Copy-to-clipboard of the
-   defanged value is fine.
+2. **Never** build an `href`, `src`, `action`, CSS value or class name from
+   attacker-controlled email data. Never make an indicator clickable.
+
+   An indicator is display-only data. Never pass an indicator value to:
+
+   - `href`;
+   - `src`;
+   - `action`;
+   - `fetch`;
+   - `XMLHttpRequest`;
+   - `window.open`;
+   - `location`;
+   - CSS;
+   - an iframe URL;
+   - a download URL.
+
+   Copying the displayed defanged value to the clipboard is allowed.
 3. **Never** fetch the HTML report and insert it into the page. Never remove
    or loosen the iframe's `sandbox`; never add `allow-scripts` or
    `allow-same-origin`.
-4. **Never** call any other site from the browser. That means no CDN, no Google
-   Fonts, no Gemini or other AI APIs, no analytics, no error trackers, no maps
-   and no remote images. Reported mail must not leave the server, and the
-   server's security policy blocks these requests anyway.
+4. **Never make a network request to another site from the browser.**
+
+   This means:
+
+   - no CDN;
+   - no Google Fonts;
+   - no Gemini or other AI API;
+   - no analytics;
+   - no error tracker;
+   - no maps;
+   - no remote images;
+   - no reputation-provider request;
+   - no `fetch()` or XHR to an external origin.
+
+   Reported mail must not leave the PhishHawk server, and the server's security
+   policy blocks these requests anyway.
+
+   The only permitted external navigation is a normal user-clicked link to an
+   approved MITRE ATT&CK technique URL generated by the strict `attackUrl()`
+   allowlist. The frontend must never fetch that URL, embed it, prefetch it or
+   send data to it.
 5. **Never** store API data, passwords, API keys or the CSRF token in
    `localStorage`, `sessionStorage`, IndexedDB, cookies or a service-worker
    cache. Never log API data to the console. A theme preference in
    `localStorage` is fine.
 6. **Never** use `eval`, `new Function`, inline `<script>` blocks, an import
    map, or `javascript:` URLs.
-7. **Never** "refang" an indicator or open one. That includes building a
-   VirusTotal link from it.
+7. **Never refang or open an indicator.**
+
+   This includes:
+
+   - building a VirusTotal link;
+   - building a urlscan.io link;
+   - building a reputation-provider URL;
+   - calling `window.open()` with an indicator;
+   - placing an indicator in an iframe;
+   - using an indicator as an image source;
+   - using an indicator as a download target.
+
+   The only exception is the fixed, validated MITRE ATT&CK URL returned by
+   `attackUrl()` for a valid technique ID.
 8. **Never** add a backend, a proxy, server-side rendering or API routes of
    your own. The app is static files only.
 9. **Never** invent API fields or endpoints. If something is missing, show
-   what exists and leave a clearly marked `// NEEDS BACKEND:` comment.
+   what exists, mark the gap with a visible `NEEDS BACKEND` label, and leave a
+   `// NEEDS BACKEND:` comment in the code.
+10. **Do not trust abbreviated examples as API contracts.** The attached
+    `openapi.json` and `report.schema.json` are the source of truth. Any
+    example containing `<...>` or omitted fields is illustrative only and
+    must not be implemented as a literal field.
 
 ### 2.3 What the server's Content-Security-Policy allows
 
@@ -163,8 +240,69 @@ Replace it, or bundle it.
 - For development without a server, write a small mock API layer that returns
   the example responses from section 7. Turn it on only when
   `import.meta.env.DEV` is true, so it never ships in the build.
-- Put all API calls in one module, for example `api.ts`. It adds the CSRF
-  header, parses errors (section 4.4) and sends the user to login on a 401.
+- Put all API calls in one typed API client (the `src/api/` folder in section
+  3.1). It adds the CSRF header, parses errors (section 4.5) and sends the user
+  to login on a 401.
+
+### 3.1 Required frontend structure
+
+Use a clear feature-based structure similar to:
+
+```text
+src/
+  app/
+    App.tsx
+    routes.tsx
+    providers.tsx
+
+  api/
+    client.ts
+    errors.ts
+    session.ts
+    submissions.ts
+    analyses.ts
+    settings.ts
+    users.ts
+    tokens.ts
+    audit.ts
+
+  auth/
+    AuthContext.tsx
+    ProtectedRoute.tsx
+    roleGuards.ts
+
+  components/
+    VerdictBadge.tsx
+    ScoreCard.tsx
+    IndicatorValue.tsx
+    FileDownloadList.tsx
+    ConfirmDialog.tsx
+    LoadingState.tsx
+    EmptyState.tsx
+    ErrorState.tsx
+
+  features/
+    login/
+    submit/
+    queue/
+    analysis/
+    settings/
+    users/
+    tokens/
+    audit/
+
+  security/
+    defang.ts
+    vocabulary.ts
+    safeLinks.ts
+
+  styles/
+    tokens.css
+    globals.css
+```
+
+This is a guide, not a requirement to use exactly these filenames. Do not add
+a backend, proxy, server-side renderer or custom API route.
 
 ---
 
@@ -191,24 +329,77 @@ Log out        DELETE /api/v1/session  with X-CSRF-Token  -> 204; clear everythi
 A session ends after 8 hours of inactivity. Any 401 means: clear state and
 show login.
 
-### 4.2 Requests that change something
+### 4.2 Session refresh rules
 
-Every POST, PATCH and DELETE (except `POST /api/v1/session`) needs the
-`X-CSRF-Token: <csrf>` header. Without it the server answers 403.
+- On every full page load, call `GET /api/v1/session`.
+- If it returns 200, replace the in-memory user and CSRF token with the new
+  values.
+- If it returns 401, clear all in-memory state and show login.
+- Never restore a session from localStorage, sessionStorage, IndexedDB or a
+  service-worker cache.
+- If a state-changing request returns 403 and the error indicates a CSRF
+  problem, call `GET /api/v1/session` once, replace the in-memory CSRF token,
+  and retry the original request once.
 
-### 4.3 Waiting for a verdict
+  The server marks a CSRF problem with a 403 whose `detail` is exactly
+  `the form is out of date: reload the page and try again`. Every other 403 is
+  a permission refusal (for example `only an admin can do that`): show it and
+  do not retry.
+- Never retry a failing request indefinitely.
+- If the retry also fails, show a clear error and leave the current page state
+  unchanged.
 
-After a submit (202), poll `GET /api/v1/submissions/{id}` every 1 to 2
-seconds:
-- `queued` and `running`: still working. Show progress your way; it usually
-  takes about a second.
-- `done`: `analysis_id` is set; open that analysis.
-- `failed`: `error` gives a short reason, for example "this message exceeded
-  the analysis limits".
+### 4.3 Requests that change something
 
-Stop polling when the user leaves the screen.
+Every POST, PATCH and DELETE except `POST /api/v1/session` requires:
 
-### 4.4 Errors
+```http
+X-CSRF-Token: <csrf-token>
+```
+
+Without it the server answers 403. The token must exist in memory before the
+request is sent.
+
+The API client must:
+
+1. add the header automatically;
+2. never expose the token in the URL;
+3. never log the token;
+4. never persist the token;
+5. refresh and retry once after a CSRF-specific 403 (section 4.2);
+6. clear it on logout, 401 or session expiry.
+
+### 4.4 Waiting for a verdict
+
+After a submit returns 202, poll:
+
+```text
+GET /api/v1/submissions/{id}
+```
+
+Poll approximately every 1.5 seconds. An analysis usually takes about a second.
+
+- `queued`: waiting to start.
+- `running`: analysis is in progress.
+- `done`: `analysis_id` is available; navigate to the analysis page.
+- `failed`: show the server-provided `error` as text, for example "this
+  message exceeded the analysis limits".
+
+Polling requirements:
+
+- Use `AbortController`.
+- Stop polling when a terminal state is reached.
+- Stop polling when the user leaves the screen.
+- Stop polling after five minutes.
+- Do not create more than one active polling loop for the same submission.
+- If a temporary network error occurs, show a retry option.
+- Do not silently continue polling forever.
+
+After five minutes, say that the analysis is taking longer than expected and
+offer a "Check again" button. The server keeps working; the result will also
+appear in the queue.
+
+### 4.5 Errors
 
 Every API error is JSON: `{"error": "<code>", "detail": "<human text>"}`.
 `detail` is safe to show as text.
@@ -217,7 +408,7 @@ Every API error is JSON: `{"error": "<code>", "detail": "<human text>"}`.
 |---|---|---|
 | 400 | `bad_request` | Bad input, for example an empty message. |
 | 401 | `unauthorized` | Not logged in or session expired: go to login. |
-| 403 | `forbidden` | Not allowed for this role, or the CSRF token is missing. |
+| 403 | `forbidden` | Not allowed for this role, or the CSRF token is missing or stale (section 4.2 tells them apart). |
 | 404 | `not_found` | No such item. |
 | 409 | `conflict` | The message is on hold; an admin must release it before deleting. |
 | 410 | `gone` | The message and its reports were deleted after the retention period; the verdict and the record stay. |
@@ -225,6 +416,30 @@ Every API error is JSON: `{"error": "<code>", "detail": "<human text>"}`.
 | 415 | `unsupported` | Not an `.eml` or `.msg` message. |
 | 422 | `invalid` | A form value is wrong; `detail` says which. |
 | 429 | `throttled` | Too many login tries; wait `Retry-After` seconds. |
+
+### 4.6 Network and unexpected errors
+
+Handle these cases even when the server does not return the standard JSON
+error shape:
+
+- network disconnected;
+- request timeout;
+- invalid JSON response;
+- unexpected 5xx response;
+- aborted request;
+- browser blocked request;
+- download failure.
+
+Do not show raw stack traces, response bodies or tokens.
+
+Use a short human message, for example:
+
+```text
+The PhishHawk server could not be reached. Check the connection and try again.
+```
+
+For a request that was intentionally aborted because the user changed screens,
+do not show an error toast.
 
 ---
 
@@ -252,28 +467,130 @@ style directly.
 
 ### 5.2 Helpers to use
 
-```ts
-// The same rule the engine uses: hxxp(s):// and [.] in the host.
-export function defang(value: string): string {
-  const out = value.replace(/^http(s?):\/\//i, (_m, s: string) => `hxxp${s}://`);
-  const m = out.match(/^(hxxps?:\/\/|ftp:\/\/)([^/?#]+)(.*)$/i);
-  return m ? m[1] + m[2].split('.').join('[.]') + m[3] : out.split('.').join('[.]');
+```typescript
+// iocs[].type is one of these.
+const INDICATOR_TYPES = new Set([
+  "url",
+  "domain",
+  "ipv4",
+  "ipv6",
+  "email",
+  "sha256",
+  "crypto-wallet",
+  "phone",
+]);
+
+const ALLOWED_ATTACK_ID = /^T\d{4}(?:\.\d{3})?$/;
+
+// The engine's rule: hxxp(s):// for the scheme, [.] for every dot in the host.
+export function defangUrl(value: string): string {
+  const text = String(value);
+  const match = text.match(/^(https?|hxxps?|ftp):\/\/([^/?#]+)(.*)$/i);
+
+  if (!match) {
+    return defangDomain(text);
+  }
+
+  const scheme = match[1].toLowerCase();
+  const safeScheme =
+    scheme === "ftp" ? "ftp" : scheme.endsWith("s") ? "hxxps" : "hxxp";
+  const host = defangDomain(match[2]);
+
+  return `${safeScheme}://${host}${match[3]}`;
 }
 
-// iocs[].type is one of: url, domain, ipv4, ipv6, email, sha256, crypto-wallet, phone
+export function defangDomain(value: string): string {
+  return String(value).split(".").join("[.]");
+}
+
+export function defangEmail(value: string): string {
+  return String(value).split("@").join("[@]").split(".").join("[.]");
+}
+
 export function showIndicator(type: string, value: string): string {
-  return ['url', 'domain', 'ipv4', 'email'].includes(type) ? defang(value) : value;
+  const indicatorType = String(type);
+  const text = String(value);
+
+  if (!INDICATOR_TYPES.has(indicatorType)) {
+    return text;
+  }
+
+  if (indicatorType === "url") {
+    return defangUrl(text);
+  }
+
+  if (indicatorType === "domain" || indicatorType === "ipv4") {
+    return defangDomain(text);
+  }
+
+  if (indicatorType === "email") {
+    return defangEmail(text);
+  }
+
+  return text;
 }
 
-// The one link you may build from report data: a MITRE ATT&CK technique, from its ID.
 export function attackUrl(id: string): string | null {
-  return /^T\d{4}(\.\d{3})?$/.test(id) ? `https://attack.mitre.org/techniques/${id.replace('.', '/')}/` : null;
+  const techniqueId = String(id);
+
+  if (!ALLOWED_ATTACK_ID.test(techniqueId)) {
+    return null;
+  }
+
+  const path = techniqueId.replace(".", "/");
+  return `https://attack.mitre.org/techniques/${path}/`;
 }
 ```
 
-Links to `attack.mitre.org` open a new tab with `rel="noopener noreferrer"`.
-It is the only external link the app has. Navigation away is not a request
-the CSP blocks.
+For example, `showIndicator("url", "https://evil-login.top/login?next=")`
+gives `hxxps://evil-login[.]top/login?next=`, `showIndicator("ipv4",
+"203.0.113.7")` gives `203[.]0[.]113[.]7`, and `showIndicator("email",
+"pay@evil-login.top")` gives `pay[@]evil-login[.]top`. A URL without a scheme
+gets every dot defanged. `ipv6`, `sha256`, `crypto-wallet` and `phone` values
+are shown unchanged, as text.
+
+Use `showIndicator()` only for values whose type is known to be an indicator.
+Never run it on:
+
+- subjects;
+- display names;
+- filenames;
+- report prose;
+- recommendations;
+- audit details;
+- API error messages.
+
+`attackUrl()` is navigation-only. Never fetch, prefetch, iframe, proxy or
+embed its result. Open it only after a deliberate user click with:
+
+```tsx
+<a
+  href={attackUrl(technique.id) ?? undefined}
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  {technique.id}
+</a>
+```
+
+If the technique ID is invalid, render it as plain text and do not create a
+link.
+
+Links to `attack.mitre.org` are the only external links the app has.
+Navigation away is not a request the CSP blocks.
+
+### 5.3 Safe rendering rules
+
+- Use React text interpolation for attacker-controlled values.
+- Never use `dangerouslySetInnerHTML`.
+- Never use a Markdown renderer for email-derived content.
+- Never use a rich-text renderer for report values.
+- Never use attacker-controlled values as CSS classes.
+- Never use attacker-controlled values as inline style property names or URLs.
+- Never use attacker-controlled values as React component names.
+- Never use attacker-controlled values as DOM event-handler attributes.
+- Fixed vocabulary must be mapped through a constant lookup table.
+- Unknown vocabulary values must render as neutral text, not as a guessed style.
 
 ---
 
@@ -295,23 +612,90 @@ Further conditions:
   verdict and the record, with no downloads, no report frame, no
   re-analyze and no "Delete now".
 
+### 6.1 Role enforcement reminder
+
+Role checks are only presentation logic.
+
+The frontend must hide or disable controls that the role cannot use, but the
+server remains the authority. Do not assume that a hidden button makes an
+operation safe.
+
+For every destructive action:
+
+1. Check the current role.
+2. Check the current object state.
+3. Ask for confirmation.
+4. Send the request with the CSRF header.
+5. Refresh the object from the server.
+6. Show the server's final state.
+
 ---
 
 ## 7. Milestone 1 screens and their API
 
-The API is fully defined in `openapi.json`. The shapes below are the real
-responses.
+The API is fully defined in `openapi.json`. The shapes below are real
+responses, abbreviated where they show `<...>` or `"...": "..."`.
 
-### 7.1 Login
+### 7.1 Required M1 routes
+
+Use routes equivalent to:
+
+```text
+/app/
+/app/login
+/app/analyses
+/app/analyses/:id
+/app/settings
+/app/users
+/app/tokens
+/app/audit
+/app/health
+```
+
+Requirements:
+
+- `/app/login` is public.
+- `/app/`, `/app/analyses` and `/app/analyses/:id` require a valid session.
+- `/app/settings`, `/app/users`, `/app/tokens` require the admin role.
+- `/app/audit` requires a valid session; the server determines which entries
+  are visible.
+- `/app/health` may be admin-only even though `/healthz` itself is public.
+- Unknown frontend routes show a safe not-found screen.
+- Reloading a deep link must work under the `/app/` base path.
+- Do not place API data, credentials or tokens in route parameters. The
+  numeric analysis ID in `/app/analyses/:id` is fine; accept only digits
+  there, and show the not-found screen for anything else.
+
+### 7.2 Login
 
 `POST /api/v1/session` as in section 4.1. Show the error states: wrong
 password, throttled with a countdown, and server unreachable.
 
-### 7.2 Submit (home)
+### 7.3 Submit (home)
 
 There are two ways in: drag and drop or pick a file (`.eml`, `.msg`), or paste
-the raw message (headers and body). Add an **Offline** switch, "no reputation
-lookups for this message".
+the raw message (headers and body).
+
+Add an **Offline analysis** switch with this exact meaning:
+
+> Do not send this message's indicators to reputation providers.
+
+This does not mean that the browser is disconnected from the PhishHawk server.
+The message still goes to the same-origin PhishHawk API for analysis.
+
+Show the selected state clearly:
+
+```text
+Offline analysis enabled — reputation lookups will not be performed.
+```
+
+Send:
+
+```text
+offline=true
+```
+
+with the multipart submission.
 
 ```
 POST /api/v1/submissions      multipart/form-data, X-CSRF-Token
@@ -321,11 +705,11 @@ POST /api/v1/submissions      multipart/form-data, X-CSRF-Token
         "submitted_at": "2026-10-07T09:12:03+00:00"}
 ```
 
-Then poll as in section 4.3. The same message twice is fine; the server
+Then poll as in section 4.4. The same message twice is fine; the server
 recognises it by its SHA-256. Show the last 10 analyses below the form, using
 the first 10 of `GET /api/v1/analyses`.
 
-### 7.3 Queue
+### 7.4 Queue
 
 ```
 GET /api/v1/analyses?q=<search>&verdict=<exact verdict>&offset=<n>
@@ -368,7 +752,25 @@ An analysis summary looks like this:
 
 `subject` is `null` once the message has been deleted.
 
-### 7.4 Analysis
+#### Queue states
+
+The queue must support:
+
+- initial loading;
+- loading the next page;
+- no analyses yet;
+- no search results;
+- no more results;
+- invalid search;
+- server error;
+- expired session;
+- retry;
+- keyboard navigation;
+- narrow mobile layout.
+
+Do not load all analyses at once. Use the server's pagination.
+
+### 7.5 Analysis
 
 ```
 GET /api/v1/analyses/{id}
@@ -415,7 +817,52 @@ Hold / Release       POST / DELETE /api/v1/messages/{message_id}/hold   -> {"hol
 record. "Delete completely" removes everything; the audit log keeps the hash.
 Explain this in the confirmation.
 
-### 7.5 Settings (admin)
+#### Download rules
+
+- Do not automatically download or prefetch any file.
+- Start a download only after a deliberate user click.
+- Prefer a normal same-origin download link.
+- Do not construct a download URL from an attacker-controlled filename.
+- Use only the exact file URL returned or defined by the API contract. For an
+  export that is `/api/v1/analyses/{id}/files/{name}?download=1`, built from
+  the analysis `id` and the server-generated `files[].name` (passed through
+  `encodeURIComponent`). Never use `attachments[].filename` or any other
+  report value in a URL.
+- Do not pass indicators into download URLs.
+- If a file is unavailable, render it as unavailable text.
+- If a download fails, show the error as text and do not expose the raw server
+  response.
+- The server records downloads in the audit log. Showing the report in the
+  frame also counts as a `download` of the HTML file; that is expected.
+
+#### Analysis state handling
+
+If `hold` is true:
+
+- show a visible hold banner;
+- hide delete controls;
+- explain that deletion returns a conflict until an admin releases the hold.
+
+If `tier1_deleted_at` is set:
+
+- show the retained verdict and record;
+- show that the message content has been deleted;
+- hide downloads;
+- hide the report iframe;
+- hide re-analyze;
+- hide raw-message access;
+- hide delete controls.
+
+If `report` is null for any other reason:
+
+- show a clear unavailable state;
+- do not invent report content;
+- do not crash the page.
+
+After "Delete completely" the analysis no longer exists: `GET
+/api/v1/analyses/{id}` returns 404, so show the not-found state.
+
+### 7.6 Settings (admin)
 
 ```
 GET   /api/v1/settings
@@ -440,7 +887,7 @@ PATCH /api/v1/settings     JSON with any subset of the fields below; returns the
   password field, and never echo a key back.
 - Limits accept 1 to 100000.
 
-### 7.6 Users and API tokens (admin)
+### 7.7 Users and API tokens (admin)
 
 ```
 GET   /api/v1/users            -> [{"id", "username", "role", "disabled", "last_login_at"}]
@@ -458,7 +905,7 @@ DELETE /api/v1/tokens/{id}     -> {"revoked": true}
 - **A new token is shown once.** Display it with a copy button and a clear "you
   won't see this again" note; don't keep it after the dialog closes.
 
-### 7.7 Audit log
+### 7.8 Audit log
 
 ```
 GET /api/v1/audit?offset=<n>   -> [{"id", "at", "actor", "action", "object_type", "object_id", "details"}]
@@ -473,12 +920,37 @@ Actions you will see: `login`, `login_failed`, `logout`, `submit`, `analyze`,
 `user_change`, `token_create`, `token_revoke`, `rotate_key`,
 `retention_sweep`. Render `actor` and `details` as text (section 5.1).
 
-### 7.8 Status (optional, for admins)
+### 7.9 Status (optional, for admins)
 
 ```
 GET /healthz   (no login needed)
 -> {"status": "ok", "version": "...", "queue": 0, "last_heartbeat": "...", "disk_free_mb": 23517}
 ```
+
+### 7.10 Required UI states
+
+Every screen must define these states:
+
+- loading;
+- loaded;
+- empty;
+- permission denied;
+- not found;
+- session expired;
+- network error;
+- server error;
+- retrying;
+- retry available;
+- destructive action pending;
+- destructive action completed;
+- object deleted;
+- object held;
+- reduced-motion mode;
+- keyboard-only mode;
+- narrow mobile layout.
+
+Use accessible text for all states. Do not communicate state only through colour,
+animation or iconography.
 
 ---
 
@@ -529,13 +1001,41 @@ The same applies as for M2: design now, wire later, confirm the fields.
 
 ## 10. Deploy
 
-1. `npm run build`, with `base: '/app/'` set.
-2. Copy `dist/` to the PhishHawk server.
-3. Set `PHISHHAWK_FRONTEND_DIR` to that folder and restart. With Docker
-   Compose, uncomment the two lines in `compose.yaml` and mount the folder
-   read-only.
-4. Open `https://<server>/app/`. Reloading any of your routes (for example
-   `/app/analyses/12`) works.
+1. Run `npm run build`.
+2. Confirm `vite.config.ts` contains `base: "/app/"`, for example:
+
+   ```ts
+   export default defineConfig({
+     plugins: [react()],
+     base: "/app/",
+   });
+   ```
+
+3. Confirm the generated `dist/` folder contains only static frontend assets.
+4. Confirm no mock API code is enabled in production.
+5. Copy `dist/` to the PhishHawk server.
+6. Set `PHISHHAWK_FRONTEND_DIR` to that folder.
+7. Mount the folder read-only when using Docker Compose: `compose.yaml` has
+   the two lines, commented out.
+8. Restart the PhishHawk server.
+9. Open:
+
+   ```text
+   https://<server>/app/
+   ```
+
+10. Test a deep link such as:
+
+    ```text
+    https://<server>/app/analyses/12
+    ```
+
+11. Confirm the server returns the frontend entry point for valid `/app/`
+    routes.
+12. Confirm every API request remains same-origin.
+13. Confirm there are no CSP violations.
+14. Confirm no external fonts, images, scripts, analytics or API requests are
+    present.
 
 ---
 
@@ -548,10 +1048,10 @@ Run these against the real server before you call the frontend done.
 2. **No outside requests.** In the Network tab, every request goes to the
    PhishHawk server itself.
 3. **The hostile email.** Log in, choose "paste", paste the message below,
-   tick Offline and submit. Check:
+   turn on Offline analysis and submit. Check:
    - no alert box appears, on any screen;
-   - the subject and sender name show the literal characters `"><img ...`
-     and `"><svg ...` as text;
+   - the subject, the sender name and the attachment's file name show the
+     literal characters `"><img ...` and `"><svg ...` as text;
    - the URL shows as `hxxps://evil-login[.]top/login?next=` and is not
      clickable;
    - the queue, the analysis screen, the audit log and a search for
@@ -563,10 +1063,21 @@ Run these against the real server before you call the frontend done.
    Subject: "><img src=x onerror=alert(document.domain)> Urgent invoice
    Message-ID: <"><svg onload=alert(3)>@evil-login.top>
    Reply-To: "<script>alert(4)</script>" <pay@evil-login.top>
+   Authentication-Results: "><svg onload=alert(8)>; spf=fail smtp.mailfrom=evil-login.top
+   MIME-Version: 1.0
+   Content-Type: multipart/mixed; boundary="b1"
+
+   --b1
    Content-Type: text/html; charset=utf-8
 
    <p>Pay now: <a href="javascript:alert(5)">"><svg onload=alert(6)></a></p>
    <p>https://evil-login.top/login?next="><script>alert(7)</script></p>
+   --b1
+   Content-Type: text/plain; name="\"><img src=x onerror=alert(9)>.txt"
+   Content-Disposition: attachment; filename="\"><img src=x onerror=alert(9)>.txt"
+
+   invoice
+   --b1--
    ```
 
 4. **The report frame** has exactly
@@ -584,5 +1095,107 @@ Run these against the real server before you call the frontend done.
    animations stop or become simple fades.
 9. **Phone width.** At 320 px wide nothing scrolls sideways, and the verdict
    is readable without zooming.
-10. **Storage.** `localStorage` and `sessionStorage` hold nothing but UI
-    preferences.
+10. **Storage.** `localStorage` holds nothing but the theme preference, and
+    `sessionStorage` holds nothing (test 17 has the full check).
+11. **MITRE links.**
+    - Valid ATT&CK IDs create only the approved MITRE navigation link.
+    - The frontend never fetches or embeds the MITRE page.
+    - Invalid technique IDs render as plain text.
+    - No indicator creates an external link.
+12. **CSRF recovery.**
+    - Expire the in-memory CSRF token.
+    - Trigger a state-changing request.
+    - Confirm one session refresh and one retry happen.
+    - Confirm there is no infinite retry loop.
+13. **Polling.**
+    - Submit a message.
+    - Confirm only one polling loop exists.
+    - Navigate away.
+    - Confirm polling stops and the request is aborted.
+    - Confirm polling stops after a terminal state.
+    - Confirm polling times out after five minutes.
+14. **Deletion states.**
+    - Test held message.
+    - Test tier-1 deletion.
+    - Test complete deletion.
+    - Confirm the correct controls disappear in each state.
+    - Confirm the audit log remains available according to the role.
+15. **Download behaviour.**
+    - No file downloads on page load.
+    - Downloads start only after a click.
+    - Unavailable files are not clickable.
+    - Download errors do not expose raw server content.
+16. **Rendering safety.**
+    - Test hostile content in subject, sender, filename, URL, reply-to,
+      authentication header, audit detail and API error detail.
+    - The message in test 3 covers the subject, sender, attachment file name,
+      URL, reply-to and authentication header. For the audit log, try to log
+      in with the username `"><svg onload=alert(10)>` (it becomes the `actor`
+      of a `login_failed` entry), and as an admin create an API token named
+      `"><img src=x onerror=alert(11)>` (it appears in the `details` of
+      `token_create`).
+    - Confirm every value appears as literal text.
+    - Confirm no attacker-controlled value becomes an HTML attribute, CSS
+      value, link, image source or request URL.
+17. **Storage.**
+    - Confirm `localStorage` contains only the theme preference.
+    - Confirm `sessionStorage` contains no API data.
+    - Confirm IndexedDB is unused.
+    - Confirm service-worker caching is unused.
+    - Confirm the CSRF token disappears after logout.
+18. **Accessibility.**
+    - Dialog focus moves into the dialog.
+    - Escape closes the dialog.
+    - Focus returns to the triggering control.
+    - Errors use accessible announcements.
+    - Buttons and links have accessible names.
+    - Tables have headers and captions.
+    - The UI works without colour, mouse or animation.
+19. **Production build.**
+    - `npm run build` succeeds.
+    - Mock API code is not enabled.
+    - No `eval`, `new Function`, inline script, import map or JavaScript URL
+      exists in the production bundle.
+    - No `dangerouslySetInnerHTML` is used for email-derived data.
+
+---
+
+## 12. Final implementation instruction
+
+Build Milestone 1 first.
+
+Before writing UI code:
+
+1. Read `docs/api/openapi.json`.
+2. Read `docs/report.schema.json`.
+3. Treat those files as the source of truth.
+4. Do not invent missing endpoints or fields.
+5. Resolve any conflict in favour of the backend contract and the security rules
+   in this prompt.
+6. If the backend does not support a requested feature, show the available
+   data and add a visible:
+
+   ```text
+   NEEDS BACKEND
+   ```
+
+7. Keep all API calls in one typed API client.
+8. Keep attacker-controlled values as text.
+9. Keep the CSRF token and API state in memory only.
+10. Keep all requests same-origin.
+11. Do not add a backend or proxy.
+12. Do not add external dependencies that violate the CSP.
+13. Run the complete acceptance checklist before declaring the frontend done.
+
+Do not generate only a visual mockup. Generate a working, secure, typed,
+accessible frontend that can be built with:
+
+```bash
+npm run build
+```
+
+The finished output must be deployable as static files under:
+
+```text
+/app/
+```
