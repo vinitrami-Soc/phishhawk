@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import datetime
+import functools
 import getpass
 import hashlib
 import json
@@ -43,8 +44,8 @@ from .cache import Cache, default_cache_path
 from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
 from .pipeline import Options, triage_bytes
-from .report import campaignout, console, csvout, html, markdown, misp, stix, sweepout
-from .report.common import printable, report_id, safe_report_name, to_dict
+from .report import bundle, campaignout, console, html, sweepout
+from .report.common import printable, safe_report_name, to_dict
 
 COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "sweep", "evidence", "doctor", "cache", "techniques",
             "help")
@@ -588,10 +589,6 @@ def _write(path: str, content: str) -> None:
         handle.write(content)
 
 
-REPORT_TYPES = {"json": "JSON report", "stix": "STIX 2.1 bundle", "misp": "MISP event", "md": "Markdown note",
-                "csv": "CSV indicators", "html": "HTML report", "manifest": "Manifest"}
-
-
 def _report_path(path: str, analyses: list[Analysis], kind: str, day: str) -> str:
     """A folder (an existing one, or any path ending in a separator) gets a file
     name built from hashes alone, so nothing from the message reaches the disk."""
@@ -601,19 +598,6 @@ def _report_path(path: str, analyses: list[Analysis], kind: str, day: str) -> st
         os.makedirs(path, exist_ok=True)
         return os.path.join(path, safe_report_name(analyses, kind, day))
     return path
-
-
-def _manifest(analyses: list[Analysis], written: list[dict]) -> dict:
-    """What a run wrote, so a copy passed along can be checked against it."""
-    return {
-        "manifest_version": 1,
-        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-        "tool": "phishhawk",
-        "tool_version": __version__,
-        "messages": [{"report_id": report_id(a), "path": a.path, "sha256": a.evidence.get("sha256", ""),
-                      "size": a.evidence.get("size", 0)} for a in analyses],
-        "files": [{key: f[key] for key in ("name", "kind", "type", "size", "sha256")} for f in written],
-    }
 
 
 FAIL_ORDER = {"never": 99, "suspicious": 1, "likely": 2, "malicious": 3}
@@ -769,16 +753,10 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
         print(console.render_batch_table(analyses, colour))
         print("")
 
-    renderers = {
-        "json": lambda: json.dumps(to_dict(analyses[0]) if len(analyses) == 1
-                                   else {"reports": [to_dict(a) for a in analyses]},
-                                   indent=2, ensure_ascii=False) + "\n",
-        "stix": lambda: json.dumps(stix.build_bundle(analyses), indent=2) + "\n",
-        "misp": lambda: json.dumps(misp.build(analyses, args.tlp), indent=2, ensure_ascii=False) + "\n",
-        "md": lambda: "\n---\n\n".join(markdown.render(a) for a in analyses),
-        "csv": lambda: csvout.render(analyses),
-        "manifest": lambda: json.dumps(_manifest(analyses, report_files), indent=2, ensure_ascii=False) + "\n",
-    }
+    renderers: dict[str, Callable[[], str]] = {
+        kind: functools.partial(bundle.render, kind, analyses, args.tlp) for kind in bundle.BEFORE_HTML}
+    renderers["manifest"] = lambda: json.dumps(bundle.manifest(analyses, report_files), indent=2,
+                                               ensure_ascii=False) + "\n"
     day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d")
     report_files: list[dict] = []
     for kind, path in outputs.items():
@@ -797,7 +775,7 @@ def _triage(args: argparse.Namespace, command: argparse.ArgumentParser,
                 encoded = content.encode("utf-8")  # _write keeps line endings, so these are the bytes on disk
                 digest = hashlib.sha256(encoded).hexdigest()
                 report_files.append({"name": os.path.basename(path), "path": os.path.abspath(path), "kind": kind,
-                                     "type": REPORT_TYPES[kind], "size": len(encoded), "sha256": digest})
+                                     "type": bundle.REPORT_TYPES[kind], "size": len(encoded), "sha256": digest})
                 print(err("[i] %s report written to %s (%d bytes, sha256 %s)"
                           % (kind.upper(), path, len(encoded), digest), "dim"), file=sys.stderr)
         except OSError as exc:

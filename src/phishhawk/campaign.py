@@ -209,6 +209,15 @@ def _traits(a: Analysis) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     return {kind: values for kind, values in found.items() if values}, dict(under)
 
 
+def trait_record(a: Analysis) -> dict[str, Any]:
+    """What correlation needs from one message, as plain JSON, so a stored
+    record can still be correlated after the message itself is deleted."""
+    found, under = _traits(a)
+    return {"traits": {kind: sorted(values) for kind, values in found.items()},
+            "under": {base: sorted(hosts) for base, hosts in under.items()},
+            "flagged": a.verdict != "NO STRONG INDICATORS"}
+
+
 def _platforms(unders: list[dict[str, set[str]]]) -> list[dict[str, Any]]:
     holders: dict[str, int] = defaultdict(int)
     hosts: dict[str, set[str]] = defaultdict(set)
