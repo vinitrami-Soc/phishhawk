@@ -7,6 +7,8 @@ from phishhawk.server.crypto import Box, new_key
 from phishhawk.server.db import make_engine, make_sessionmaker, migrate
 from phishhawk.server.store import BlobStore
 
+from .serverkit import PASSWORD, login
+
 
 @pytest.fixture
 def settings(tmp_path):
@@ -35,3 +37,38 @@ def services(settings, db, box, store):
     from phishhawk.server.processing import Services
 
     return Services(settings, db, box, store)
+
+
+@pytest.fixture
+def app(services):
+    from phishhawk.server import auth
+    from phishhawk.server.app import create_app
+    from phishhawk.server.db import transaction
+
+    with transaction(services.sessions) as s:
+        auth.create_user(s, "admin", PASSWORD, "admin")
+        auth.create_user(s, "alice", PASSWORD, "analyst")
+        auth.create_user(s, "bob", PASSWORD, "analyst")
+    return create_app(services=services)
+
+
+@pytest.fixture
+def anon(app):
+    from fastapi.testclient import TestClient
+
+    return TestClient(app)
+
+
+@pytest.fixture
+def admin(app):
+    return login(app, "admin")
+
+
+@pytest.fixture
+def alice(app):
+    return login(app, "alice")
+
+
+@pytest.fixture
+def bob(app):
+    return login(app, "bob")
