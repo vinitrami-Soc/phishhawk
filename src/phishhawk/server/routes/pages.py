@@ -15,7 +15,7 @@ from ..deps import COOKIE, DB, Admin, CurrentActor, optional_actor, services
 from ..models import Analysis, ApiToken, AuditRecord, Submission, User
 from . import api
 
-router = APIRouter()
+router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
 MB = 1024 * 1024
 VERDICTS = ("NO STRONG INDICATORS", "SUSPICIOUS", "LIKELY PHISHING", "MALICIOUS")
 
