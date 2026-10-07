@@ -1,7 +1,11 @@
 """Shared fixtures. Everything is offline: API clients get fake sessions."""
 
+import importlib.util
 import os
 from email.message import EmailMessage
+
+# The web app's tests need the [server] extra; without it they are not collected.
+collect_ignore = [] if importlib.util.find_spec("fastapi") else ["server"]
 
 SAMPLES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples")
 
