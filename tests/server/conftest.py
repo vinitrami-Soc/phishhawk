@@ -5,6 +5,7 @@ import pytest
 from phishhawk.server.config import ServerSettings
 from phishhawk.server.crypto import Box, new_key
 from phishhawk.server.db import make_engine, make_sessionmaker, migrate
+from phishhawk.server.store import BlobStore
 
 
 @pytest.fixture
@@ -22,3 +23,8 @@ def db(settings):
 @pytest.fixture
 def box(settings):
     return Box.from_b64(settings.encryption_key.get_secret_value())
+
+
+@pytest.fixture
+def store(settings, box):
+    return BlobStore(settings.data_dir / "blobs", box)
