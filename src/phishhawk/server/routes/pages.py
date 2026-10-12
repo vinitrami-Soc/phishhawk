@@ -3,7 +3,9 @@ token; the pages call the same helpers as the JSON API."""
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Annotated, Any
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse, Response
@@ -17,6 +19,7 @@ from . import api
 
 router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
 VERDICTS = ("NO STRONG INDICATORS", "SUSPICIOUS", "LIKELY PHISHING", "MALICIOUS")
+SOURCES = ("upload", "paste", "batch")
 
 
 def _see_other(url: str) -> RedirectResponse:
@@ -95,12 +98,25 @@ def submission_page(request: Request, db: DB, actor: CurrentActor, submission_id
     return html_response(request, "submission.html", {"actor": actor, "submission": view})
 
 
+def _day(value: str) -> dt.date | None:
+    """A form's date field: empty, or a day that is not one, filters nothing."""
+    try:
+        return dt.date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
 @router.get("/queue")
 def queue(request: Request, db: DB, actor: CurrentActor, q: str = "", verdict: str = "",
-          offset: Annotated[int, Query(ge=0)] = 0) -> Response:
-    rows = views.listing(db, services(request).store, q, verdict, offset)
-    return html_response(request, "queue.html", {"actor": actor, "rows": rows, "q": q, "verdict": verdict,
-                                                 "verdicts": VERDICTS, "offset": offset, "page": views.PAGE})
+          offset: Annotated[int, Query(ge=0)] = 0, source: str = "", user: str = "", since: str = "",
+          until: str = "") -> Response:
+    chosen = int(user) if user.isdigit() else None
+    rows = views.listing(db, services(request).store, q, verdict, offset, source, chosen, _day(since), _day(until))
+    filters = {"q": q, "verdict": verdict, "source": source, "user": user, "since": since, "until": until}
+    return html_response(request, "queue.html", {"actor": actor, "rows": rows, "verdicts": VERDICTS,
+                                                 "sources": SOURCES, "users": views.usernames(db),
+                                                 "offset": offset, "page": views.PAGE, "f": filters,
+                                                 "query": urlencode({k: v for k, v in filters.items() if v})})
 
 
 @router.get("/campaigns")
