@@ -2,10 +2,11 @@
 them, who received them and when, all offline."""
 
 import csv
+import hashlib
 import io
 import json
 
-from phishhawk.campaign import correlate, normalise_subject
+from phishhawk.campaign import correlate, correlate_records, normalise_subject, trait_record
 from phishhawk.cli import main
 from phishhawk.pipeline import triage_bytes
 from phishhawk.report import campaignout
@@ -337,3 +338,36 @@ def test_campaign_csv_cells_cannot_start_a_formula():
         rows = list(csv.DictReader(io.StringIO(campaignout.render_csv(
             {"messages": 1, "clusters": [], "unclustered": [message], "platforms": []}))))
         assert [rows[0][key] for key in ("path", "date", "from", "subject")] == ["'" + attack] * 4
+
+
+def test_stored_records_correlate_as_the_messages_do():
+    """What the web app keeps of each message (trait_record() as JSON, with the subject and the display name
+    only as keyed hashes) groups the messages exactly as correlate() does with the analyses."""
+    doc = (b"%PDF-1.4 invoice", "application", "pdf", "invoice.pdf")
+    messages = [
+        _mail(subject="One", sender="<x@one.example>", attachments=[doc], to="alice@corp.example"),
+        _mail(subject="Two", sender="<y@two.example>", attachments=[doc], date="Tue, 06 Oct 2026 18:30:00 +0000"),
+        *[_mail(sender="<s%d@sender%d.example>" % (i, i), html=_lure("https://login.evil-portal.example/%d" % i))
+          for i in range(3)],
+        *[_mail(subject="Payroll update for October", sender='"HR Desk" <hr%d@desk%d.example>' % (i, i))
+          for i in range(2)],
+        _mail(subject="Lunch", sender="<friend@clean.example>", date="not a date"),
+    ]
+    items = [("m%d.eml" % i, triage_bytes(data, "m%d.eml" % i)) for i, data in enumerate(messages, 1)]
+    records = []
+    for path, a in items:
+        record = json.loads(json.dumps(trait_record(a)))
+        for kind in ("subject", "display name"):
+            hidden = [hashlib.sha256(v.encode()).hexdigest() for v in record["traits"].get(kind, [])]
+            record["traits"][kind] = hidden
+        record.update(verdict=a.verdict, sender=a.from_address.lower(), summary={"path": path},
+                      recipients=sorted(a.to.lower().replace(" ", "").split(",")) if a.to else [])
+        records.append(record)
+
+    def outline(result):
+        return [(c["id"], [m["path"] for m in c["messages"]], c["first_seen"], c["last_seen"], c["verdicts"],
+                 c["worst_verdict"], c["senders"], c["recipients"], [s["kind"] for s in c["shared"]])
+                for c in result["clusters"]], [m["path"] for m in result["unclustered"]]
+
+    assert outline(correlate_records(records)) == outline(correlate(items))
+    assert len(correlate(items)["clusters"]) == 3

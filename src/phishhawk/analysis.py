@@ -4,7 +4,10 @@ is kept after the message is deleted, and what was sent to which provider out.""
 
 from __future__ import annotations
 
+import dataclasses
 import email.utils
+import json
+import typing
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlencode
@@ -42,6 +45,7 @@ class AnalysisResult:
     summary: dict[str, Any]  # the record kept after the message is deleted
     traits: dict[str, Any]  # campaign.trait_record()
     lookups: list[dict[str, str]]  # every request sent to a provider
+    state: bytes  # save_state(): the analysis kept to render reports for several messages later
 
 
 class _Recorder:
@@ -118,4 +122,56 @@ def analyze(raw: bytes, name: str = "<upload>", options: AnalysisOptions | None 
             cache.close()
     data = to_dict(a)
     return AnalysisResult(a, data, render_bundle([a], tlp=options.tlp), _summary(a, data),
-                          campaign.trait_record(a), lookups)
+                          campaign.trait_record(a), lookups, save_state(a))
+
+
+STATE_VERSION = 1
+
+
+def save_state(a: Analysis) -> bytes:
+    """The analysis as JSON, so the reports for several messages (a batch's
+    combined exports) can be rendered later without analysing them again.
+    The body text is left out: no report shows it."""
+    state = dataclasses.asdict(a)
+    state["body_text"] = ""
+    return json.dumps({"version": STATE_VERSION, "engine": __version__, "analysis": state},
+                      ensure_ascii=False).encode("utf-8")
+
+
+def load_state(data: bytes) -> Analysis:
+    document = json.loads(data)
+    if not isinstance(document, dict) or document.get("version") != STATE_VERSION:
+        raise ValueError("not a saved analysis this version can read")
+    analysis: Analysis = _build(Analysis, document["analysis"])
+    return analysis
+
+
+def _build(cls: Any, values: dict[str, Any]) -> Any:
+    """A dataclass from what dataclasses.asdict() made of it, after a trip through JSON: nested dataclasses and
+    tuples come back as they were. Fields the saved form lacks keep their defaults."""
+    hints = typing.get_type_hints(cls)
+    return cls(**{f.name: _value(hints[f.name], values[f.name])
+                  for f in dataclasses.fields(cls) if f.name in values})
+
+
+def _value(hint: Any, value: Any) -> Any:
+    origin, args = typing.get_origin(hint), typing.get_args(hint)
+    if dataclasses.is_dataclass(hint):
+        return _build(hint, value)
+    if origin is list and args and dataclasses.is_dataclass(args[0]):
+        return [_build(args[0], item) for item in value]
+    if origin is tuple:
+        return tuple(value)
+    return value
+
+
+def render_saved(states: list[bytes], tlp: str = "amber", day: str | None = None) -> list[RenderedFile]:
+    """Every report format for several saved analyses together, as for one run of the CLI over them all."""
+    return render_bundle([load_state(state) for state in states], tlp=tlp, day=day)
+
+
+def hidden_traits(report: dict[str, Any]) -> dict[str, str]:
+    """The values a trait record keeps only as keyed hashes (the subject and the sender's display name), from
+    the message's full JSON report; "" when the message has none worth matching."""
+    return {"subject": campaign.normalise_subject(report.get("subject") or ""),
+            "display name": campaign.normalise_display_name(report.get("from_display") or "")}
