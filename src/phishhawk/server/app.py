@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from importlib.resources import files
 from typing import Any
@@ -87,6 +88,15 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     if services.settings.frontend_dir:
         app.mount("/app", Frontend(services.settings.frontend_dir), name="frontend")
     return app
+
+
+def openapi_json(app: FastAPI) -> str:
+    """The API description as docs/api/openapi.json holds it: versioned as
+    the API (v1), not the release, so a version bump alone does not change
+    the contract."""
+    document = app.openapi()
+    document["info"]["version"] = "v1"
+    return json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 ERROR_CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",

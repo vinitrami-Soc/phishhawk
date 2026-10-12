@@ -134,3 +134,9 @@ def test_an_mbox_export_is_scanned_message_by_message(tmp_path, capsys):
     assert main([str(tmp_path), *OFFLINE, "--quiet"]) == 1
     out = capsys.readouterr().out
     assert "Inbox.mbox#1" in out and "Inbox.mbox#2" in out and "BATCH SUMMARY (2 messages)" in out
+
+
+def test_server_without_the_extra_says_how_to_install_it(monkeypatch, capsys):
+    monkeypatch.setitem(sys.modules, "phishhawk.server.cli", None)  # as if fastapi were missing
+    assert main(["server", "run"]) == 3
+    assert "pip install 'phishhawk[server]'" in capsys.readouterr().err

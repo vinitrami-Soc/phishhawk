@@ -48,7 +48,7 @@ from .report import bundle, campaignout, console, html, sweepout
 from .report.common import printable, safe_report_name, to_dict
 
 COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "sweep", "evidence", "doctor", "cache", "techniques",
-            "help")
+            "server", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -467,6 +467,9 @@ def build_parser() -> _Parser:
         help="list the MITRE ATT&CK techniques PhishHawk can evidence",
         description="The MITRE ATT&CK techniques PhishHawk can evidence, and what it looks for.")
     techniques.add_argument("--json", action="store_true", help="machine-readable output")
+
+    commands.add_parser("server", add_help=False, help="run the web app (needs: pip install 'phishhawk[server]'); "
+                                                        "see phishhawk server --help")
 
     helper = commands.add_parser("help", help="show help for a command")
     helper.add_argument("topic", nargs="?", choices=COMMANDS[:-1])
@@ -1224,9 +1227,23 @@ def _count(number: int, noun: str) -> str:
 # entry point
 # ---------------------------------------------------------------------------
 
+def cmd_server(argv: list[str]) -> int:
+    try:
+        from .server.cli import main as server_main
+    except ImportError:
+        sys.stderr.write("phishhawk server needs the web app's dependencies: pip install 'phishhawk[server]'\n")
+        return EXIT_ERROR
+    return server_main(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(normalise_argv(list(sys.argv[1:] if argv is None else argv)))
+    argv = normalise_argv(list(sys.argv[1:] if argv is None else argv))
+    if argv[:2] == ["help", "server"]:
+        argv = ["server", "--help"]
+    if argv[:1] == ["server"]:
+        return cmd_server(argv[1:])
+    args = parser.parse_args(argv)
     for flag in ("no_color", "no_banner"):
         setattr(args, flag, getattr(args, flag, False) or getattr(args, "top_" + flag, False))
 
