@@ -2,7 +2,8 @@
 server at /app/ and driven in headless Chromium: sign in, analyse a bundled
 sample offline, read the verdict, the sandboxed report and the files; upload
 two messages as a batch and follow them to their combined reports and their
-campaign; then check phone, tablet and desktop widths for anything past the
+campaign; connect a mailbox (a test IMAP server) and find its reports in the
+queue; then check phone, tablet and desktop widths for anything past the
 right edge. No console errors, so nothing broke the CSP. Skipped unless
 PHISHHAWK_FRONTEND_BUILD names the build (CI's frontend job makes it);
 PHISHHAWK_CHROMIUM may name the browser's executable."""
@@ -161,3 +162,53 @@ def test_a_batch_leads_to_its_combined_reports_and_its_campaign_at_every_width(b
                 page.wait_for_timeout(600)
                 assert page.evaluate(PAST_EDGE) == [], (width, url)
         assert errors == []
+
+
+def test_an_admin_connects_a_mailbox_and_its_reports_reach_the_queue(browser, tmp_path, monkeypatch):
+    import secrets
+
+    from .fakeimap import FakeImapServer
+    from .test_mailbox_imap import USER, report
+
+    password = secrets.token_hex(10)
+    imap = FakeImapServer(tmp_path / "imap", USER, password)
+    monkeypatch.setenv("SSL_CERT_FILE", str(imap.ca_file))  # the worker trusts the test server's CA
+    imap.add(report(1))
+    imap.add(report(2))
+    (tmp_path / "server").mkdir()
+    with running_server(tmp_path / "server", PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        page, errors = _signed_in(browser, server)
+        page.goto(server.base + "/app/mailboxes")
+        page.get_by_text("No mailbox yet.").wait_for()
+        page.get_by_role("button", name="Add mailbox").first.click()
+        page.get_by_label("Name").fill("Reports")
+        page.get_by_label("Host").fill("127.0.0.1")
+        page.get_by_label("Port").fill(str(imap.port))
+        page.get_by_label("User").fill(USER)
+        page.get_by_label("Password", exact=True).fill(password)
+        page.get_by_role("dialog").get_by_role("button", name="Add mailbox").click()
+        page.get_by_text("Not polled yet").first.wait_for()
+        assert password not in page.content()
+        page.get_by_role("button", name="Poll now").click()
+        page.get_by_text("2 imported").wait_for(timeout=60000)
+        assert "OK" in page.inner_text("main")
+
+        page.goto(server.base + "/app/analyses")
+        rows = page.locator("main table a[href^='/app/analyses/']")
+        sync_api.expect(rows).to_have_count(2, timeout=60000)
+        # the filter empties the table while it asks again: wait for its answer, then for the rows
+        with page.expect_response(lambda response: "source=mailbox" in response.url) as filtered:
+            page.get_by_role("button", name="Mailbox").click()
+        assert filtered.value.status == 200
+        sync_api.expect(rows).to_have_count(2, timeout=60000)
+        sync_api.expect(page.locator("main table").get_by_text("Reports")).to_have_count(2)  # submitted by it
+
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            page.goto(server.base + "/app/mailboxes")
+            page.get_by_text("Report mailboxes").wait_for()
+            page.wait_for_timeout(600)
+            assert page.evaluate(PAST_EDGE) == [], width
+        assert errors == []
+    imap.close()
+    assert imap.violations == []

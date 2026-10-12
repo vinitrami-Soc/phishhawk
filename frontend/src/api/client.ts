@@ -21,6 +21,9 @@ import type {
   Campaign,
   CampaignSummary,
   Health,
+  Mailbox,
+  MailboxPatch,
+  NewMailbox,
   NewToken,
   Role,
   Session,
@@ -159,7 +162,7 @@ export function getSubmission(id: number, signal?: AbortSignal): Promise<Submiss
 export type AnalysisQuery = {
   q?: string;
   verdict?: Verdict | '';
-  source?: 'upload' | 'paste' | 'batch' | '';
+  source?: 'upload' | 'paste' | 'batch' | 'mailbox' | '';
   /** a user's ID */
   user?: number | null;
   /** days, YYYY-MM-DD (UTC), both included */
@@ -267,6 +270,29 @@ export function createToken(token: { name: string; scope: 'read' | 'submit'; use
 
 export function revokeToken(id: number): Promise<{ revoked: boolean }> {
   return request('DELETE', `/api/v1/tokens/${id}`);
+}
+
+/* ---- mailboxes (admin) ---- */
+
+export function listMailboxes(signal?: AbortSignal): Promise<Mailbox[]> {
+  return request<Mailbox[]>('GET', '/api/v1/mailboxes', { signal });
+}
+
+export function createMailbox(mailbox: NewMailbox): Promise<Mailbox> {
+  return request<Mailbox>('POST', '/api/v1/mailboxes', { json: mailbox });
+}
+
+export function updateMailbox(id: number, patch: MailboxPatch): Promise<Mailbox> {
+  return request<Mailbox>('PATCH', `/api/v1/mailboxes/${id}`, { json: patch });
+}
+
+export function deleteMailbox(id: number): Promise<{ deleted: boolean }> {
+  return request('DELETE', `/api/v1/mailboxes/${id}`);
+}
+
+/** Poll now. queued is false when a poll was already waiting. 409 when the mailbox is switched off. */
+export function pollMailbox(id: number): Promise<{ queued: boolean }> {
+  return request('POST', `/api/v1/mailboxes/${id}/poll`);
 }
 
 /* ---- audit and health ---- */

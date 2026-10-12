@@ -16,7 +16,8 @@ the JSON and STIX output are the public interface.
   imported twice (by provider ID, SHA-256 and Message-ID). A failed poll shows
   a reason without the credential, is audited, and backs off up to an hour.
   Credentials are stored encrypted and never shown again. Setup for each kind:
-  [docs/SERVER.md](docs/SERVER.md#mailboxes).
+  [docs/SERVER.md](docs/SERVER.md#mailboxes). The frontend has a Mailboxes
+  screen for admins, and "Mailbox" among the queue's sources.
 - **Batches in the web app.** Several files, an .mbox or a .zip are one batch:
   each message is analysed on its own, the batch page follows them, and when the
   last is done the batch gets combined reports in every format, as one run of

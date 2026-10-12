@@ -14,7 +14,7 @@
    on the real server. The real server always checks the password. */
 
 import fixtures from './fixtures.json';
-import type { Analysis, AnalysisFile, AuditEntry, Batch, Settings, Submission, Token, User } from '../api/types';
+import type { Analysis, AnalysisFile, AuditEntry, Batch, Mailbox, MailboxConfig, MailboxKind, Settings, Submission, Token, User } from '../api/types';
 
 const CSRF_DETAIL = 'the form is out of date: reload the page and try again';
 const THROTTLE_MS = 8_000;
@@ -48,6 +48,65 @@ const users: User[] = [
   { id: 2, username: 'alice', role: 'analyst', disabled: false, last_login_at: null },
 ];
 const tokens: Token[] = [];
+
+/* Two report mailboxes: one polled a few minutes ago, one whose sign-in Google refuses. A poll of an enabled
+   mailbox that is not in error imports one copy of a sample analysis, as the real worker would import a report. */
+const minutesFromNow = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
+const mailboxes: Mailbox[] = [
+  {
+    id: 1, name: 'Phish reports', kind: 'imap', enabled: true, interval_minutes: 5,
+    config: { host: 'outlook.office365.com', port: 993, starttls: false, user: 'phish@example-corp.co.uk', folder: 'INBOX' },
+    secret_set: true, status: 'ok', error: '', last_poll_at: minutesFromNow(-3), next_poll_at: minutesFromNow(2),
+    last_counts: { imported: 2, duplicates: 1, skipped: 0 }, created_at: minutesFromNow(-60 * 24 * 7),
+  },
+  {
+    id: 2, name: 'Workspace reports', kind: 'gmail', enabled: true, interval_minutes: 10,
+    config: { address: 'phish@example-corp.co.uk', label: 'Phish reports', service_account: 'phishhawk@reports-project.iam.gserviceaccount.com' },
+    secret_set: true, status: 'error',
+    error: 'Gmail: sign-in refused (unauthorized_client): check the key, and that the service account has domain-wide delegation for the gmail.readonly scope',
+    last_poll_at: minutesFromNow(-20), next_poll_at: minutesFromNow(40), last_counts: { imported: 0, duplicates: 0, skipped: 0 },
+    created_at: minutesFromNow(-60 * 24),
+  },
+];
+const GUID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
+const HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+const ADDRESS = /^[^\s@"<>()[\],;:\\]{1,64}@[a-z0-9.-]+\.[a-z]{2,63}$/i;
+
+/** The settings a mailbox of this kind keeps, with the server's defaults; a string when something is refused. */
+function mailboxConfig(kind: MailboxKind, given: MailboxConfig): MailboxConfig | string {
+  const text = (v: unknown) => String(v ?? '').trim();
+  if (kind === 'imap') {
+    const starttls = Boolean(given.starttls);
+    const port = given.port === undefined || String(given.port) === '' ? (starttls ? 143 : 993) : Number(given.port);
+    if (!HOST.test(text(given.host))) return 'host must be a host name or an IP address, without imaps:// or a path';
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return 'port must be between 1 and 65535';
+    if (!text(given.user)) return 'user is required';
+    return { host: text(given.host).toLowerCase(), port, starttls, user: text(given.user), folder: text(given.folder) || 'INBOX' };
+  }
+  if (kind === 'graph') {
+    if (!GUID.test(text(given.tenant_id)) && !/^[a-z0-9.-]+\.[a-z]{2,63}$/i.test(text(given.tenant_id))) return 'tenant must be a directory (tenant) ID or a domain such as contoso.onmicrosoft.com';
+    if (!GUID.test(text(given.client_id))) return 'client ID must be the application (client) ID, a GUID';
+    if (!ADDRESS.test(text(given.address))) return "address must be the report mailbox's address";
+    return { tenant_id: text(given.tenant_id).toLowerCase(), client_id: text(given.client_id).toLowerCase(), address: text(given.address), folder: text(given.folder) || 'inbox' };
+  }
+  if (!ADDRESS.test(text(given.address))) return "address must be the report mailbox's address";
+  return { address: text(given.address), label: text(given.label) || 'INBOX', ...(given.service_account ? { service_account: given.service_account } : {}) };
+}
+
+/** What a credential tells the config (a service account's address), or why it is refused. */
+function mailboxSecret(kind: MailboxKind, secret: string): MailboxConfig | string {
+  if (kind === 'imap') return secret ? {} : 'a password is required';
+  if (kind === 'graph') return secret.trim() ? {} : 'a client secret is required';
+  try {
+    const key = JSON.parse(secret);
+    if (key?.type === 'service_account' && ADDRESS.test(String(key.client_email ?? '')) && String(key.private_key ?? '').includes('PRIVATE KEY')) {
+      return { service_account: key.client_email };
+    }
+  } catch {
+    // not JSON: refused below
+  }
+  return 'the key must be the JSON key file of a service account';
+}
 
 type MockSession = { user_id: number; username: string; role: 'analyst' | 'admin'; csrf: string };
 const sessionFor = (user: User): MockSession => ({ user_id: user.id, username: user.username, role: user.role, csrf: crypto.randomUUID() });
@@ -341,8 +400,100 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     return json(200, rows.slice(offset, offset + 100));
   }
 
-  if (pathname.startsWith('/api/v1/settings') || pathname.startsWith('/api/v1/users') || pathname.startsWith('/api/v1/tokens')) {
+  if (pathname.startsWith('/api/v1/settings') || pathname.startsWith('/api/v1/users') || pathname.startsWith('/api/v1/tokens') || pathname.startsWith('/api/v1/mailboxes')) {
     if (!admin) return adminOnly();
+  }
+
+  if (pathname === '/api/v1/mailboxes') {
+    if (method === 'GET') return json(200, [...mailboxes].sort((a, b) => a.name.localeCompare(b.name)));
+    if (method === 'POST') {
+      const given = body as { name?: string; kind?: MailboxKind; config?: MailboxConfig; secret?: string; interval_minutes?: number; enabled?: boolean };
+      const name = String(given.name ?? '').trim();
+      const kind = given.kind;
+      if (!name || name.length > 48) return error(422, 'invalid', 'name is required');
+      if (kind !== 'imap' && kind !== 'graph' && kind !== 'gmail') return error(422, 'invalid', 'kind must be imap, graph or gmail');
+      const interval = given.interval_minutes ?? 5;
+      if (!Number.isInteger(interval) || interval < 5 || interval > 1440) return error(422, 'invalid', 'interval must be between 5 and 1440 minutes');
+      const config = mailboxConfig(kind, given.config ?? {});
+      if (typeof config === 'string') return error(422, 'invalid', config);
+      const learnt = mailboxSecret(kind, String(given.secret ?? ''));
+      if (typeof learnt === 'string') return error(422, 'invalid', learnt);
+      if (mailboxes.some((b) => b.name === name)) return error(409, 'conflict', `a mailbox called '${name}' exists`);
+      const made: Mailbox = {
+        id: Math.max(0, ...mailboxes.map((b) => b.id)) + 1, name, kind, enabled: given.enabled ?? true, interval_minutes: interval,
+        config: { ...config, ...learnt }, secret_set: true, status: 'never', error: '', last_poll_at: null, next_poll_at: null,
+        last_counts: {}, created_at: new Date().toISOString(),
+      };
+      mailboxes.push(made);
+      record(me.username, 'mailbox_create', 'mailbox', made.id, { name, kind, config: made.config });
+      return json(201, made);
+    }
+  }
+  if ((m = pathname.match(/^\/api\/v1\/mailboxes\/(\d+)(\/poll)?$/))) {
+    const found = mailboxes.find((b) => b.id === Number(m![1]));
+    if (!found) return error(404, 'not_found', 'no such mailbox');
+    if (m[2] && method === 'POST') {
+      if (!found.enabled) return error(409, 'conflict', 'the mailbox is switched off: switch it on first');
+      record(me.username, 'mailbox_poll_now', 'mailbox', found.id, { name: found.name, queued: true });
+      found.last_poll_at = new Date().toISOString();
+      if (found.status === 'error') {
+        found.next_poll_at = minutesFromNow(60);
+        found.last_counts = { imported: 0, duplicates: 0, skipped: 0 };
+        record('system', 'mailbox_poll_failed', 'mailbox', found.id, { name: found.name, reason: found.error });
+      } else {
+        const copy: Analysis = structuredClone(analyses.find((a) => a.source === 'upload') ?? analyses[0]);
+        Object.assign(copy, { id: nextAnalysis++, source: 'mailbox', submitted_by: null, submitted_by_name: found.name, created_at: new Date().toISOString() });
+        analyses.unshift(copy);
+        record(`mailbox:${found.name}`, 'submit', 'submission', copy.submission_id, { sha256: copy.sha256, source: 'mailbox', mailbox: found.id });
+        Object.assign(found, { status: 'ok', error: '', next_poll_at: minutesFromNow(found.interval_minutes), last_counts: { imported: 1, duplicates: 0, skipped: 0 } });
+      }
+      return json(202, { queued: true });
+    }
+    if (!m[2] && method === 'GET') return json(200, found);
+    if (!m[2] && method === 'PATCH') {
+      const patch = body as { name?: string; config?: MailboxConfig; secret?: string; interval_minutes?: number; enabled?: boolean; kind?: string };
+      if (patch.kind && patch.kind !== found.kind) return error(422, 'invalid', 'a mailbox keeps its kind: add another mailbox for another kind');
+      const changed: string[] = [];
+      if (patch.interval_minutes !== undefined) {
+        if (!Number.isInteger(patch.interval_minutes) || patch.interval_minutes < 5 || patch.interval_minutes > 1440) return error(422, 'invalid', 'interval must be between 5 and 1440 minutes');
+        if (patch.interval_minutes !== found.interval_minutes) changed.push('interval_minutes');
+      }
+      let config = found.config;
+      if (patch.config) {
+        const next = mailboxConfig(found.kind, { ...found.config, ...patch.config });
+        if (typeof next === 'string') return error(422, 'invalid', next);
+        config = { ...next, ...(found.config.service_account ? { service_account: found.config.service_account } : {}) };
+        changed.push(...Object.keys(next).filter((k) => next[k as keyof MailboxConfig] !== found.config[k as keyof MailboxConfig]));
+      }
+      let learnt: MailboxConfig = {};
+      if (patch.secret) {
+        const result = mailboxSecret(found.kind, patch.secret);
+        if (typeof result === 'string') return error(422, 'invalid', result);
+        learnt = result;
+        changed.push('secret');
+      }
+      const name = patch.name?.trim();
+      if (name !== undefined && name !== found.name) {
+        if (!name || name.length > 48) return error(422, 'invalid', 'name is required');
+        if (mailboxes.some((b) => b.name === name && b.id !== found.id)) return error(409, 'conflict', `a mailbox called '${name}' exists`);
+        found.name = name;
+        changed.push('name');
+      }
+      if (patch.enabled !== undefined && patch.enabled !== found.enabled) {
+        found.enabled = patch.enabled;
+        changed.push('enabled');
+      }
+      if (patch.interval_minutes !== undefined) found.interval_minutes = patch.interval_minutes;
+      found.config = { ...config, ...learnt };
+      if (patch.secret) Object.assign(found, { status: found.status === 'error' ? 'never' : found.status, error: '', next_poll_at: null });
+      record(me.username, 'mailbox_change', 'mailbox', found.id, { name: found.name, changed });
+      return json(200, found);
+    }
+    if (!m[2] && method === 'DELETE') {
+      mailboxes.splice(mailboxes.indexOf(found), 1);
+      record(me.username, 'mailbox_delete', 'mailbox', found.id, { name: found.name });
+      return json(200, { deleted: true });
+    }
   }
 
   if (pathname === '/api/v1/settings') {

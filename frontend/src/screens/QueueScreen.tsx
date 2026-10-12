@@ -26,6 +26,7 @@ const SOURCES: { value: Source; label: string }[] = [
   { value: 'upload', label: 'Upload' },
   { value: 'paste', label: 'Paste' },
   { value: 'batch', label: 'Batch' },
+  { value: 'mailbox', label: 'Mailbox' },
 ];
 
 const pill = (on: boolean) =>

@@ -13,12 +13,13 @@ export type Route =
   | { name: 'settings' }
   | { name: 'users' }
   | { name: 'tokens' }
+  | { name: 'mailboxes' }
   | { name: 'login' }
   | { name: 'privacy' }
   | { name: 'help' }
   | { name: 'not-found' };
 
-const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'login', 'privacy', 'help'] as const;
+const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help'] as const;
 
 export function parseRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, '') || '/';
@@ -37,7 +38,7 @@ export function parseRoute(pathname: string): Route {
   return { name: 'not-found' };
 }
 
-export const ADMIN_ONLY: Route['name'][] = ['health', 'settings', 'users', 'tokens'];
+export const ADMIN_ONLY: Route['name'][] = ['health', 'settings', 'users', 'tokens', 'mailboxes'];
 
 /** Pages anyone can read, signed in or not. */
 export const PUBLIC_ROUTES: Route['name'][] = ['privacy', 'help'];
@@ -54,6 +55,7 @@ const TITLES: Record<Route['name'], string> = {
   settings: 'Settings',
   users: 'Users',
   tokens: 'API tokens',
+  mailboxes: 'Mailboxes',
   login: 'Sign in',
   privacy: 'Privacy and terms',
   help: 'Help',

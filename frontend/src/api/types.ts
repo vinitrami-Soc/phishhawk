@@ -224,6 +224,51 @@ export type SettingsPatch = Partial<Omit<Settings, 'keys'>> & { keys?: Record<st
 
 export type User = { id: number; username: string; role: Role; disabled: boolean; last_login_at: string | null };
 export type Token = { id: number; name: string; scope: 'read' | 'submit'; user_id: number; created_at: string; revoked: boolean };
+
+/* ---- mailboxes (admin): report mailboxes the server reads, read-only ---- */
+
+export type MailboxKind = 'imap' | 'graph' | 'gmail';
+
+/** Where a mailbox is. IMAP: host, port, starttls, user, folder. Graph: tenant_id, client_id, address, folder.
+    Gmail: address, label, and service_account (from its key). Never a credential. */
+export type MailboxConfig = {
+  host?: string;
+  port?: number;
+  starttls?: boolean;
+  user?: string;
+  folder?: string;
+  tenant_id?: string;
+  client_id?: string;
+  address?: string;
+  label?: string;
+  service_account?: string;
+};
+
+export type MailboxCounts = { imported: number; duplicates: number; skipped: number };
+
+export type Mailbox = {
+  id: number;
+  name: string;
+  kind: MailboxKind;
+  enabled: boolean;
+  interval_minutes: number;
+  config: MailboxConfig;
+  /** the credential is stored (encrypted) and never sent back */
+  secret_set: boolean;
+  status: 'never' | 'ok' | 'error';
+  /** why the last poll failed, in the server's words; never a credential */
+  error: string;
+  last_poll_at: string | null;
+  next_poll_at: string | null;
+  last_counts: Partial<MailboxCounts>;
+  created_at: string | null;
+};
+
+/** secret: an IMAP password, a Graph client secret, or a Gmail service account's JSON key. */
+export type NewMailbox = { name: string; kind: MailboxKind; config: MailboxConfig; secret: string; interval_minutes?: number; enabled?: boolean };
+
+/** An empty or missing secret keeps the stored one. A mailbox keeps its kind. */
+export type MailboxPatch = { name?: string; config?: MailboxConfig; secret?: string; interval_minutes?: number; enabled?: boolean };
 export type NewToken = { token: string; note: string };
 
 /** GET /api/v1/audit */

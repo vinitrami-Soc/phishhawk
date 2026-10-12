@@ -4,7 +4,7 @@
 
 import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
-import { Activity, Inbox, KeyRound, ListChecks, Network, ScrollText, Settings, Users } from 'lucide-react';
+import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
 import { ProgressiveBlur } from '@/components/core/progressive-blur';
 import { TextShimmerWave } from '@/components/core/text-shimmer-wave';
@@ -30,6 +30,7 @@ const HealthScreen = lazy(() => import('@/screens/HealthScreen'));
 const SettingsScreen = lazy(() => import('@/screens/SettingsScreen'));
 const UsersScreen = lazy(() => import('@/screens/UsersScreen'));
 const TokensScreen = lazy(() => import('@/screens/TokensScreen'));
+const MailboxesScreen = lazy(() => import('@/screens/MailboxesScreen'));
 const PrivacyScreen = lazy(() => import('@/screens/PrivacyScreen'));
 const HelpScreen = lazy(() => import('@/screens/HelpScreen'));
 
@@ -108,6 +109,7 @@ export default function App() {
         { href: '/app/settings', label: 'Settings', icon: <Settings className={icon} strokeWidth={1.5} /> },
         { href: '/app/users', label: 'Users', icon: <Users className={icon} strokeWidth={1.5} /> },
         { href: '/app/tokens', label: 'Tokens', icon: <KeyRound className={icon} strokeWidth={1.5} /> },
+        { href: '/app/mailboxes', label: 'Mailboxes', icon: <Mailbox className={icon} strokeWidth={1.5} /> },
       );
     }
     return list;
@@ -178,6 +180,7 @@ export default function App() {
     else if (route.name === 'settings') screen = <SettingsScreen />;
     else if (route.name === 'users') screen = <UsersScreen session={session} />;
     else if (route.name === 'tokens') screen = <TokensScreen />;
+    else if (route.name === 'mailboxes') screen = <MailboxesScreen />;
     else if (route.name === 'privacy') screen = <PrivacyScreen />;
     else if (route.name === 'help') screen = <HelpScreen />;
     else screen = <NotFoundState />;
