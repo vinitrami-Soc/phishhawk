@@ -32,6 +32,7 @@ class ServerSettings(BaseSettings):
     analysis_memory_mb: int = 2048
     analysis_cpu_seconds: int = 120
     cookie_secure: bool = True  # False only for plain-HTTP local testing
+    frontend_dir: str = ""  # a frontend's build, served at /app/ (docs/FRONTEND.md)
 
     @property
     def db_url(self) -> str:

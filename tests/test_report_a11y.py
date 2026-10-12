@@ -10,7 +10,7 @@ import pytest
 from phishhawk.pipeline import triage_file
 from phishhawk.report import html
 
-from conftest import sample
+from conftest import contrast, css_rgb, css_tokens, sample
 
 
 @pytest.fixture(scope="module")
@@ -72,34 +72,6 @@ def test_no_text_is_dimmed_with_opacity(pages):
 
 # --------------------------------------------------------------- contrast --
 
-def _tokens(block: str) -> dict:
-    return dict(re.findall(r"--([\w-]+):([^;]+);", block))
-
-
-def _rgb(value: str, under=(255, 255, 255)) -> tuple:
-    value = value.strip()
-    if value.startswith("#"):
-        h = value[1:]
-        if len(h) == 3:
-            h = "".join(c * 2 for c in h)
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-    r, g, b, a = (float(x) for x in re.match(r"rgba\(([^)]+)\)", value).group(1).split(","))
-    return tuple(round(c * a + u * (1 - a)) for c, u in zip((r, g, b), under, strict=True))
-
-
-def _luminance(rgb) -> float:
-    def lin(c):
-        c /= 255
-        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-    r, g, b = (lin(c) for c in rgb)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-
-
-def _contrast(fg, bg) -> float:
-    hi, lo = sorted((_luminance(fg), _luminance(bg)), reverse=True)
-    return (hi + 0.05) / (lo + 0.05)
-
-
 # Every text colour the report puts on a surface, by token.
 TEXT_PAIRS = [
     ("ink", "paper"), ("ink-2", "paper"), ("ink-3", "paper"), ("ink-2", "ground"), ("ink-3", "ground"),
@@ -114,14 +86,14 @@ TEXT_PAIRS = [
 
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_text_colours_clear_wcag_aa_in_both_themes(theme):
-    tokens = _tokens(html.LIGHT)
+    tokens = css_tokens(html.LIGHT)
     if theme == "dark":
-        tokens.update(_tokens(html.DARK))
-    paper = _rgb(tokens["paper"])
+        tokens.update(css_tokens(html.DARK))
+    paper = css_rgb(tokens["paper"])
     failures = []
     for fg, bg in TEXT_PAIRS:
-        background = _rgb(tokens[bg], under=paper)
-        ratio = _contrast(_rgb(tokens[fg], under=background), background)
+        background = css_rgb(tokens[bg], under=paper)
+        ratio = contrast(css_rgb(tokens[fg], under=background), background)
         if ratio < 4.5:
             failures.append("%s on %s: %.2f" % (fg, bg, ratio))
     assert not failures, failures

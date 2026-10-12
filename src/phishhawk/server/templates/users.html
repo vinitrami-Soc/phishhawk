@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Users · PhishHawk{% endblock %}
+{% block main %}
+<h1>Users and API tokens</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if new_token %}<div class="card ok" role="status"><p>New API token, shown once: store it now.</p><p class="mono">{{ new_token }}</p></div>{% endif %}
+<table class="list">
+  <caption class="sr-only">Users</caption>
+  <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Change</th></tr></thead>
+  <tbody>
+  {% for u in users %}
+  <tr>
+    <td data-label="User">{{ u.username }}</td><td data-label="Role">{{ u.role }}</td>
+    <td data-label="Status">{{ 'disabled' if u.disabled else 'active' }}</td>
+    <td data-label="Change">
+      <form method="post" action="/users/{{ u.id }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+        <label for="role-{{ u.id }}" class="sr-only">Role</label>
+        <select id="role-{{ u.id }}" name="role">{% for r in roles %}<option value="{{ r }}"{% if r == u.role %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+        <label class="check"><input type="checkbox" name="disabled" value="true"{% if u.disabled %} checked{% endif %}> disabled</label>
+        <label for="pw-{{ u.id }}" class="sr-only">New password</label>
+        <input id="pw-{{ u.id }}" name="password" type="password" autocomplete="new-password" placeholder="new password (optional)">
+        <button type="submit">Save</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<h2>Add a user</h2>
+<form method="post" action="/users" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+  <label for="nu">Username</label><input id="nu" name="username" required>
+  <label for="np">Password (12 characters or more)</label><input id="np" name="password" type="password" autocomplete="new-password" required>
+  <label for="nr">Role</label><select id="nr" name="role">{% for r in roles %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select>
+  <button type="submit">Add</button>
+</form>
+<h2>API tokens</h2>
+<table class="list">
+  <caption class="sr-only">API tokens</caption>
+  <thead><tr><th scope="col">Name</th><th scope="col">User</th><th scope="col">Scope</th><th scope="col">Status</th></tr></thead>
+  <tbody>
+  {% for t in tokens %}
+  <tr><td data-label="Name">{{ t.name }}</td><td data-label="User">{{ names.get(t.user_id, '') }}</td><td data-label="Scope">{{ t.scope }}</td>
+    <td data-label="Status">{% if t.revoked_at %}revoked{% else %}<form method="post" action="/tokens/{{ t.id }}/revoke" class="inline"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><button type="submit" class="danger">Revoke</button></form>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<form method="post" action="/tokens" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+  <label for="tn">Token name</label><input id="tn" name="name" required>
+  <label for="tu">For user</label><select id="tu" name="user_id">{% for u in users %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}</select>
+  <label for="ts">Scope</label><select id="ts" name="scope">{% for sc in scopes %}<option value="{{ sc }}">{{ sc }}</option>{% endfor %}</select>
+  <button type="submit">Create token</button>
+</form>
+{% endblock %}

@@ -1,20 +1,25 @@
-"""The web application: services, security headers, errors, routes."""
+"""The web application: services, security headers, error pages, routes."""
 
 from __future__ import annotations
 
 import shutil
+from importlib.resources import files
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 
 from .. import __version__
+from ..report.common import printable
 from .auth import LoginThrottle
 from .config import ServerSettings, load_settings
 from .crypto import Box
 from .db import make_engine, make_sessionmaker, transaction
+from .frontend import Frontend
 from .models import Job
 from .processing import Services
 from .security import APP_CSP, BASE_HEADERS, HSTS
@@ -34,6 +39,9 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     app = FastAPI(title="PhishHawk", version=__version__, docs_url=None, redoc_url=None)
     app.state.services = services
     app.state.throttle = LoginThrottle()
+    templates = Jinja2Templates(directory=str(files("phishhawk.server") / "templates"))
+    templates.env.filters["printable"] = lambda value: printable(str(value)) if value is not None else ""
+    app.state.templates = templates
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
@@ -49,8 +57,13 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> Response:
-        body = {"error": _code(exc.status_code), "detail": exc.detail}
-        return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
+        if request.url.path.startswith("/api/"):
+            body = {"error": _code(exc.status_code), "detail": exc.detail}
+            return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
+        if exc.status_code == 401:
+            return RedirectResponse("/login", status_code=303)
+        context = {"status": exc.status_code, "detail": exc.detail, "actor": None}
+        return templates.TemplateResponse(request, "error.html", context, status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def invalid(request: Request, exc: RequestValidationError) -> Response:
@@ -66,9 +79,13 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
         return {"status": "ok", "version": __version__, "queue": queued,
                 "last_heartbeat": beat.isoformat() if beat else None, "disk_free_mb": disk.free // (1024 * 1024)}
 
-    from .routes import api
+    from .routes import api, pages
 
     app.include_router(api.router)
+    app.include_router(pages.router)
+    app.mount("/static", StaticFiles(directory=str(files("phishhawk.server") / "static")), name="static")
+    if services.settings.frontend_dir:
+        app.mount("/app", Frontend(services.settings.frontend_dir), name="frontend")
     return app
 
 
@@ -78,3 +95,8 @@ ERROR_CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "
 
 def _code(status: int) -> str:
     return ERROR_CODES.get(status, "error")
+
+
+def html_response(request: Request, template: str, context: dict[str, Any], status: int = 200) -> HTMLResponse:
+    templates: Jinja2Templates = request.app.state.templates
+    return templates.TemplateResponse(request, template, context, status_code=status)

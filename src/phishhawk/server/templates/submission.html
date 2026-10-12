@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Analysing · PhishHawk{% endblock %}
+{% block head %}{% if submission.status in ('queued', 'running') %}<meta http-equiv="refresh" content="2">{% endif %}{% endblock %}
+{% block main %}
+<h1>Submission {{ submission.id }}</h1>
+{% if submission.status in ('queued', 'running') %}
+<p role="status">Status: <strong>{{ submission.status }}</strong>. This page refreshes until the verdict is ready.</p>
+{% else %}
+<p class="error" role="alert">The analysis failed: {{ submission.error }}</p>
+{% endif %}
+{% endblock %}

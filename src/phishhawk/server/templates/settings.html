@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Settings · PhishHawk{% endblock %}
+{% block main %}
+<h1>Settings</h1>
+{% if saved %}<p class="ok" role="status">Saved.</p>{% endif %}
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/settings" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+  <fieldset><legend>Reputation lookups (all off on a fresh install)</legend>
+  {% for p in providers %}
+    <label class="check"><input type="checkbox" name="provider_{{ p }}" value="1"{% if p in s.providers %} checked{% endif %}> {{ p }}</label>
+    {% if p in s['keys'] %}
+    <label for="key_{{ p }}">{{ p }} API key {% if s['keys'][p] %}(set, {{ s['keys'][p] }}){% else %}(not set){% endif %}</label>
+    <input id="key_{{ p }}" name="key_{{ p }}" type="password" autocomplete="off" placeholder="leave blank to keep">
+    {% if s['keys'][p] %}<label class="check"><input type="checkbox" name="remove_{{ p }}" value="1"> remove the {{ p }} key</label>{% endif %}
+    {% endif %}
+  {% endfor %}
+  </fieldset>
+  <fieldset><legend>Domains (one per line)</legend>
+    <label for="protected_domains">Your own domains (lookalikes of these are flagged)</label>
+    <textarea id="protected_domains" name="protected_domains" rows="3">{{ s.protected_domains|join('\n') }}</textarea>
+    <label for="allow_domains">Partners, never reported as lookalikes or indicators</label>
+    <textarea id="allow_domains" name="allow_domains" rows="3">{{ s.allow_domains|join('\n') }}</textarea>
+    <label for="block_domains">Always flagged</label>
+    <textarea id="block_domains" name="block_domains" rows="3">{{ s.block_domains|join('\n') }}</textarea>
+    <label for="trusted_authserv">Your mail servers' authserv-id (trusted Authentication-Results)</label>
+    <textarea id="trusted_authserv" name="trusted_authserv" rows="2">{{ s.trusted_authserv|join('\n') }}</textarea>
+  </fieldset>
+  <fieldset><legend>Limits</legend>
+    <label for="retention_days">Delete messages and reports after (days)</label>
+    <input id="retention_days" name="retention_days" type="number" min="1" value="{{ s.retention_days }}">
+    <label for="max_upload_mb">Largest upload (MB)</label>
+    <input id="max_upload_mb" name="max_upload_mb" type="number" min="1" value="{{ s.max_upload_mb }}">
+  </fieldset>
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

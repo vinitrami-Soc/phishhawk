@@ -1,0 +1,21 @@
+{% set items = recent if recent is defined else rows %}
+{% if items %}
+<table class="list">
+  <caption class="sr-only">Analyses, newest first</caption>
+  <thead><tr><th scope="col">Time (UTC)</th><th scope="col">Subject</th><th scope="col">Sender domain</th><th scope="col">Verdict</th><th scope="col">Score</th><th scope="col">Source</th></tr></thead>
+  <tbody>
+  {% for a in items %}
+  <tr>
+    <td data-label="Time">{{ a.created_at[:16]|replace('T', ' ') }}</td>
+    <td data-label="Subject"><a href="/analyses/{{ a.id }}">{% if a.subject is not none %}{{ (a.subject|printable)[:90] or '(no subject)' }}{% else %}<em>deleted after retention</em>{% endif %}</a></td>
+    <td data-label="Sender domain">{{ a.sender_domain|printable }}</td>
+    <td data-label="Verdict">{% with verdict=a.verdict %}{% include "_verdict.html" %}{% endwith %}</td>
+    <td data-label="Score">{{ a.score }}</td>
+    <td data-label="Source">{{ a.source }}{% if a.offline %} · offline{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nothing here yet.</p>
+{% endif %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{% block title %}PhishHawk{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+<header class="top">
+  <a class="brand" href="/">PhishHawk</a>
+  {% if actor %}
+  <nav aria-label="Main">
+    <a href="/">Submit</a>
+    <a href="/queue">Queue</a>
+    <a href="/audit">Audit</a>
+    {% if actor.is_admin %}<a href="/settings">Settings</a><a href="/users">Users</a>{% endif %}
+  </nav>
+  <form class="logout" method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+    <span class="who">{{ actor.username }} ({{ actor.role }})</span>
+    <button type="submit">Log out</button>
+  </form>
+  {% endif %}
+</header>
+<main id="main">
+{% block main %}{% endblock %}
+</main>
+<footer class="foot">PhishHawk is read-only: it never deletes, moves or quarantines mail.</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
