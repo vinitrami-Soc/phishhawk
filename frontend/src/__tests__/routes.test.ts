@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ADMIN_ONLY, PUBLIC_ROUTES, pageTitle, parseRoute } from '../app/routes';
+import { ADMIN_ONLY, PUBLIC_ROUTES, pageTitle, parseRoute, signedOutView } from '../app/routes';
 
 test('the app routes under /app/', () => {
   assert.deepEqual(parseRoute('/app/'), { name: 'triage' });
@@ -40,8 +40,25 @@ test('an analysis id is digits only; anything else is not found', () => {
   }
 });
 
-test('privacy and help can be read before signing in; nothing else can', () => {
-  assert.deepEqual([...PUBLIC_ROUTES].sort(), ['help', 'privacy']);
+test('the product page, privacy and help can be read before signing in; nothing else can', () => {
+  assert.deepEqual([...PUBLIC_ROUTES].sort(), ['about', 'help', 'privacy']);
+});
+
+test('the product page has an address of its own', () => {
+  assert.deepEqual(parseRoute('/app/about'), { name: 'about' });
+  assert.deepEqual(parseRoute('/app/about/'), { name: 'about' });
+  assert.deepEqual(parseRoute('/app/about/x'), { name: 'not-found' });
+});
+
+test('signed out, the start page is the product page and every private page asks to sign in', () => {
+  assert.equal(signedOutView(parseRoute('/')), 'landing');
+  assert.equal(signedOutView(parseRoute('/app/')), 'landing');
+  assert.equal(signedOutView(parseRoute('/app/about')), 'landing');
+  assert.equal(signedOutView(parseRoute('/app/privacy')), 'public');
+  assert.equal(signedOutView(parseRoute('/app/help')), 'public');
+  for (const path of ['/app/login', '/app/analyses', '/app/analyses/6', '/app/users', '/app/campaigns/2', '/app/nope']) {
+    assert.equal(signedOutView(parseRoute(path)), 'login', path);
+  }
 });
 
 test('every page has its own title', () => {
@@ -51,6 +68,10 @@ test('every page has its own title', () => {
   assert.equal(pageTitle({ name: 'not-found' }, true), 'Page not found · PhishHawk');
   assert.equal(pageTitle({ name: 'privacy' }, false), 'Privacy and terms · PhishHawk');
   assert.equal(pageTitle({ name: 'help' }, false), 'Help · PhishHawk');
-  // signed out, every other page is the sign-in page
+  assert.equal(pageTitle({ name: 'about' }, true), 'Phishing email triage · PhishHawk');
+  // signed out, the start page is the product page and every private page is the sign-in page
+  assert.equal(pageTitle({ name: 'triage' }, false), 'Phishing email triage · PhishHawk');
+  assert.equal(pageTitle({ name: 'about' }, false), 'Phishing email triage · PhishHawk');
   assert.equal(pageTitle({ name: 'queue' }, false), 'Sign in · PhishHawk');
+  assert.equal(pageTitle({ name: 'login' }, false), 'Sign in · PhishHawk');
 });

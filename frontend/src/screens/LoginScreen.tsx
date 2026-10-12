@@ -1,8 +1,9 @@
 /* Sign in. Desktop: the card on the left, the product on the right; phones: the
-   card only. Accounts are created by an admin on the Users screen. */
+   card only. Accounts are created by an admin on the Users screen. The logo and
+   "About PhishHawk" lead back to the product page. */
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { Eye, EyeOff, FileCheck2, ScrollText, Server } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, FileCheck2, ScrollText, Server } from 'lucide-react';
 import { LiquidMetalButton } from '@/components/threeui/liquid-metal/LiquidMetalButton';
 import { TextRoll } from '@/components/core/text-roll';
 import { TextShimmer } from '@/components/core/text-shimmer';
@@ -13,39 +14,13 @@ import { ImageComparison, ImageComparisonImage, ImageComparisonSlider } from '@/
 import { ApiError, NETWORK_MESSAGE } from '@/api/errors';
 import { Link, asset } from '@/app/router';
 import { Panel } from '@/components/ui/ui';
+import { usePicturesLoaded } from '@/hooks/usePicturesLoaded';
 
 const FACTS = [
   { icon: Server, title: 'Runs on your server', text: 'Messages are analysed on the machine you run PhishHawk on.' },
   { icon: FileCheck2, title: 'Reported mail stays with you', text: 'With Offline analysis, no indicator is sent to an outside service.' },
   { icon: ScrollText, title: 'Every action is audited', text: 'Sign-ins, downloads and deletions are written to the audit log.' },
 ];
-
-/** True once every picture has loaded; false while loading or if any is missing. */
-function usePicturesLoaded(sources: string[]) {
-  const [loaded, setLoaded] = useState(false);
-  const key = sources.join('|');
-  useEffect(() => {
-    let alive = true;
-    Promise.all(
-      sources.map(
-        (src) =>
-          new Promise<void>((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve();
-            img.onerror = () => reject();
-            img.src = src;
-          }),
-      ),
-    ).then(
-      () => alive && setLoaded(true),
-      () => alive && setLoaded(false),
-    );
-    return () => {
-      alive = false;
-    };
-  }, [key]);
-  return loaded;
-}
 
 function Showcase() {
   const dark = asset('brand/report-dark.webp');
@@ -144,15 +119,19 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
   }
 
   return (
-    <main id="main" tabIndex={-1} className="relative mx-auto grid min-h-dvh max-w-[1280px] items-center gap-12 px-4 py-10 focus:outline-none md:px-8 lg:grid-cols-12 lg:gap-16">
+    <main id="main" tabIndex={-1} className="relative mx-auto grid min-h-dvh max-w-[1280px] grid-cols-1 items-center gap-12 px-4 py-10 focus:outline-none md:px-8 lg:grid-cols-12 lg:gap-16">
       <section className="w-full max-w-[440px] justify-self-center lg:col-span-5">
+        <Link href="/app/" className="mb-4 inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[13px] text-ink-muted transition-colors hover:text-ink">
+          <ArrowLeft className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+          About PhishHawk
+        </Link>
         <Panel>
           <div className="relative overflow-hidden rounded-[22px] px-7 py-8 sm:px-9 sm:py-10">
             <Spotlight className="bg-accent/15 blur-3xl" size={240} />
-            <div className="relative flex items-center gap-3.5">
+            <Link href="/app/" aria-label="PhishHawk home" className="relative flex w-max items-center gap-3.5 rounded-2xl">
               <img src={asset('brand/phishhawk-mark.svg')} alt="" className="h-14 w-14" />
               <TextRoll className="text-2xl font-semibold tracking-[-0.018em] text-ink">PhishHawk</TextRoll>
-            </div>
+            </Link>
             <p className="relative mt-5 text-[15px] text-ink-dim">Phishing triage for your security team, on your own server.</p>
 
             {expired && (
@@ -161,7 +140,7 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
               </p>
             )}
 
-            <form className="relative mt-7 grid gap-4" onSubmit={submit} noValidate>
+            <form className="relative mt-7 grid grid-cols-1 gap-4" onSubmit={submit} noValidate>
               <div className="grid gap-1.5">
                 <label htmlFor="login-username" className="text-[13px] font-medium text-ink-dim">
                   Username
@@ -198,7 +177,7 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
                 </div>
               </div>
 
-              <div className="mt-3 grid justify-items-center gap-3">
+              <div className="mt-3 grid grid-cols-1 justify-items-center gap-3">
                 <LiquidMetalButton type="submit" height={52} disabled={busy || wait > 0}>
                   Sign in
                 </LiquidMetalButton>

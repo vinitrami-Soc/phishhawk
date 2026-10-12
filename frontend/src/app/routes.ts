@@ -1,5 +1,6 @@
 /* The routes, from the frontend build brief (section 7.1). In the dev server the
-   page starts at "/", which is the same as "/app/". */
+   page starts at "/", which is the same as "/app/". Signed out, "/app/" is the
+   product page; signed in, it is Triage. The product page is also at /app/about. */
 
 export type Route =
   | { name: 'triage' }
@@ -17,9 +18,10 @@ export type Route =
   | { name: 'login' }
   | { name: 'privacy' }
   | { name: 'help' }
+  | { name: 'about' }
   | { name: 'not-found' };
 
-const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help'] as const;
+const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help', 'about'] as const;
 
 export function parseRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, '') || '/';
@@ -41,7 +43,13 @@ export function parseRoute(pathname: string): Route {
 export const ADMIN_ONLY: Route['name'][] = ['health', 'settings', 'users', 'tokens', 'mailboxes'];
 
 /** Pages anyone can read, signed in or not. */
-export const PUBLIC_ROUTES: Route['name'][] = ['privacy', 'help'];
+export const PUBLIC_ROUTES: Route['name'][] = ['about', 'privacy', 'help'];
+
+/** What a signed-out visitor sees: the product page at the start, a public page, or the sign-in form. */
+export function signedOutView(route: Route): 'landing' | 'public' | 'login' {
+  if (route.name === 'triage' || route.name === 'about') return 'landing';
+  return PUBLIC_ROUTES.includes(route.name) ? 'public' : 'login';
+}
 
 const TITLES: Record<Route['name'], string> = {
   triage: 'Triage',
@@ -59,12 +67,15 @@ const TITLES: Record<Route['name'], string> = {
   login: 'Sign in',
   privacy: 'Privacy and terms',
   help: 'Help',
+  about: 'Phishing email triage',
   'not-found': 'Page not found',
 };
 
-/** The browser tab's title. Signed out, every page but the public ones is the sign-in page. */
+/** The browser tab's title. Signed out, the start page is the product page and
+    every page but the public ones is the sign-in page. */
 export function pageTitle(route: Route, signedIn: boolean): string {
-  const name = signedIn || PUBLIC_ROUTES.includes(route.name) ? TITLES[route.name] : TITLES.login;
+  const view = signedOutView(route);
+  const name = signedIn ? TITLES[route.name] : view === 'landing' ? TITLES.about : view === 'public' ? TITLES[route.name] : TITLES.login;
   const numbered = signedIn && 'id' in route;
   return `${numbered ? `${name} ${route.id}` : name} · PhishHawk`;
 }

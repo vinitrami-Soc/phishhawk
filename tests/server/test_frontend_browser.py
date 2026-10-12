@@ -1,5 +1,6 @@
 """The frontend in frontend/, built with `npm run build`, served by a real
-server at /app/ and driven in headless Chromium: sign in, analyse a bundled
+server at /app/ and driven in headless Chromium: read the product page a
+visitor sees first and sign in from it, analyse a bundled
 sample offline, read the verdict, the sandboxed report and the files; upload
 two messages as a batch and follow them to their combined reports and their
 campaign; connect a mailbox (a test IMAP server) and find its reports in the
@@ -24,9 +25,9 @@ WIDTHS = (320, 360, 390, 768, 820, 1024, 1440)
 
 # Elements that reach past the right edge of the window, leaving out those inside a strip that scrolls
 # sideways on purpose (the tabs on a phone) and the sign-in button's glow.
-PAST_EDGE = """() => {
+PAST_EDGE = """(scope = 'main') => {
   const w = document.documentElement.clientWidth;
-  return [...document.querySelectorAll('main *')].filter((e) => {
+  return [...document.querySelectorAll(scope + ' *')].filter((e) => {
     const r = e.getBoundingClientRect();
     if (!r.width || e.closest('.lm-stage')) return false;
     for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
@@ -57,21 +58,92 @@ def browser():
         chromium.close()
 
 
-def _signed_in(browser, server):
-    """A page signed in as root, and the list its console errors and page errors go to."""
+HEADLINE = "Every reported email, triaged and explained."
+
+
+def _visitor(browser):
+    """A page nobody is signed in on, and the list its console errors and page errors go to."""
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     errors = []
     # the frontend asks who is signed in before anyone is: that one 401 is expected
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" and "401" not in m.text else None)
     page.on("pageerror", lambda exc: errors.append(str(exc)))
-    page.goto(server.base + "/")  # the server's address opens the frontend
+    return page, errors
+
+
+def _sign_in_as_root(page):
     page.wait_for_selector("#login-username")
-    assert page.url == server.base + "/app/"
     page.fill("#login-username", "root")
     page.fill("#login-password", PASSWORD)
     page.locator("form [type=submit]").click()
     page.wait_for_selector(".ph-commandbar")
+
+
+def _signed_in(browser, server):
+    """A page signed in as root, from the product page's Sign in, and the list its errors go to."""
+    page, errors = _visitor(browser)
+    page.goto(server.base + "/")  # the server's address opens the frontend: the product page
+    page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+    assert page.url == server.base + "/app/"
+    page.get_by_role("banner").get_by_role("link", name="Sign in").click()
+    _sign_in_as_root(page)
+    assert page.url == server.base + "/app/"
     return page, errors
+
+
+def test_a_visitor_reads_the_product_page_signs_in_and_comes_back_on_signing_out(browser, tmp_path):
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        page, errors = _visitor(browser)
+        page.goto(server.base + "/app/")
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        assert page.title() == "Phishing email triage · PhishHawk"
+        assert page.locator("#login-username").count() == 0
+
+        # the questions open in place
+        answer = page.get_by_text("It never sends them the message itself.")
+        sync_api.expect(answer).to_be_hidden()
+        page.get_by_text("Does a reported email leave our server?").click()
+        sync_api.expect(answer).to_be_visible()
+
+        # the ways to use it filter by who uses them
+        ways = page.locator("#ways")
+        sync_api.expect(ways.get_by_role("heading", name="Report mailboxes")).to_be_visible()
+        ways.get_by_role("button", name="Analysts").click()
+        sync_api.expect(ways.get_by_role("button", name="Analysts")).to_have_attribute("aria-pressed", "true")
+        sync_api.expect(ways.get_by_role("heading", name="Report mailboxes")).to_have_count(0)
+        sync_api.expect(ways.get_by_role("heading", name="Web console")).to_be_visible()
+
+        # the footer's columns
+        footer = page.get_by_role("contentinfo")
+        for column in ("Product", "Get started", "Learn", "For admins"):
+            sync_api.expect(footer.get_by_role("heading", name=column)).to_be_visible()
+
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            for url in (server.base + "/app/", server.base + "/app/help", server.base + "/app/login"):
+                page.goto(url)
+                page.wait_for_timeout(600)
+                assert page.evaluate(PAST_EDGE, "body") == [], (width, url)
+        page.set_viewport_size({"width": 1280, "height": 900})
+
+        # a private page asks to sign in, and opens after it; the sign-in page leads back to the product page
+        page.goto(server.base + "/app/analyses")
+        page.get_by_role("link", name="PhishHawk home").wait_for()
+        _sign_in_as_root(page)
+        assert page.url == server.base + "/app/analyses"
+
+        # signed in, the start page is the console and the product page is still at /app/about
+        page.goto(server.base + "/app/about")
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        page.get_by_role("banner").get_by_role("link", name="Open console").click()
+        page.wait_for_selector(".ph-commandbar")
+        assert page.url == server.base + "/app/"
+
+        # signing out leads back to the product page
+        page.locator(".ph-commandbar .atd-modern__cta").click()
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        assert page.url == server.base + "/app/"
+        assert errors == []
 
 
 def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_path):

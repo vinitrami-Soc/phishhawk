@@ -2,30 +2,11 @@
    Readable before signing in. The answers describe what the M1 server and the
    engine do; change them only with the code. */
 
-import type { ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
 import { ScrollProgress } from '@/components/core/scroll-progress';
+import { Question } from '@/components/phishhawk/Question';
 import { Link } from '@/app/router';
+import { VERDICT_MEANING } from '@/app/vocabulary';
 import { Card, PageHeader, VerdictBadge } from '@/components/ui/ui';
-
-function Question({ question, children }: { question: string; children: ReactNode }) {
-  return (
-    <details className="group border-b border-line last:border-b-0">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-[15px] font-medium text-ink transition-colors hover:bg-hover sm:px-6 [&::-webkit-details-marker]:hidden">
-        {question}
-        <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none" strokeWidth={1.75} />
-      </summary>
-      <div className="grid gap-3 px-5 pb-5 text-sm leading-relaxed text-ink-dim sm:px-6">{children}</div>
-    </details>
-  );
-}
-
-const VERDICT_MEANING: [string, string][] = [
-  ['MALICIOUS', 'VirusTotal reports a link or an attachment in the message as malicious. Only possible when an admin has turned VirusTotal on.'],
-  ['LIKELY PHISHING', 'Strong evidence: two or more high-severity signals, or one backed by evidence about another part of the message, such as a lookalike sender that also links to a raw IP address.'],
-  ['SUSPICIOUS', 'Some evidence, not enough for likely phishing: one high-severity signal on its own, or several smaller ones.'],
-  ['NO STRONG INDICATORS', 'Nothing strong was found. This does not prove the message is safe.'],
-];
 
 export default function HelpScreen() {
   return (
@@ -55,7 +36,8 @@ export default function HelpScreen() {
         </Question>
         <Question question="Which files can I submit?">
           <p>
-            An .eml or .msg file of up to 25 MB (your admin can change the limit), or the full message pasted with its headers. One message at a time.
+            One or more .eml or .msg files, an .mbox or a .zip, or the full message pasted with its headers. Several messages are analysed together as a batch. Each message can be up
+            to 25 MB, a whole upload four times that, and a batch up to 500 messages; your admin can change these limits.
           </p>
         </Question>
         <Question question="Is it safe to open the links in a report?">

@@ -1,23 +1,26 @@
 /* App start, session, routes and the signed-in shell. The user and role come
-   only from the server (useAuth). Every screen is loaded on demand. Privacy and
-   Help can be read signed out too. */
+   only from the server (useAuth). Every screen is loaded on demand. Signed out,
+   the start page is the product page, with Sign in at the top; the product
+   page, Privacy and Help can be read signed out too. */
 
-import { lazy, Suspense, useEffect, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
 import { ProgressiveBlur } from '@/components/core/progressive-blur';
 import { TextShimmerWave } from '@/components/core/text-shimmer-wave';
 import { BackToTop } from '@/components/phishhawk/BackToTop';
+import { PublicFooter, PublicHeader } from '@/components/phishhawk/PublicChrome';
 import { ThemeToggle } from '@/components/phishhawk/ThemeToggle';
 import { ToastProvider } from '@/components/ui/toast';
 import { Skeleton } from '@/components/ui/ui';
 import { useAuth } from '@/app/useAuth';
 import { Link, asset, navigate, usePath } from '@/app/router';
-import { ADMIN_ONLY, PUBLIC_ROUTES, pageTitle, parseRoute } from '@/app/routes';
+import { ADMIN_ONLY, pageTitle, parseRoute, signedOutView } from '@/app/routes';
 import { ROLE_LABEL } from '@/app/vocabulary';
 import { NotFoundState, PermissionDeniedState, UnreachableState } from '@/screens/StateScreens';
 
+const LandingScreen = lazy(() => import('@/screens/LandingScreen'));
 const LoginScreen = lazy(() => import('@/screens/LoginScreen'));
 const TriageScreen = lazy(() => import('@/screens/TriageScreen'));
 const QueueScreen = lazy(() => import('@/screens/QueueScreen'));
@@ -86,6 +89,17 @@ export default function App() {
   const path = usePath();
   const route = parseRoute(path);
   const session = auth.status === 'signed-in' ? auth.session : null;
+  const expired = auth.status === 'signed-out' && auth.expired;
+  // a session that ended on the start page shows the sign-in form, with why
+  const view = expired && route.name === 'triage' ? 'login' : signedOutView(route);
+
+  // signing out leads to the product page, before the sign-in form can show
+  const signingOut = useRef(false);
+  useLayoutEffect(() => {
+    if (!signingOut.current || auth.status !== 'signed-out') return;
+    signingOut.current = false;
+    navigate('/app/');
+  }, [auth.status]);
 
   // signed in on /app/login: go to the start page
   useEffect(() => {
@@ -130,26 +144,29 @@ export default function App() {
         <UnreachableState detail={auth.detail} onRetry={retry} />
       </main>
     );
-  } else if ((auth.status === 'signed-out' || !session) && PUBLIC_ROUTES.includes(route.name)) {
-    // signed out on Privacy or Help: the page, with the way back to signing in
+  } else if ((!session && view === 'landing') || (session && route.name === 'about')) {
+    // the product page: the start page signed out, and /app/about for everyone
     body = (
       <>
-        <main id="main" tabIndex={-1} className="relative mx-auto w-full max-w-[1280px] px-4 pb-28 pt-6 focus:outline-none md:px-8">
-          <header className="mb-10 flex items-center justify-between gap-4">
-            <Link href="/app/login" className="flex items-center gap-2.5 text-ink">
-              <img src={asset('brand/phishhawk-mark.svg')} alt="" className="h-8 w-8" />
-              <span className="text-base font-semibold tracking-tight">PhishHawk</span>
-            </Link>
-            <Link
-              href="/app/login"
-              className="inline-flex h-10 items-center rounded-full border border-line-strong bg-raised px-4 text-sm font-medium text-ink transition-colors hover:bg-hover"
-            >
-              Sign in
-            </Link>
-          </header>
-          <Suspense fallback={<PageFallback />}>{route.name === 'privacy' ? <PrivacyScreen /> : <HelpScreen />}</Suspense>
-          <SiteFooter />
+        <PublicHeader signedIn={Boolean(session)} onLanding />
+        <main id="main" tabIndex={-1} className="relative w-full focus:outline-none">
+          <Suspense fallback={<div className="mx-auto max-w-[1120px] px-4 pt-10 md:px-8"><PageFallback /></div>}>
+            <LandingScreen signedIn={Boolean(session)} />
+          </Suspense>
         </main>
+        <PublicFooter signedIn={Boolean(session)} onLanding />
+        <BackToTop />
+      </>
+    );
+  } else if (!session && view === 'public') {
+    // signed out on Privacy or Help: the page, under the product page's top bar
+    body = (
+      <>
+        <PublicHeader />
+        <main id="main" tabIndex={-1} className="relative mx-auto w-full max-w-[1280px] px-4 pt-10 focus:outline-none md:px-8">
+          <Suspense fallback={<PageFallback />}>{route.name === 'privacy' ? <PrivacyScreen /> : <HelpScreen />}</Suspense>
+        </main>
+        <PublicFooter />
         <BackToTop />
       </>
     );
@@ -157,7 +174,7 @@ export default function App() {
     body = (
       <Suspense fallback={null}>
         <LoginScreen
-          expired={auth.status === 'signed-out' && auth.expired}
+          expired={expired}
           onSignIn={async (username, password) => {
             await signIn(username, password);
             if (parseRoute(window.location.pathname).name === 'login') navigate('/app/', { replace: true });
@@ -194,7 +211,10 @@ export default function App() {
           mark={<img src={asset('brand/phishhawk-mark.svg')} alt="" />}
           user={{ name: session.username, role: ROLE_LABEL[session.role] ?? session.role }}
           onNavigate={(href) => navigate(href)}
-          onSignOut={signOut}
+          onSignOut={() => {
+            signingOut.current = true;
+            void signOut();
+          }}
           primaryCount={4}
         />
         <ProgressiveBlur direction="top" blurLayers={6} blurIntensity={0.6} className="pointer-events-none fixed inset-x-0 top-0 z-30 h-12 print:hidden" />
