@@ -11,10 +11,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from .. import appsettings, auth, views
+from .. import appsettings, auth, mailboxes, views
 from ..app import html_response
 from ..deps import COOKIE, DB, Admin, CurrentActor, optional_actor, services
-from ..models import Analysis, ApiToken, AuditRecord, Submission, User
+from ..models import Analysis, ApiToken, AuditRecord, Mailbox, Submission, User
 from . import api
 
 router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
@@ -254,6 +254,72 @@ def add_token(request: Request, db: DB, actor: Admin, name: Annotated[str, Form(
 def revoke(db: DB, actor: Admin, token_id: int) -> Response:
     api.revoke_token(db, actor, token_id)
     return _see_other("/users")
+
+
+def _mailboxes_page(request: Request, db: DB, actor: Any, error: str = "", status: int = 200) -> Response:
+    rows = [mailboxes.view(m) for m in db.scalars(select(Mailbox).order_by(Mailbox.name))]
+    return html_response(request, "mailboxes.html", {"actor": actor, "rows": rows, "error": error}, status)
+
+
+def _mailbox_form(form: Any, kind: str) -> dict[str, Any]:
+    """The fields of a mailbox form as the API takes them; an empty field is left out (kept, or the default)."""
+    config: dict[str, Any] = {name: str(form.get(name, "")).strip() for name in mailboxes.CONNECTION[kind]
+                              if name != "starttls" and str(form.get(name, "")).strip()}
+    if kind == "imap":
+        config["starttls"] = form.get("starttls") == "true"
+    fields: dict[str, Any] = {"config": config, "enabled": form.get("enabled", "true") == "true",
+                              "secret": str(form.get("secret", ""))}
+    for name in ("name", "interval_minutes"):
+        if str(form.get(name, "")).strip():
+            fields[name] = str(form.get(name)).strip()
+    return fields
+
+
+@router.get("/mailboxes")
+def mailboxes_page(request: Request, db: DB, actor: Admin) -> Response:
+    return _mailboxes_page(request, db, actor)
+
+
+@router.post("/mailboxes")
+async def add_mailbox(request: Request, db: DB, actor: Admin) -> Response:
+    form = await request.form()
+    kind = str(form.get("kind", ""))
+    try:
+        fields = _mailbox_form(form, kind) if kind in mailboxes.KINDS else {}
+        api.create_mailbox(request, db, actor, api.NewMailbox.model_validate(fields | {"kind": kind}))
+    except (HTTPException, ValueError) as exc:
+        detail = exc.detail if isinstance(exc, HTTPException) else "kind must be imap, graph or gmail"
+        return _mailboxes_page(request, db, actor, str(detail), getattr(exc, "status_code", 422))
+    return _see_other("/mailboxes")
+
+
+@router.post("/mailboxes/{mailbox_id}")
+async def change_mailbox(request: Request, db: DB, actor: Admin, mailbox_id: int) -> Response:
+    form = await request.form()
+    mailbox = db.get(Mailbox, mailbox_id)
+    if mailbox is None:
+        raise HTTPException(404, "no such mailbox")
+    try:
+        api.patch_mailbox(request, db, actor, mailbox_id,
+                          api.MailboxPatch.model_validate(_mailbox_form(form, mailbox.kind)))
+    except HTTPException as exc:
+        return _mailboxes_page(request, db, actor, str(exc.detail), exc.status_code)
+    return _see_other("/mailboxes")
+
+
+@router.post("/mailboxes/{mailbox_id}/poll")
+def poll_mailbox(request: Request, db: DB, actor: Admin, mailbox_id: int) -> Response:
+    try:
+        api.poll_mailbox(db, actor, mailbox_id)
+    except HTTPException as exc:
+        return _mailboxes_page(request, db, actor, str(exc.detail), exc.status_code)
+    return _see_other("/mailboxes")
+
+
+@router.post("/mailboxes/{mailbox_id}/delete")
+def delete_mailbox(db: DB, actor: Admin, mailbox_id: int) -> Response:
+    api.delete_mailbox(db, actor, mailbox_id)
+    return _see_other("/mailboxes")
 
 
 @router.get("/audit")

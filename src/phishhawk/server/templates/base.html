@@ -19,7 +19,7 @@
     <a href="/queue">Queue</a>
     <a href="/campaigns">Campaigns</a>
     <a href="/audit">Audit</a>
-    {% if actor.is_admin %}<a href="/settings">Settings</a><a href="/users">Users</a>{% endif %}
+    {% if actor.is_admin %}<a href="/settings">Settings</a><a href="/users">Users</a><a href="/mailboxes">Mailboxes</a>{% endif %}
   </nav>
   <form class="logout" method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">

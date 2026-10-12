@@ -12,10 +12,11 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, retention, views
+from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, mailboxes, retention, views
+from .. import mailbox as polling
 from ..bodylimit import BATCH_FACTOR
 from ..deps import COOKIE, DB, Admin, CurrentActor, secret, services
-from ..models import Analysis, ApiToken, AuditRecord, Batch, Campaign, Message, Submission, User, utcnow
+from ..models import Analysis, ApiToken, AuditRecord, Batch, Campaign, Mailbox, Message, Submission, User, utcnow
 from .files import serve_file
 
 router = APIRouter(prefix="/api/v1")
@@ -425,6 +426,85 @@ def revoke_token(db: DB, actor: Admin, token_id: int) -> dict[str, Any]:
     token.revoked_at = token.revoked_at or utcnow()
     audit.record(db, actor.label, "token_revoke", "token", token_id, {"name": token.name})
     return {"revoked": True}
+
+
+class NewMailbox(BaseModel):
+    name: str
+    kind: str
+    enabled: bool = True
+    interval_minutes: int = mailboxes.MIN_INTERVAL
+    config: dict[str, Any] = {}
+    secret: str = ""  # a password, a client secret or a service account's JSON key; never shown again
+
+
+class MailboxPatch(BaseModel):
+    name: str | None = None
+    kind: str | None = None
+    enabled: bool | None = None
+    interval_minutes: int | None = None
+    config: dict[str, Any] | None = None
+    secret: str | None = None  # empty or left out: kept
+
+
+def _mailbox(db: DB, mailbox_id: int) -> Mailbox:
+    mailbox = db.get(Mailbox, mailbox_id)
+    if mailbox is None:
+        raise HTTPException(404, "no such mailbox")
+    return mailbox
+
+
+@router.get("/mailboxes")
+def list_mailboxes(db: DB, actor: Admin) -> list[dict[str, Any]]:
+    return [mailboxes.view(m) for m in db.scalars(select(Mailbox).order_by(Mailbox.name))]
+
+
+@router.post("/mailboxes", status_code=201)
+def create_mailbox(request: Request, db: DB, actor: Admin, body: NewMailbox) -> dict[str, Any]:
+    try:
+        mailbox = mailboxes.create(db, services(request).box, body.model_dump())
+    except mailboxes.MailboxError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    audit.record(db, actor.label, "mailbox_create", "mailbox", mailbox.id,
+                 {"name": mailbox.name, "kind": mailbox.kind, "config": mailbox.config})  # never the secret
+    return mailboxes.view(mailbox)
+
+
+@router.get("/mailboxes/{mailbox_id}")
+def get_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
+    return mailboxes.view(_mailbox(db, mailbox_id))
+
+
+@router.patch("/mailboxes/{mailbox_id}")
+def patch_mailbox(request: Request, db: DB, actor: Admin, mailbox_id: int, body: MailboxPatch) -> dict[str, Any]:
+    mailbox = _mailbox(db, mailbox_id)
+    try:
+        changed = mailboxes.update(db, services(request).box, mailbox, body.model_dump(exclude_none=True))
+    except mailboxes.MailboxError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    audit.record(db, actor.label, "mailbox_change", "mailbox", mailbox.id,
+                 {"name": mailbox.name, "changed": changed})
+    return mailboxes.view(mailbox)
+
+
+@router.delete("/mailboxes/{mailbox_id}")
+def delete_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
+    """Its settings, credential, cursor and what it has seen; the messages it imported stay."""
+    mailbox = _mailbox(db, mailbox_id)
+    audit.record(db, actor.label, "mailbox_delete", "mailbox", mailbox.id, {"name": mailbox.name})
+    db.delete(mailbox)
+    return {"deleted": True}
+
+
+@router.post("/mailboxes/{mailbox_id}/poll", status_code=202)
+def poll_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
+    """Poll now: queued unless a poll is already waiting."""
+    mailbox = _mailbox(db, mailbox_id)
+    if not mailbox.enabled:
+        raise HTTPException(409, "the mailbox is switched off: switch it on first")
+    queued = polling.queue_poll(db, mailbox.id)
+    audit.record(db, actor.label, "mailbox_poll_now", "mailbox", mailbox.id,
+                 {"name": mailbox.name, "queued": queued})
+    return {"queued": queued}
 
 
 @router.get("/audit")
