@@ -5,10 +5,12 @@ import datetime as dt
 import pytest
 from sqlalchemy import select
 
-from phishhawk.server import auth
+from phishhawk.server import auth, worker
 from phishhawk.server.crypto import new_key
 from phishhawk.server.db import transaction
 from phishhawk.server.models import ApiToken, Session, User
+
+from .serverkit import login
 
 PASSWORD = "correct horse battery"
 SECRET = new_key()  # made at run time: no key-like literals for the secret scanner
@@ -94,3 +96,64 @@ def test_the_throttle_doubles_the_wait_after_three_failures():
     assert throttle.wait("user:alice") == 2.0
     throttle.succeeded("user:alice")
     assert throttle.wait("user:alice") == 0
+
+
+def _ids(admin):
+    return {u["username"]: u["id"] for u in admin.get("/api/v1/users").json()}
+
+
+def test_a_new_password_ends_every_session_of_that_user(app, admin, alice):
+    """An admin resets a password because the account may be someone else's: whoever holds its session is out."""
+    changed = admin.patch("/api/v1/users/%d" % _ids(admin)["alice"], json={"password": "a new password 123"})
+    assert changed.is_success
+    assert alice.get("/api/v1/session").status_code == 401
+
+
+def test_an_admin_who_changes_their_own_password_stays_logged_in_here_only(app, admin):
+    elsewhere = login(app, "admin")
+    changed = admin.patch("/api/v1/users/%d" % _ids(admin)["admin"], json={"password": "a new password 123"})
+    assert changed.is_success
+    assert admin.get("/api/v1/session").status_code == 200
+    assert elsewhere.get("/api/v1/session").status_code == 401
+
+
+def test_disabling_a_user_ends_their_sessions_at_once(app, admin, alice):
+    """Not only when the session is next used: enabled again before that, it would come back."""
+    alice_id = _ids(admin)["alice"]
+    admin.patch("/api/v1/users/%d" % alice_id, json={"disabled": True})
+    admin.patch("/api/v1/users/%d" % alice_id, json={"disabled": False})
+    assert alice.get("/api/v1/session").status_code == 401
+
+
+def test_sessions_idle_too_long_are_removed_by_the_hourly_sweep(services):
+    """A session nobody presents again would otherwise stay in the database for ever."""
+    user_id = _user(services.sessions)
+    with transaction(services.sessions) as s:
+        auth.open_session(s, s.get(User, user_id), SECRET)
+        auth.open_session(s, s.get(User, user_id), SECRET)
+    with transaction(services.sessions) as s:
+        s.scalars(select(Session)).first().last_seen_at -= dt.timedelta(minutes=481)
+    worker.schedule(services)
+    while worker.run_one(services):
+        pass
+    with transaction(services.sessions) as s:
+        assert len(s.scalars(select(Session)).all()) == 1
+
+
+@pytest.mark.parametrize("method, path, body", [
+    ("POST", "/api/v1/session", {"json": {"username": "alice", "password": PASSWORD}}),
+    ("POST", "/login", {"data": {"username": "alice", "password": PASSWORD}}),
+])
+def test_a_login_another_site_started_is_refused(anon, method, path, body):
+    """Another site could sign the analyst into an account of its own, and read what they then submit."""
+    answer = anon.request(method, path, headers={"Sec-Fetch-Site": "cross-site"}, follow_redirects=False, **body)
+    assert answer.status_code == 403 and "phishhawk_session" not in answer.headers.get("set-cookie", "")
+    for site in ("same-origin", "none"):
+        answer = anon.request(method, path, headers={"Sec-Fetch-Site": site}, follow_redirects=False, **body)
+        assert answer.status_code in (200, 303), site
+
+
+def test_no_change_another_site_started_is_made(admin):
+    answer = admin.patch("/api/v1/settings", json={"retention_days": 7}, headers={"Sec-Fetch-Site": "cross-site"})
+    assert answer.status_code == 403
+    assert admin.get("/api/v1/settings", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 200  # reading is

@@ -3,6 +3,7 @@ is sent), who is asking, CSRF for browser sessions, and roles."""
 
 from __future__ import annotations
 
+import hmac
 from collections.abc import Iterator
 from typing import Annotated
 
@@ -60,7 +61,7 @@ async def require_actor(request: Request, current: Annotated[Actor | None, Depen
     if not sent and request.headers.get("content-type", "").startswith(
             ("application/x-www-form-urlencoded", "multipart/form-data")):
         sent = str((await request.form()).get("csrf_token", ""))
-    if not sent or sent != current.csrf:
+    if not sent or not hmac.compare_digest(sent.encode(), current.csrf.encode()):
         raise HTTPException(403, "the form is out of date: reload the page and try again")
     return current
 

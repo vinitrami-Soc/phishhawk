@@ -55,6 +55,19 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     app.add_middleware(BodyLimit, limit=upload_limit)  # innermost: its refusals get the security headers too
 
     @app.middleware("http")
+    async def same_site_only(request: Request, call_next: Any) -> Response:
+        """A browser marks a request another site started (Sec-Fetch-Site: cross-site). None may change
+        anything, a login included: another site could sign the analyst into an account of its own and read
+        what they submit. Session cookies are SameSite=Strict as well; API clients send no such header."""
+        if request.method not in SAFE and request.headers.get("sec-fetch-site") == "cross-site":
+            detail = "a request another site started is refused"
+            if request.url.path.startswith("/api/"):
+                return JSONResponse({"error": "forbidden", "detail": detail}, status_code=403)
+            return PlainTextResponse(detail[0].upper() + detail[1:] + ".", status_code=403)
+        response: Response = await call_next(request)
+        return response
+
+    @app.middleware("http")
     async def https_only(request: Request, call_next: Any) -> Response:
         """With Secure cookies on, a browser that reaches the server over plain HTTP, and not through a
         proxy, is sent to HTTPS; a proxy redirects its own HTTP port. Browsers accept Secure cookies over
@@ -139,6 +152,7 @@ def openapi_json(app: FastAPI) -> str:
 
 
 LOCAL_NAMES = ("localhost", "127.0.0.1", "::1", "[::1]")
+SAFE = ("GET", "HEAD", "OPTIONS")
 ERROR_CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
                410: "gone", 413: "too_large", 415: "unsupported", 422: "invalid", 429: "throttled"}
 

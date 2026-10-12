@@ -40,6 +40,7 @@ class Actor:
     scope: str  # "full" for a session, else the token's scope
     csrf: str = ""
     label: str = ""  # how the audit log names this actor
+    session: str = ""  # the session's stored ID, when via is "session"
 
     @property
     def is_admin(self) -> bool:
@@ -106,11 +107,22 @@ def find_session(db: DbSession, cookie: str, secret: str, idle_minutes: int) -> 
         db.delete(session)
         return None
     session.last_seen_at = now
-    return Actor(user.id, user.username, user.role, "session", "full", session.csrf_token, user.username)
+    return Actor(user.id, user.username, user.role, "session", "full", session.csrf_token, user.username,
+                 session.id)
 
 
 def close_session(db: DbSession, cookie: str, secret: str) -> None:
     db.execute(delete(Session).where(Session.id == session_id(secret, cookie)))
+
+
+def end_sessions(db: DbSession, user_id: int, keep: str = "") -> None:
+    """Every session of a user, but the one whose stored ID is keep: after a new password or a disable."""
+    db.execute(delete(Session).where(Session.user_id == user_id, Session.id != keep))
+
+
+def end_idle_sessions(db: DbSession, idle_minutes: int) -> None:
+    """Sessions nobody has used for longer than the idle limit: no cookie can bring them back."""
+    db.execute(delete(Session).where(Session.last_seen_at < utcnow() - dt.timedelta(minutes=idle_minutes)))
 
 
 def create_token(db: DbSession, user: User, name: str, scope: str) -> str:
