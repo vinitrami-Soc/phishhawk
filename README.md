@@ -241,7 +241,8 @@ with `--build-arg BASE=public.ecr.aws/docker/library/python:3.12-slim`.
 ### The web app (preview)
 
 For a team, `phishhawk server` runs PhishHawk as a web app: log in, upload or
-paste a reported message, read the report and download every format, with
+paste a reported message or a batch of them (.mbox, .zip), read the report,
+download every format and see which messages belong to one campaign, with
 encrypted storage, retention and an audit log. It needs the `server` extra
 (`pip install "phishhawk[server]"`) or Docker Compose (`docker compose up -d`).
 Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md). The browser app, built in

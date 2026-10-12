@@ -2,11 +2,12 @@
 
 The web app puts PhishHawk's engine behind a browser and an API for a small SOC
 team on one machine you control. An analyst uploads or pastes a reported
-message, sees the verdict and the full HTML report, and downloads all six
-export formats. Every action is recorded in a hash-chained audit log.
+message, or a batch of them, sees the verdict and the full HTML report,
+downloads all six export formats, and sees which messages belong to the same
+campaign. Every action is recorded in a hash-chained audit log.
 
-This is milestone 1 of v3: one message at a time. Batch upload, campaigns and
-mailbox import come in later milestones (see the
+This is v3 after milestone 2: single messages, batches and campaigns. Mailbox
+import comes with milestone 3 (see the
 [design](superpowers/specs/2026-10-06-phishhawk-v3-web-design.md)).
 
 - [Start it with Docker Compose](#start-it-with-docker-compose)
@@ -14,6 +15,8 @@ mailbox import come in later milestones (see the
 - [Settings](#settings)
 - [Users, roles and API tokens](#users-roles-and-api-tokens)
 - [Reputation lookups](#reputation-lookups)
+- [Batches](#batches)
+- [Campaigns](#campaigns)
 - [What is stored, and for how long](#what-is-stored-and-for-how-long)
 - [Backups](#backups)
 - [Changing the keys](#changing-the-keys)
@@ -109,19 +112,22 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_SECRET_KEY` | none, required | Keys the session cookies. A new value logs everyone out; nothing else changes. |
 | `PHISHHAWK_ENCRYPTION_KEY` | none, required | 32 bytes in base64. Encrypts every stored message, report and API key. The server refuses to start without a valid one. |
 | `PHISHHAWK_DATA_DIR` | `/var/lib/phishhawk` | The database (SQLite) and the encrypted files. |
-| `PHISHHAWK_DATABASE_URL` | SQLite in the data folder | Milestone 1 is built and tested on SQLite only; Postgres support, for several workers, comes with milestone 2. |
+| `PHISHHAWK_DATABASE_URL` | SQLite in the data folder | `postgresql://user@host:5432/phishhawk` for Postgres (the `postgres` extra, in the Docker image already), where several workers can share the queue. |
 | `PHISHHAWK_HOST`, `PHISHHAWK_PORT` | `127.0.0.1`, `8000` | Where the web app listens. |
 | `PHISHHAWK_TLS_CERT`, `PHISHHAWK_TLS_KEY` | empty | Serve HTTPS directly. |
 | `PHISHHAWK_RETENTION_DAYS` | `30` | Days before a message's sensitive data is deleted (see below). |
-| `PHISHHAWK_MAX_UPLOAD_MB` | `25` | Largest message accepted. |
+| `PHISHHAWK_MAX_UPLOAD_MB` | `25` | Largest message accepted. A whole upload (several files, an .mbox or a .zip) may be four times this, and so may its messages together. |
+| `PHISHHAWK_MAX_BATCH_MESSAGES` | `500` | Most messages in one batch. |
+| `PHISHHAWK_CAMPAIGN_WINDOW_DAYS` | `90` | Campaigns are found among the messages first seen in this many days. |
 | `PHISHHAWK_SESSION_IDLE_MINUTES` | `480` | A session not used for this long ends. |
 | `PHISHHAWK_ANALYSIS_MEMORY_MB`, `PHISHHAWK_ANALYSIS_CPU_SECONDS` | `2048`, `120` | Limits for the process that analyses one message. A message that exceeds them fails; the server does not. |
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
 | `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
 | `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
 
-An admin can change the retention period and the upload limit on the Settings
-page; the value set there wins over the variable.
+An admin can change the retention period, the upload and batch limits and the
+campaign window on the Settings page; the value set there wins over the
+variable.
 
 ## Users, roles and API tokens
 
@@ -158,13 +164,47 @@ characters. With providers on, an analyst can still tick "offline" for a
 message. Every analysis records which providers were asked and each request
 made, without the keys.
 
+## Batches
+
+Several files, an .mbox or a .zip (of .eml, .msg or .mbox files) become one
+batch: each message in it is a submission of its own, analysed and stored as
+if it had been uploaded alone, in the order uploaded. An .mbox is split exactly
+as the CLI reads it. Inside a .zip, other files and archives are skipped, and
+no name from it is ever used, as a path or otherwise; an archive that would
+inflate past the limits is refused before it does.
+
+The batch page shows each message's progress and verdict. When the last one is
+done, the batch gets combined reports: every format for all its messages
+together, as one run of the CLI over them would write. They are tier 1 (below).
+
+Uploads stay in memory: a request body larger than the limit is refused before
+it is read, and nothing of a message is written to a temporary file.
+
+## Campaigns
+
+After each analysis, PhishHawk groups the messages first seen in the campaign
+window by what they share, exactly as `phishhawk campaign` does: an
+attachment, a phishing domain or link, a sender, a QR payload, or two weaker
+traits together (a subject and a display name, say). It works from the
+summary kept for each message (tier 2), so a campaign outlives its messages'
+content. A campaign is named after its oldest message.
+
+The campaign page shows what links its messages in clear, except the subject
+and the sender's display name: tier 2 keeps those only as keyed hashes, so the
+page shows them while one of the campaign's messages still has its tier 1, and
+"same subject" afterwards. Recipient addresses are listed while the messages'
+tier 1 exists; after that, only how many there were.
+
 ## What is stored, and for how long
 
 Each message has two tiers.
 
-- **Sensitive (tier 1)**: the raw message, the full JSON report and the six
-  exports. Encrypted with AES-256-GCM under the encryption key, each file bound
-  to its own ID. Deleted after the retention period by an hourly job.
+- **Sensitive (tier 1)**: the raw message, the full JSON report, the six
+  exports and the analysis kept for a batch's combined reports. Encrypted with
+  AES-256-GCM under the encryption key, each file bound to its own ID. Deleted
+  after the retention period by an hourly job. A batch's combined reports are
+  tier 1 too: deleted after the retention period, or as soon as any message in
+  them is deleted.
 - **Summary (tier 2)**: SHA-256, size, verdict, score, report ID, sender and
   sender domain, recipient count, indicators and ATT&CK techniques. Kept until
   someone deletes it. The subject and the sender's display name are kept only
@@ -250,8 +290,11 @@ image's health check uses it.
 - **"this message exceeded the analysis limits"**: the message needed more
   memory or CPU time than allowed. Raise the limits if the message is genuine.
 - **More than one worker**: `run` already starts one. SQLite takes one writer
-  at a time, so extra workers (`phishhawk server worker`) mostly wait; Postgres
-  support comes with milestone 2.
+  at a time, so extra workers (`phishhawk server worker`) mostly wait; on
+  Postgres they share the queue, each job claimed by one of them.
+- **A batch shows a message as failed**: that message could not be analysed
+  (the reason is shown); the rest of the batch and its combined reports go on
+  without it.
 
 ## Commands
 
