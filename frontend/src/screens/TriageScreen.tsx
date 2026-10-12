@@ -1,5 +1,6 @@
 /* Triage: upload or paste a reported message, wait for the verdict, and see the
-   latest analyses. */
+   latest analyses. Several files, an .mbox or a .zip are a batch: its page
+   follows them. */
 
 import { useEffect, useRef, useState } from 'react';
 import { FileUp, X } from 'lucide-react';
@@ -9,7 +10,7 @@ import { BorderTrail } from '@/components/core/border-trail';
 import { TextShimmer } from '@/components/core/text-shimmer';
 import { SlidingNumber } from '@/components/core/sliding-number';
 import { LiquidMetalButton } from '@/components/threeui/liquid-metal/LiquidMetalButton';
-import { listAnalyses, submit } from '@/api/client';
+import { isBatch, listAnalyses, submit } from '@/api/client';
 import { waitForSubmission } from '@/api/poll';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
 import type { AnalysisSummary } from '@/api/types';
@@ -104,7 +105,7 @@ function RecentAnalyses() {
 
 export default function TriageScreen() {
   const [mode, setMode] = useState<'upload' | 'paste'>('upload');
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [raw, setRaw] = useState('');
   const [offline, setOffline] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -115,7 +116,7 @@ export default function TriageScreen() {
 
   useEffect(() => () => watch.current?.abort(), []);
 
-  const ready = mode === 'upload' ? Boolean(file) : raw.trim().length > 0;
+  const ready = mode === 'upload' ? files.length > 0 : raw.trim().length > 0;
   const busy = phase.kind === 'uploading' || phase.kind === 'analyzing';
 
   async function analyze() {
@@ -125,7 +126,12 @@ export default function TriageScreen() {
     watch.current = controller;
     setPhase({ kind: 'uploading' });
     try {
-      const submission = await submit(mode === 'upload' ? { file: file!, offline } : { raw, offline }, controller.signal);
+      const created = await submit(mode === 'upload' ? { files, offline } : { raw, offline }, controller.signal);
+      if (isBatch(created)) {
+        navigate(`/app/batches/${created.batch_id}`);
+        return;
+      }
+      const submission = created;
       setPhase({ kind: 'analyzing', startedAt: Date.now() });
       const result = await waitForSubmission(submission.id, { signal: controller.signal });
       if (result.status === 'done' && result.analysis_id) navigate(`/app/analyses/${result.analysis_id}`);
@@ -136,17 +142,20 @@ export default function TriageScreen() {
     }
   }
 
-  function pick(files: FileList | null) {
-    const chosen = files?.[0];
-    if (chosen) {
-      setFile(chosen);
+  function pick(list: FileList | null) {
+    const chosen = Array.from(list ?? []);
+    if (chosen.length) {
+      setFiles(chosen);
       setPhase({ kind: 'idle' });
     }
   }
 
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+  const batchLike = files.length > 1 || files.some((f) => /\.(mbox|zip)$/i.test(f.name));
+
   return (
     <div className="grid grid-cols-1 gap-10">
-      <PageHeader eyebrow="Triage" title="Analyze a reported message" description="Upload an .eml or .msg file, or paste the full message with its headers." />
+      <PageHeader eyebrow="Triage" title="Analyze a reported message" description="Upload one or more .eml or .msg files, an .mbox or a .zip, or paste the full message with its headers." />
 
       <Panel>
         {/* grid-cols-1: the column may shrink below a long file name, which is cut with … instead */}
@@ -168,7 +177,7 @@ export default function TriageScreen() {
                 >
                   {/* the shorter words keep the switch inside the card on the narrowest phones */}
                   <span className="min-[350px]:hidden">{id === 'upload' ? 'Upload' : 'Paste'}</span>
-                  <span className="hidden min-[350px]:inline">{id === 'upload' ? 'Upload a file' : 'Paste the message'}</span>
+                  <span className="hidden min-[350px]:inline">{id === 'upload' ? 'Upload files' : 'Paste the message'}</span>
                 </button>
               ))}
             </AnimatedBackground>
@@ -180,18 +189,21 @@ export default function TriageScreen() {
             variants={{ enter: { opacity: 0, y: 8 }, center: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 } }}
           >
             <div>
-              {file ? (
+              {files.length ? (
                 <div className="flex items-center justify-between gap-4 rounded-[20px] border border-line bg-raised px-5 py-4">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line bg-surface text-accent">
                       <FileUp className="h-[18px] w-[18px]" strokeWidth={1.5} />
                     </span>
                     <div className="min-w-0">
-                      <p className="truncate text-sm text-ink">{file.name}</p>
-                      <p className="text-xs text-ink-muted">{formatBytes(file.size)}</p>
+                      <p className="truncate text-sm text-ink">{files.length === 1 ? files[0].name : `${files.length} files`}</p>
+                      <p className="truncate text-xs text-ink-muted">
+                        {formatBytes(totalSize)}
+                        {batchLike && ' · analysed as a batch'}
+                      </p>
                     </div>
                   </div>
-                  <Button size="sm" variant="ghost" onClick={() => setFile(null)} disabled={busy}>
+                  <Button size="sm" variant="ghost" onClick={() => setFiles([])} disabled={busy}>
                     <X className="h-3.5 w-3.5" strokeWidth={1.75} /> Remove
                   </Button>
                 </div>
@@ -212,13 +224,13 @@ export default function TriageScreen() {
                     dragging ? 'border-accent bg-accent/5' : 'border-line-strong bg-raised/50 hover:bg-hover',
                   )}
                 >
-                  <input ref={fileInput} type="file" accept=".eml,.msg" className="sr-only" onChange={(e) => pick(e.target.files)} />
+                  <input ref={fileInput} type="file" multiple accept=".eml,.msg,.mbox,.zip" className="sr-only" onChange={(e) => pick(e.target.files)} />
                   <span className="grid justify-items-center gap-3 px-6">
                     <span className="grid h-12 w-12 place-items-center rounded-2xl border border-line bg-surface text-ink-dim">
                       <FileUp className="h-5 w-5" strokeWidth={1.5} />
                     </span>
-                    <span className="text-sm font-medium text-ink">Drop an .eml or .msg file, or choose one</span>
-                    <span className="text-xs text-ink-muted">Up to 25 MB</span>
+                    <span className="text-sm font-medium text-ink">Drop .eml, .msg, .mbox or .zip files, or choose them</span>
+                    <span className="text-xs text-ink-muted">Several messages are analysed as a batch</span>
                   </span>
                   {dragging && <BorderTrail className="bg-linear-to-l from-cyan-200 via-cyan-400 to-cyan-200" size={120} />}
                 </label>

@@ -4,7 +4,7 @@
 
 import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
-import { Activity, Inbox, KeyRound, ListChecks, ScrollText, Settings, Users } from 'lucide-react';
+import { Activity, Inbox, KeyRound, ListChecks, Network, ScrollText, Settings, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
 import { ProgressiveBlur } from '@/components/core/progressive-blur';
 import { TextShimmerWave } from '@/components/core/text-shimmer-wave';
@@ -22,6 +22,9 @@ const LoginScreen = lazy(() => import('@/screens/LoginScreen'));
 const TriageScreen = lazy(() => import('@/screens/TriageScreen'));
 const QueueScreen = lazy(() => import('@/screens/QueueScreen'));
 const AnalysisScreen = lazy(() => import('@/screens/AnalysisScreen'));
+const BatchScreen = lazy(() => import('@/screens/BatchScreen'));
+const CampaignsScreen = lazy(() => import('@/screens/CampaignsScreen'));
+const CampaignScreen = lazy(() => import('@/screens/CampaignScreen'));
 const AuditScreen = lazy(() => import('@/screens/AuditScreen'));
 const HealthScreen = lazy(() => import('@/screens/HealthScreen'));
 const SettingsScreen = lazy(() => import('@/screens/SettingsScreen'));
@@ -96,6 +99,7 @@ export default function App() {
     const list: CommandBarItem[] = [
       { href: '/app/', label: 'Triage', icon: <Inbox className={icon} strokeWidth={1.5} /> },
       { href: '/app/analyses', label: 'Queue', icon: <ListChecks className={icon} strokeWidth={1.5} /> },
+      { href: '/app/campaigns', label: 'Campaigns', icon: <Network className={icon} strokeWidth={1.5} /> },
       { href: '/app/audit', label: 'Audit', icon: <ScrollText className={icon} strokeWidth={1.5} /> },
     ];
     if (session?.role === 'admin') {
@@ -164,8 +168,11 @@ export default function App() {
     let screen;
     if (ADMIN_ONLY.includes(route.name) && !isAdmin) screen = <PermissionDeniedState />;
     else if (route.name === 'triage' || route.name === 'login') screen = <TriageScreen />;
-    else if (route.name === 'queue') screen = <QueueScreen />;
+    else if (route.name === 'queue') screen = <QueueScreen session={session} />;
     else if (route.name === 'analysis') screen = <AnalysisScreen id={route.id} session={session} />;
+    else if (route.name === 'batch') screen = <BatchScreen id={route.id} />;
+    else if (route.name === 'campaigns') screen = <CampaignsScreen />;
+    else if (route.name === 'campaign') screen = <CampaignScreen id={route.id} />;
     else if (route.name === 'audit') screen = <AuditScreen session={session} />;
     else if (route.name === 'health') screen = <HealthScreen />;
     else if (route.name === 'settings') screen = <SettingsScreen />;
@@ -191,7 +198,7 @@ export default function App() {
         <main id="main" tabIndex={-1} className="relative mx-auto w-full max-w-[1280px] px-4 pb-10 pt-6 focus:outline-none md:px-6 lg:px-8">
           <AnimatePresence mode="wait">
             <motion.div
-              key={route.name === 'analysis' ? `analysis-${route.id}` : route.name}
+              key={'id' in route ? `${route.name}-${route.id}` : route.name}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}

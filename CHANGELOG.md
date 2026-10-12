@@ -24,6 +24,8 @@ the JSON and STIX output are the public interface.
   (the `postgres` extra, in the Docker image too) lets several
   `phishhawk server worker` processes share the queue.
 - **The queue's filters**: source, who submitted it, and the days between.
+- The frontend at `/app/` has all three: several files at once open the batch
+  page, Campaigns is in the top bar, and the queue has the new filters.
 - `campaign.correlate_records()`: `correlate()` on stored records instead of
   analyses. The CLI's output is unchanged.
 

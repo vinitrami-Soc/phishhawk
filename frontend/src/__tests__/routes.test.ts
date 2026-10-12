@@ -14,6 +14,18 @@ test('the app routes under /app/', () => {
   }
 });
 
+test('batches and campaigns have pages of their own', () => {
+  assert.deepEqual(parseRoute('/app/batches/7'), { name: 'batch', id: 7 });
+  assert.deepEqual(parseRoute('/app/campaigns'), { name: 'campaigns' });
+  assert.deepEqual(parseRoute('/app/campaigns/12/'), { name: 'campaign', id: 12 });
+  for (const path of ['/app/batches', '/app/batches/x', '/app/campaigns/-3']) {
+    assert.deepEqual(parseRoute(path), { name: 'not-found' }, path);
+  }
+  assert.equal(pageTitle({ name: 'batch', id: 7 }, true), 'Batch 7 · PhishHawk');
+  assert.equal(pageTitle({ name: 'campaigns' }, true), 'Campaigns · PhishHawk');
+  assert.equal(pageTitle({ name: 'campaign', id: 12 }, true), 'Campaign 12 · PhishHawk');
+});
+
 test('an analysis id is digits only; anything else is not found', () => {
   for (const path of ['/app/analyses/6a', '/app/analyses/-1', '/app/analyses/1.5', '/app/analyses/%31', '/app/nope', '/elsewhere']) {
     assert.deepEqual(parseRoute(path), { name: 'not-found' }, path);

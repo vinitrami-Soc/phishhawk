@@ -14,14 +14,18 @@
    on the real server. The real server always checks the password. */
 
 import fixtures from './fixtures.json';
-import type { Analysis, AuditEntry, Settings, Submission, Token, User } from '../api/types';
+import type { Analysis, AnalysisFile, AuditEntry, Batch, Settings, Submission, Token, User } from '../api/types';
 
 const CSRF_DETAIL = 'the form is out of date: reload the page and try again';
 const THROTTLE_MS = 8_000;
 
 const analyses: Analysis[] = structuredClone(fixtures as unknown as Analysis[]);
-const submissions = new Map<number, Submission & { ready: number; analysisSource: number }>();
+type MockSubmission = Submission & { ready: number; analysisSource: number; position: number };
+const submissions = new Map<number, MockSubmission>();
 let nextSubmission = 100;
+type MockBatch = { id: number; created_at: string; user_id: number; username: string; offline: boolean; submissionIds: number[] };
+const batches = new Map<number, MockBatch>();
+let nextBatch = 1;
 let nextAnalysis = Math.max(...analyses.map((a) => a.id)) + 1;
 let failedLogins = 0;
 let throttledUntil = 0;
@@ -69,6 +73,93 @@ const error = (status: number, code: string, detail: string, headers?: Record<st
 function summaryOf(a: Analysis) {
   const { report: _report, ...summary } = a;
   return summary;
+}
+
+function viewOf(sub: MockSubmission): Submission {
+  const { ready: _r, analysisSource: _s, position: _p, ...view } = sub;
+  return view;
+}
+
+/** A submission moves on with the clock: queued, running, then done with a copy of a real analysis. */
+function advance(sub: MockSubmission, me: { user_id: number; username: string }) {
+  if (sub.status === 'done') return;
+  const left = sub.ready - Date.now();
+  if (left <= 0) {
+    const copy: Analysis = structuredClone(analyses.find((a) => a.id === sub.analysisSource)!);
+    copy.id = nextAnalysis++;
+    copy.submission_id = sub.id;
+    copy.submitted_by = me.user_id;
+    copy.submitted_by_name = me.username;
+    copy.created_at = new Date().toISOString();
+    if (sub.batch_id) copy.source = 'batch';
+    analyses.unshift(copy);
+    Object.assign(sub, { status: 'done', analysis_id: copy.id });
+    record('system', 'analyze', 'analysis', copy.id, { submission: sub.id, verdict: copy.verdict, providers: [], lookups: 0 });
+  } else if (left < 2000) {
+    sub.status = 'running';
+  }
+}
+
+const KIND_ORDER = ['json', 'stix', 'misp', 'md', 'csv', 'html', 'manifest'];
+
+function batchView(batch: MockBatch, me: { user_id: number; username: string }): Batch {
+  const subs = batch.submissionIds.map((id) => submissions.get(id)!);
+  subs.forEach((sub) => advance(sub, me));
+  const counts = { queued: 0, running: 0, done: 0, failed: 0 };
+  const verdicts: Batch['verdicts'] = {};
+  const messages = subs.map((sub) => {
+    counts[sub.status] += 1;
+    const a = sub.analysis_id ? analyses.find((x) => x.id === sub.analysis_id) : undefined;
+    if (a) verdicts[a.verdict] = (verdicts[a.verdict] ?? 0) + 1;
+    return {
+      position: sub.position, submission_id: sub.id, status: sub.status, error: sub.error,
+      message_id: a?.message_id ?? 0, analysis_id: a?.id ?? null, verdict: a?.verdict ?? null, score: a?.score ?? null,
+      sender: a?.sender ?? '', sender_domain: a?.sender_domain ?? '',
+    };
+  });
+  const done = counts.queued + counts.running === 0;
+  // the combined reports: the shape of a real analysis's files, named for the batch
+  const files: AnalysisFile[] = done
+    ? KIND_ORDER.map((kind) => {
+        const like = analyses[analyses.length - 1].files.find((f) => f.kind === kind)!;
+        return { ...like, name: like.name.replace(/report-[0-9a-f]+/, `batch-${batch.id}`), available: true };
+      })
+    : [];
+  return {
+    id: batch.id, created_at: batch.created_at, submitted_by: batch.user_id, submitted_by_name: batch.username,
+    offline: batch.offline, total: subs.length, status: done ? 'done' : 'running', error: '', counts, verdicts, messages,
+    finished_at: done ? new Date().toISOString() : null, files, files_deleted_at: null,
+  };
+}
+
+/** Two campaigns among the sample analyses, as the server would find them. */
+const CAMPAIGNS = [
+  { members: [1, 4], shared: [{ kind: 'domain', value: 'example-corp-mfa.top', messages: 2 }, { kind: 'display name', value: 'it service desk', messages: 2 }] },
+  { members: [3, 6], shared: [{ kind: 'originating IP', value: '45.148.10.77', messages: 2 }, { kind: 'subject', value: 'action required: unusual sign-in activity', messages: 2 }] },
+];
+const HIDDEN = ['subject', 'display name'];
+
+function campaignView(spec: (typeof CAMPAIGNS)[number], detail: boolean) {
+  const members = spec.members.map((id) => analyses.find((a) => a.id === id)).filter((a): a is Analysis => Boolean(a));
+  const verdicts: Record<string, number> = {};
+  members.forEach((a) => (verdicts[a.verdict] = (verdicts[a.verdict] ?? 0) + 1));
+  const kept = members.filter((a) => a.report);
+  const recipients = [...new Set(kept.flatMap((a) => (a.report?.to ?? '').match(/[\w.+-]+@[\w.-]+/g) ?? []))].sort();
+  const order = ['MALICIOUS', 'LIKELY PHISHING', 'SUSPICIOUS', 'NO STRONG INDICATORS'];
+  const view = {
+    id: members[0]?.message_id ?? 0, size: members.length, first_seen: '2026-10-05T09:00:00Z', last_seen: '2026-10-06T18:30:00Z',
+    verdicts, worst_verdict: order.find((v) => verdicts[v]) ?? 'NO STRONG INDICATORS',
+    shared: spec.shared.map((s) => (HIDDEN.includes(s.kind) && (!detail || !kept.length) ? { ...s, value: null } : s)),
+    senders: [...new Set(members.map((a) => a.sender))].sort(), recipient_count: members.length,
+    rebuilt_at: new Date().toISOString(),
+  };
+  if (!detail) return view;
+  return {
+    ...view,
+    messages: members.map((a) => ({ message_id: a.message_id, analysis_id: a.id, sha256: a.sha256, verdict: a.verdict, score: a.score, sender: a.sender, subject: a.subject, date: '2026-10-05T09:00:00Z' })),
+    recipients: kept.length ? recipients : [],
+    recipients_complete: kept.length === members.length,
+  };
 }
 
 export async function mockFetch(url: string, init: RequestInit): Promise<Response> {
@@ -127,49 +218,69 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
 
   if (pathname === '/api/v1/submissions' && method === 'POST') {
     const form = body as FormData;
-    const file = form.get('file');
+    const files = [...form.getAll('files'), ...form.getAll('file')].filter((f): f is File => f instanceof File);
     const raw = form.get('raw');
-    if (!(file instanceof File) && !(typeof raw === 'string' && raw.trim())) return error(400, 'bad_request', 'send a file or paste a message');
-    if (file instanceof File && !/\.(eml|msg)$/i.test(file.name)) return error(415, 'unsupported', 'only .eml and .msg messages are accepted');
-    const id = nextSubmission++;
-    // the preview re-uses a real analysis: the hostile message for pasted text, a sample for files
-    const source = typeof raw === 'string' && raw.trim() ? analyses.find((a) => a.source === 'paste') ?? analyses[0] : analyses[0];
-    const sub = { id, status: 'queued' as const, error: '', analysis_id: null, submitted_at: new Date().toISOString(), ready: Date.now() + 3000, analysisSource: source.id };
-    submissions.set(id, sub);
-    record(me.username, 'submit', 'submission', id, { sha256: source.sha256, source: file instanceof File ? 'upload' : 'paste', offline: form.get('offline') === 'true' });
-    const { ready: _r, analysisSource: _s, ...view } = sub;
-    return json(202, view);
+    const offline = form.get('offline') === 'true';
+    if (!files.length && !(typeof raw === 'string' && raw.trim())) return error(400, 'bad_request', 'send a file or paste a message');
+    if (files.some((f) => !/\.(eml|msg|mbox|zip)$/i.test(f.name))) return error(415, 'unsupported', 'this is not an .eml, .msg, .mbox or .zip file');
+    // the preview re-uses real analyses: the hostile message for pasted text, the samples for files;
+    // an .mbox or a .zip stands for three messages
+    const count = files.reduce((n, f) => n + (/\.(mbox|zip)$/i.test(f.name) ? 3 : 1), 0);
+    const samples = analyses.filter((a) => a.source === 'upload');
+    const queue = (source: Analysis, batchId: number | null, position: number): MockSubmission => {
+      const id = nextSubmission++;
+      const sub: MockSubmission = { id, status: 'queued', error: '', analysis_id: null, submitted_at: new Date().toISOString(), batch_id: batchId, ready: Date.now() + 3000 + position * 1500, analysisSource: source.id, position };
+      submissions.set(id, sub);
+      record(me.username, 'submit', 'submission', id, { sha256: source.sha256, source: batchId ? 'batch' : files.length ? 'upload' : 'paste', offline });
+      return sub;
+    };
+    if (count <= 1) {
+      const source = files.length ? samples[0] ?? analyses[0] : analyses.find((a) => a.source === 'paste') ?? analyses[0];
+      return json(202, viewOf(queue(source, null, 0)));
+    }
+    const batch: MockBatch = { id: nextBatch++, created_at: new Date().toISOString(), user_id: me.user_id, username: me.username, offline, submissionIds: [] };
+    batches.set(batch.id, batch);
+    for (let i = 0; i < count; i++) batch.submissionIds.push(queue(samples[i % samples.length] ?? analyses[0], batch.id, i + 1).id);
+    record(me.username, 'submit_batch', 'batch', batch.id, { messages: count, offline });
+    return json(202, { batch_id: batch.id, total: count, submission_ids: batch.submissionIds, skipped: 0 });
   }
 
   if ((m = pathname.match(/^\/api\/v1\/submissions\/(\d+)$/)) && method === 'GET') {
     const sub = submissions.get(Number(m[1]));
     if (!sub) return error(404, 'not_found', 'no such submission');
-    if (sub.status !== 'done') {
-      const left = sub.ready - Date.now();
-      if (left <= 0) {
-        const copy: Analysis = structuredClone(analyses.find((a) => a.id === sub.analysisSource)!);
-        copy.id = nextAnalysis++;
-        copy.submission_id = sub.id;
-        copy.submitted_by = me.user_id;
-        copy.submitted_by_name = me.username;
-        copy.created_at = new Date().toISOString();
-        analyses.unshift(copy);
-        Object.assign(sub, { status: 'done', analysis_id: copy.id });
-        record('system', 'analyze', 'analysis', copy.id, { submission: sub.id, verdict: copy.verdict, providers: [], lookups: 0 });
-      } else if (left < 2000) {
-        sub.status = 'running';
-      }
-    }
-    const { ready: _r, analysisSource: _s, ...view } = sub;
-    return json(200, view);
+    advance(sub, me);
+    return json(200, viewOf(sub));
+  }
+
+  if ((m = pathname.match(/^\/api\/v1\/batches\/(\d+)$/)) && method === 'GET') {
+    const batch = batches.get(Number(m[1]));
+    return batch ? json(200, batchView(batch, me)) : error(404, 'not_found', 'no such batch');
+  }
+
+  if (pathname === '/api/v1/campaigns' && method === 'GET') {
+    return json(200, CAMPAIGNS.map((c) => campaignView(c, false)).filter((c) => c.size >= 2));
+  }
+
+  if ((m = pathname.match(/^\/api\/v1\/campaigns\/(\d+)$/)) && method === 'GET') {
+    const spec = CAMPAIGNS.find((c) => campaignView(c, false).id === Number(m![1]) && campaignView(c, false).size >= 2);
+    return spec ? json(200, campaignView(spec, true)) : error(404, 'not_found', 'no such campaign');
   }
 
   if (pathname === '/api/v1/analyses' && method === 'GET') {
     const q = (searchParams.get('q') ?? '').toLowerCase();
     const verdict = searchParams.get('verdict') ?? '';
+    const source = searchParams.get('source') ?? '';
+    const user = searchParams.get('user');
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    const since = searchParams.get('since') ?? '';
+    const until = searchParams.get('until') ?? '';
+    if ((since && !day.test(since)) || (until && !day.test(until))) return error(422, 'invalid', 'the request is not valid');
     const offset = Number(searchParams.get('offset') ?? 0);
     const rows = analyses
       .filter((a) => !verdict || a.verdict === verdict)
+      .filter((a) => !source || a.source === source)
+      .filter((a) => user === null || a.submitted_by === Number(user))
+      .filter((a) => (!since || a.created_at.slice(0, 10) >= since) && (!until || a.created_at.slice(0, 10) <= until))
       .filter((a) => !q || a.sha256.startsWith(q) || a.report_id.toLowerCase() === q || JSON.stringify(a.report?.iocs ?? []).toLowerCase().includes(q))
       .slice(offset, offset + 50)
       .map(summaryOf);
@@ -186,11 +297,10 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     if (!a) return error(404, 'not_found', 'no such analysis');
     if (a.tier1_deleted_at) return error(410, 'gone', 'the message was deleted after the retention period');
     const id = nextSubmission++;
-    const sub = { id, status: 'queued' as const, error: '', analysis_id: null, submitted_at: new Date().toISOString(), ready: Date.now() + 3000, analysisSource: a.id };
+    const sub: MockSubmission = { id, status: 'queued', error: '', analysis_id: null, submitted_at: new Date().toISOString(), batch_id: null, ready: Date.now() + 3000, analysisSource: a.id, position: 0 };
     submissions.set(id, sub);
     record(me.username, 'reanalyze', 'analysis', a.id, { submission: id });
-    const { ready: _r, analysisSource: _s, ...view } = sub;
-    return json(202, view);
+    return json(202, viewOf(sub));
   }
 
   if ((m = pathname.match(/^\/api\/v1\/messages\/(\d+)(\/hold)?$/))) {
