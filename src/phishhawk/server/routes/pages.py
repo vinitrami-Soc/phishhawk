@@ -103,6 +103,17 @@ def queue(request: Request, db: DB, actor: CurrentActor, q: str = "", verdict: s
                                                  "verdicts": VERDICTS, "offset": offset, "page": views.PAGE})
 
 
+@router.get("/campaigns")
+def campaigns_page(request: Request, db: DB, actor: CurrentActor) -> Response:
+    return html_response(request, "campaigns.html", {"actor": actor, "rows": api.list_campaigns(db, actor)})
+
+
+@router.get("/campaigns/{campaign_id}")
+def campaign_page(request: Request, db: DB, actor: CurrentActor, campaign_id: int) -> Response:
+    return html_response(request, "campaign.html", {"actor": actor,
+                                                    "c": api.get_campaign(request, db, actor, campaign_id)})
+
+
 @router.get("/analyses/{analysis_id}")
 def analysis_page(request: Request, db: DB, actor: CurrentActor, analysis_id: int) -> Response:
     found = views.find(db, analysis_id)

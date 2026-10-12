@@ -11,10 +11,10 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from .. import appsettings, audit, auth, batches, intake, jobs, retention, views
+from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, retention, views
 from ..bodylimit import BATCH_FACTOR
 from ..deps import COOKIE, DB, Admin, CurrentActor, secret, services
-from ..models import Analysis, ApiToken, AuditRecord, Batch, Message, Submission, User, utcnow
+from ..models import Analysis, ApiToken, AuditRecord, Batch, Campaign, Message, Submission, User, utcnow
 from .files import serve_file
 
 router = APIRouter(prefix="/api/v1")
@@ -144,6 +144,22 @@ def get_batch_file(request: Request, db: DB, actor: CurrentActor, batch_id: int,
     return serve_file(services(request).store, batch.files, name, download)
 
 
+@router.get("/campaigns")
+def list_campaigns(db: DB, actor: CurrentActor) -> list[dict[str, Any]]:
+    """Largest first. A shared subject or display name has the value null here: the campaign itself shows it,
+    while one of its messages' content still exists."""
+    return campaigns.listing(db)
+
+
+@router.get("/campaigns/{campaign_id}")
+def get_campaign(request: Request, db: DB, actor: CurrentActor, campaign_id: int) -> dict[str, Any]:
+    campaign = db.get(Campaign, campaign_id)
+    if campaign is None:
+        raise HTTPException(404, "no such campaign")
+    s = services(request)
+    return campaigns.detail(db, s.store, campaign, appsettings.trait_key(db, s.box))
+
+
 @router.get("/analyses")
 def list_analyses(request: Request, db: DB, actor: CurrentActor, q: str = "", verdict: str = "",
                   offset: Annotated[int, Query(ge=0)] = 0) -> list[dict[str, Any]]:
@@ -223,6 +239,7 @@ def delete_message(request: Request, db: DB, actor: CurrentActor, message_id: in
         if not actor.is_admin:
             raise HTTPException(403, "only an admin can delete completely")
         sha256 = retention.delete_completely(db, store, message)
+        campaigns.queue_rebuild(db)  # its record is gone
         audit.record(db, actor.label, "delete_completely", "message", message_id, {"sha256": sha256})
         return {"deleted": "all"}
     if not actor.is_admin and not views.is_owner(db, message_id, actor.user_id):

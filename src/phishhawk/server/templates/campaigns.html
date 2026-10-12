@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Campaigns · PhishHawk{% endblock %}
+{% block main %}
+<h1>Campaigns</h1>
+<p>Messages that share infrastructure: an attachment, a phishing domain or link, a sender, or two weaker traits together. Rebuilt after each analysis.</p>
+{% if rows %}
+<table class="list">
+  <caption class="sr-only">Campaigns, largest first</caption>
+  <thead><tr><th scope="col">Campaign</th><th scope="col">Messages</th><th scope="col">Seen (UTC)</th><th scope="col">Worst verdict</th><th scope="col">Linked by</th></tr></thead>
+  <tbody>
+  {% for c in rows %}
+  <tr>
+    <td data-label="Campaign"><a href="/campaigns/{{ c.id }}">Campaign {{ c.id }}</a></td>
+    <td data-label="Messages">{{ c.size }}</td>
+    <td data-label="Seen">{{ c.first_seen[:16]|replace('T', ' ') or 'unknown' }}{% if c.last_seen != c.first_seen %} to {{ c.last_seen[:16]|replace('T', ' ') }}{% endif %}</td>
+    <td data-label="Worst verdict">{% with verdict=c.worst_verdict %}{% include "_verdict.html" %}{% endwith %}</td>
+    <td data-label="Linked by">{% for s in c.shared[:3] %}{% include "_shared.html" %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No campaign yet: no two messages share enough.</p>
+{% endif %}
+{% endblock %}

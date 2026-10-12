@@ -44,7 +44,8 @@ def test_the_sweep_deletes_tier1_after_the_retention_period_and_audits_the_count
     with transaction(services.sessions) as s:
         s.scalars(select(Message)).one().first_seen_at -= dt.timedelta(days=31)
     worker.schedule(services)
-    assert worker.run_one(services)
+    while worker.run_one(services):  # the campaign rebuild the analysis queued, then the sweep
+        pass
     with transaction(services.sessions) as s:
         assert s.scalars(select(Message)).one().raw_blob is None
         assert s.scalars(select(Analysis)).one().verdict == "LIKELY PHISHING"  # tier 2 stays

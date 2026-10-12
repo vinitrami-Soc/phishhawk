@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..analysis import AnalysisOptions, analyze
-from . import appsettings, audit
+from . import appsettings, audit, campaigns
 from .config import ServerSettings
 from .crypto import Box
 from .db import transaction
@@ -42,7 +42,8 @@ def child_analyze(raw: bytes, name: str, options: AnalysisOptions) -> dict[str, 
 
 
 def protect_traits(traits: dict[str, Any], key: bytes) -> dict[str, Any]:
-    kept = {"traits": dict(traits["traits"]), "under": traits["under"], "flagged": traits["flagged"]}
+    kept = {"traits": dict(traits["traits"]), "under": traits["under"], "flagged": traits["flagged"],
+            "date": traits.get("date", "")}
     for kind in PROTECTED_TRAITS:
         if kind in kept["traits"]:
             kept["traits"][kind] = sorted(hmac.new(key, value.encode("utf-8"), hashlib.sha256).hexdigest()
@@ -99,6 +100,7 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
         message.sender, message.sender_domain = summary["sender"], summary["sender_domain"]
         message.recipient_count = summary["recipient_count"]
         submission.status, submission.error = "done", ""
+        campaigns.queue_rebuild(db)
         audit.record(db, "system", "analyze", "analysis", analysis.id,
                      {"submission": submission.id, "verdict": analysis.verdict,
                       "providers": result["providers"], "lookups": len(result["lookups"])})
