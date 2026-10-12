@@ -4,11 +4,12 @@ The web app puts PhishHawk's engine behind a browser and an API for a small SOC
 team on one machine you control. An analyst uploads or pastes a reported
 message, or a batch of them, sees the verdict and the full HTML report,
 downloads all six export formats, and sees which messages belong to the same
-campaign. Every action is recorded in a hash-chained audit log.
+campaign. An admin can connect the report mailbox itself, read-only, so every
+message reported to it is analysed as it arrives. Every action is recorded in a
+hash-chained audit log.
 
-This is v3 after milestone 2: single messages, batches and campaigns. Mailbox
-import comes with milestone 3 (see the
-[design](superpowers/specs/2026-10-06-phishhawk-v3-web-design.md)).
+This is v3 after milestone 3: single messages, batches, campaigns and mailbox
+import (see the [design](superpowers/specs/2026-10-06-phishhawk-v3-web-design.md)).
 
 - [Start it with Docker Compose](#start-it-with-docker-compose)
 - [Start it without Docker](#start-it-without-docker)
@@ -17,6 +18,7 @@ import comes with milestone 3 (see the
 - [Reputation lookups](#reputation-lookups)
 - [Batches](#batches)
 - [Campaigns](#campaigns)
+- [Mailboxes](#mailboxes)
 - [What is stored, and for how long](#what-is-stored-and-for-how-long)
 - [Backups](#backups)
 - [Changing the keys](#changing-the-keys)
@@ -195,6 +197,94 @@ page shows them while one of the campaign's messages still has its tier 1, and
 "same subject" afterwards. Recipient addresses are listed while the messages'
 tier 1 exists; after that, only how many there were.
 
+## Mailboxes
+
+An admin connects a report mailbox under Mailboxes: over IMAP, through
+Microsoft Graph (Microsoft 365) or through the Gmail API (Google Workspace).
+PhishHawk reads it and changes nothing: it never marks a message read, moves
+or deletes one, and asks only for read access (IMAP: EXAMINE and BODY.PEEK;
+Graph and Gmail: GET requests, after one request for a token).
+
+The worker polls each mailbox every few minutes (5 or more; 5 by default).
+The first poll imports the newest 50 messages and remembers where it stopped;
+each later poll imports what has arrived since. Older mail is not imported on
+its own: upload it as an .mbox if you want it. Each new message becomes a
+submission (source `mailbox`, submitted by the mailbox) and is analysed as an
+upload is, with the reputation lookups you turned on.
+
+No message is imported twice: one already stored (uploaded, pasted, or from
+another mailbox) or with a Message-ID a mailbox has already imported is
+counted as a duplicate and skipped. A message larger than the upload limit is
+skipped and counted. Each mailbox shows its status, when it was last polled
+and what that poll imported, skipped as a duplicate or skipped for good;
+"Poll now" polls it at once.
+
+When a poll fails (a refused sign-in, an unknown folder, a certificate that
+does not verify, a provider that throttles) the mailbox shows `error` and the
+reason in PhishHawk's own words, never the credential, and the failure is
+recorded in the audit log. Polling backs off: 10, 20, 40 minutes, then once an
+hour, until a poll works again or you enter a new credential.
+
+Credentials are stored encrypted like API keys, bound to their mailbox, and
+never shown again; leave the field empty when you change a mailbox to keep
+the one it has. Changing where a mailbox is (its host, user, folder or label,
+tenant or address) makes the next poll start again, without importing twice.
+Deleting a mailbox keeps the messages it imported.
+
+The worker connects only to the mailbox hosts you enter and, for Graph and
+Gmail, to `login.microsoftonline.com` and `graph.microsoft.com`, or
+`oauth2.googleapis.com` and `gmail.googleapis.com`.
+
+### IMAP
+
+Host, port (993 with TLS, or 143 with STARTTLS), user, password and folder
+(INBOX by default). PhishHawk never connects without TLS, and always verifies
+the server's certificate. Use an app password where the provider offers one;
+for a personal Gmail account (2-Step Verification on), the host is
+`imap.gmail.com` and the password an app password.
+
+### Microsoft 365 (Graph)
+
+1. In the Microsoft Entra admin center, under App registrations, register an
+   application (single tenant). Note its application (client) ID and the
+   directory (tenant) ID.
+2. Under API permissions, add Microsoft Graph's **Mail.Read** as an
+   *application* permission (not delegated), and grant admin consent. Nothing
+   else is needed.
+3. Under Certificates & secrets, add a client secret and copy its value.
+4. Restrict the application to the report mailbox, so it cannot read anyone
+   else's: in Exchange Online, with RBAC for Applications, or with an
+   application access policy:
+   ```powershell
+   New-ApplicationAccessPolicy -AppId <client ID> -PolicyScopeGroupId <a mail-enabled security group holding the report mailbox> -AccessRight RestrictAccess -Description "PhishHawk: report mailbox only"
+   Test-ApplicationAccessPolicy -Identity phish@example.com -AppId <client ID>
+   ```
+5. In PhishHawk: the tenant ID (or its domain, such as
+   `contoso.onmicrosoft.com`), the client ID, the report mailbox's address,
+   the folder (the Inbox by default; a folder you made, at the top level or in
+   the Inbox, by its name) and the client secret.
+
+PhishHawk asks for a token for each poll with the client-credentials flow and
+reads the folder through a delta query. When the secret expires, the mailbox
+shows "sign-in refused (invalid_client)": add a new secret and enter it.
+
+### Gmail (Google Workspace)
+
+1. In the Google Cloud console, in a project of your organisation, enable the
+   Gmail API, create a service account, and create a JSON key for it.
+2. In the Google Admin console, under Security, Access and data control, API
+   controls, Domain-wide delegation, add the service account's client ID with
+   one scope only: `https://www.googleapis.com/auth/gmail.readonly`.
+3. In PhishHawk: the report mailbox's address, the label (INBOX by default; a
+   label you made, by its name) and the JSON key's contents. Only the service
+   account's address and private key are kept, encrypted; you can delete the
+   file afterwards.
+
+PhishHawk signs a token request for `gmail.readonly` as the report mailbox for
+each poll, and follows the mailbox's history from there. "sign-in refused
+(unauthorized_client)" usually means the delegation is missing or has another
+scope.
+
 ## What is stored, and for how long
 
 Each message has two tiers.
@@ -212,6 +302,10 @@ Each message has two tiers.
 
 Recipient addresses, the subject in clear, body text and attachment names
 never reach tier 2.
+
+For each mailbox, PhishHawk keeps what it has seen there, so nothing is
+imported twice: the provider's ID for each message and its Message-ID as a
+keyed hash, never its content.
 
 On a message's page:
 
@@ -244,8 +338,8 @@ export PHISHHAWK_NEW_ENCRYPTION_KEY
 phishhawk server rotate-key
 ```
 
-It re-encrypts every stored file and API key under the new key and records the
-rotation in the audit log. Then set `PHISHHAWK_ENCRYPTION_KEY` to the new key
+It re-encrypts every stored file, API key and mailbox credential under the new
+key and records the rotation in the audit log. Then set `PHISHHAWK_ENCRYPTION_KEY` to the new key
 and start the server. If it stops halfway, run it again with the same two keys:
 what has already moved is skipped. If something opens under neither key, it
 stops and deletes nothing.
@@ -257,8 +351,9 @@ then replace `secrets/phishhawk_encryption_key` and `docker compose up -d`.
 ## The audit log
 
 Logins (and failed ones), submissions, analyses, downloads, re-analyses,
-deletions, holds, settings changes, user and token changes, key rotation and
-each retention run are recorded with who did it and when. Each record holds the
+deletions, holds, settings changes, user and token changes, mailbox changes
+and failed polls, key rotation and each retention run are recorded with who
+did it and when (a mailbox's imports are submitted by `mailbox:<its name>`). Each record holds the
 hash of the one before it, so an edited, removed, reordered or cut-off record
 is detected:
 
@@ -295,6 +390,10 @@ image's health check uses it.
 - **A batch shows a message as failed**: that message could not be analysed
   (the reason is shown); the rest of the batch and its combined reports go on
   without it.
+- **A mailbox shows an error**: the reason says what failed. Fix it (a new
+  password or secret, the folder's name, the delegation), then "Poll now".
+  "the stored credential cannot be opened" means the encryption key changed
+  without `rotate-key`: enter the credential again.
 
 ## Commands
 

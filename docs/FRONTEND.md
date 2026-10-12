@@ -91,11 +91,26 @@ Batches and campaigns:
 
 Also useful: `GET /api/v1/analyses?q=&verdict=&source=&user=&since=&until=&offset=`
 (the queue, 50 at a time; `q` matches a SHA-256, a report ID or an indicator;
-`source` is `upload`, `paste` or `batch`; `user` a user ID; `since` and `until`
+`source` is `upload`, `paste`, `batch` or `mailbox`; `user` a user ID; `since` and `until`
 are days, `YYYY-MM-DD`, both included), downloads at
 `/api/v1/analyses/{id}/files/{name}?download=1`, `DELETE /api/v1/session` to
 log out, and `GET /api/v1/audit`. Settings, users and tokens are admin calls;
 the built-in pages already cover them.
+
+Mailboxes (admins): `GET /api/v1/mailboxes` lists them, each with `id`, `name`,
+`kind` (`imap`, `graph` or `gmail`), `enabled`, `interval_minutes`, `config`
+(where it is: `host`, `port`, `starttls`, `user`, `folder`; `tenant_id`,
+`client_id`, `address`, `folder`; `address`, `label`, `service_account`),
+`secret_set`, `status` (`never`, `ok` or `error`), `error`, `last_poll_at`,
+`next_poll_at` and `last_counts` (`imported`, `duplicates`, `skipped`).
+`POST /api/v1/mailboxes` with JSON `{"name", "kind", "config", "secret",
+"interval_minutes", "enabled"}` adds one (201; 422 with the reason, 409 for a
+name in use); `PATCH /api/v1/mailboxes/{id}` changes any of those (a missing
+or empty `secret` keeps the old one); `DELETE /api/v1/mailboxes/{id}` removes
+one; `POST /api/v1/mailboxes/{id}/poll` polls it now (202 `{"queued"}`; 409
+when it is switched off). The secret is never in an answer. A message
+imported from a mailbox has `source: "mailbox"`, `submitted_by: null` and the
+mailbox's name in `submitted_by_name`.
 
 Roles: analysts submit and read everything, and delete their own submissions;
 admins also hold, release and delete completely. Show only the buttons the
