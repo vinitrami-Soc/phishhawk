@@ -102,6 +102,12 @@ Session cookies are marked `Secure`. Browsers accept them on
 `PHISHHAWK_COOKIE_SECURE=false` only to test over plain HTTP with a client
 that is not a browser.
 
+A new password ends every other session of that user, and disabling a user
+ends all of theirs at once. Sessions idle past `PHISHHAWK_SESSION_IDLE_MINUTES`
+are removed every hour. A request another site started (a browser marks it
+`Sec-Fetch-Site: cross-site`) can read but never change anything, a login
+included.
+
 For TLS without a proxy, set `PHISHHAWK_TLS_CERT` and `PHISHHAWK_TLS_KEY`.
 
 ## Settings

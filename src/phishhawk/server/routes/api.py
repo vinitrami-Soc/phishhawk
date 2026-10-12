@@ -382,11 +382,15 @@ def patch_user(db: DB, actor: Admin, user_id: int, body: UserPatch) -> dict[str,
         user.role = body.role
     if body.disabled is not None:
         user.disabled = body.disabled
+        if body.disabled:
+            auth.end_sessions(db, user.id)
     if body.password:
         try:
             auth.set_password(user, body.password)
         except auth.AuthError as exc:
             raise HTTPException(422, str(exc)) from exc
+        # whoever else holds a session of this account is out; an admin changing their own password stays in
+        auth.end_sessions(db, user.id, keep=actor.session if user.id == actor.user_id else "")
     audit.record(db, actor.label, "user_change", "user", user.id,
                  {"role": body.role, "disabled": body.disabled, "password_changed": bool(body.password)})
     return _user_view(user)

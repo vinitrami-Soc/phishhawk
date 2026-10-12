@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
-from . import appsettings, audit, batches, campaigns, jobs, mailbox
+from . import appsettings, audit, auth, batches, campaigns, jobs, mailbox
 from .db import transaction
 from .models import Job, Submission, utcnow
 from .processing import Services, process_submission
@@ -68,6 +68,7 @@ def run_one(services: Services) -> bool:
             with transaction(services.sessions) as db:
                 days = appsettings.limit(db, services.settings, "retention_days")
                 count = sweep(db, services.store, days)
+                auth.end_idle_sessions(db, services.settings.session_idle_minutes)
                 audit.record(db, "system", "retention_sweep", details={"deleted": count, "days": days})
     except Exception as exc:  # a bug in a handler must not stop the worker
         error = "%s: %s" % (type(exc).__name__, exc)
