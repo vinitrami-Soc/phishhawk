@@ -33,6 +33,8 @@ Before writing it, the whole milestone was built and tested as a prototype; ever
 
 Along the way the prototype found and fixed: a worker left running after SIGTERM (uvicorn raises the signal again after shutdown), a read-only API token that could download raw messages, SQLAlchemy 2.0 not mapping `list[Any]` columns, white text on the dark-mode button at 2.26:1 contrast, a favicon 404 that showed as a console error, and test literals the secret scan would have failed on. Each has a test. The replay found one more: `tools/make_openapi.py` did not create `docs/api/` on a fresh checkout; it does now.
 
+Task 19 (launch checks) was added afterwards in the same way: built and tested on the prototype, then replayed from this text onto the state after task 18, where its tests failed first on the missing `trusted_proxies` and then passed, the replayed files matched the prototype's byte for byte, and the suite went to 812 passed, 1 skipped with the extra (693 passed, 1 skipped without it), ruff and mypy clean, `docs/api/openapi.json` unchanged. The server was also run as a real process behind no proxy: `http://127.0.0.1` stayed on HTTP, any other name was redirected to HTTPS, `X-Forwarded-Proto: https` brought HSTS, and the frontend's 333 KB script went out gzipped and cached for a year. The Compose stack was not rebuilt for task 19 (Docker Hub refused the base image pull with 429 Too Many Requests); CI's Compose job runs it.
+
 ## Before you start
 
 - Work on a branch from `main`. `python -m pip install -e ".[dev]"` gives the current toolchain; task 2 adds the server extra.
@@ -97,6 +99,7 @@ The spec asks for small PRs with the CLI working after each one. Group the tasks
 | PR 6 | 12, 13 | The pages; your own frontend at `/app/` and `GET /api/v1/session`. |
 | PR 7 | 14, 15 | `phishhawk server`, the OpenAPI document. |
 | PR 8 | 16, 17, 18 | Docker and Compose, the browser test, the documentation. |
+| PR 9 | 19 | Launch checks: HTTPS behind a reverse proxy, no search engine indexing, compressed and cached frontend files, a bounded login throttle, domain settings that must be domains. |
 
 ## Tasks
 
@@ -7757,6 +7760,575 @@ git add CHANGELOG.md README.md docs/FRONTEND.md docs/SERVER.md docs/USAGE.md
 git commit -m "Document the web app for admins and record it in the changelog"
 ```
 
+### Task 19: Launch checks
+
+*PR 9.*
+
+What a server reachable by a browser needs before anyone relies on it, from the owner's launch checklist. HTTPS through a reverse proxy: the proxy's `X-Forwarded-Proto` and `X-Forwarded-For` count only from `PHISHHAWK_TRUSTED_PROXIES`, so HSTS is sent behind a proxy and the login throttle slows down each person's own address instead of the proxy's; a browser that reaches the server over plain HTTP, by a name other than this machine's own, is sent to HTTPS. No search engine indexing (`/robots.txt` and `X-Robots-Tag`). The frontend's files are sent compressed and cached by their hashed names, so it loads fast. The login throttle remembers at most 10,000 names and addresses, so a flood of made-up usernames cannot use up the memory. Domain settings must be domains, and a rejected value saves nothing.
+
+**Files:**
+
+- Modify: `src/phishhawk/server/config.py`
+- Modify: `src/phishhawk/server/security.py`
+- Modify: `src/phishhawk/server/frontend.py`
+- Modify: `src/phishhawk/server/auth.py`
+- Modify: `src/phishhawk/server/routes/api.py`
+- Modify: `src/phishhawk/server/app.py`
+- Modify: `src/phishhawk/server/cli.py`
+- Modify: `pyproject.toml`
+- Modify: `compose.yaml`
+- Modify: `docs/SERVER.md`
+- Test: `tests/server/test_launch.py` (new)
+
+**Interfaces:**
+
+- Consumes: `LoginThrottle` (task 6); `create_app()`, `login_response()` and `apply_settings()` (task 11); the built-in Settings page (task 12); `Frontend` (task 13); `serve()` (task 14); `compose.yaml` (task 16); docs/SERVER.md (task 18).
+- Produces:
+  - `phishhawk.server.config`: `ServerSettings.trusted_proxies: str` (default `"127.0.0.1"`)
+  - `phishhawk.server.auth`: `LoginThrottle(clock=time.monotonic, limit=10000)`; `LoginThrottle.__len__() -> int`
+  - `phishhawk.server.routes.api`: `domain(value: str) -> str` (raises `HTTPException(422)`)
+  - `phishhawk.server.frontend`: `IMMUTABLE: str`
+  - `phishhawk.server.app`: `GET /robots.txt` (not in the OpenAPI document); `LOCAL_NAMES`
+
+**Notes:**
+
+- The app reads the proxy headers itself (uvicorn's `ProxyHeadersMiddleware`, outermost), and `serve()` turns uvicorn's own reading off, so there is one place that decides and the tests exercise it. uvicorn learned networks (`172.16.0.0/12`) in 0.31, so the extra's floor moves from 0.30 to 0.31; 0.30.6 fails two of these tests, 0.31.0 passes them all.
+- The redirect looks at the name the browser used, not at the client's address: Compose publishes port 8000 on this machine, but the container sees Docker's gateway, so a check on the address would send `http://127.0.0.1:8000` to an HTTPS port that does not exist. Browsers accept `Secure` cookies over HTTP on `localhost` and `127.0.0.1`, so those names stay on HTTP. A request that came through a proxy (`X-Forwarded-Proto` present) is left to the proxy, which redirects its own HTTP port; this avoids a redirect loop behind a proxy that is not in the trusted list.
+- Only files are compressed. API answers carry the CSRF token and text from reported mail, so compressing them would open them to BREACH; the test checks that they stay uncompressed.
+- The built-in Settings page caught the 422 inside its own transaction, so before this task a bad value in one field still saved the fields before it. `apply_settings()` now checks everything first; the test goes through that page.
+- `/robots.txt` is outside the API, with `include_in_schema=False`; `docs/api/openapi.json` does not change (task 15's test proves it).
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/server/test_launch.py`:
+
+```python
+"""Launch checks: HTTPS behind a reverse proxy, no search engine indexing,
+compressed and cached frontend files, a login throttle that cannot grow
+without bound, and domain settings that must be domains."""
+
+import pytest
+
+
+PROXY = ("172.18.0.1", 50000)  # a reverse proxy as the container sees it, on a Docker network
+
+
+@pytest.fixture
+def secure(services):
+    """The app as Compose runs it: Secure cookies, trusting proxies on Docker's networks."""
+    from fastapi.testclient import TestClient
+
+    from phishhawk.server.app import create_app
+
+    services.settings.cookie_secure = True
+    services.settings.trusted_proxies = "127.0.0.1,172.16.0.0/12"
+    return TestClient(create_app(services=services), client=PROXY)
+
+
+def test_plain_http_is_sent_to_https_and_the_health_check_is_not(secure):
+    page = secure.get("/login?next=%2Fqueue", follow_redirects=False)
+    assert page.status_code == 308 and page.headers["location"] == "https://testserver/login?next=%2Fqueue"
+    assert secure.get("/healthz").status_code == 200
+
+
+def test_plain_http_to_this_machine_stays_as_browsers_accept_secure_cookies_there(secure):
+    # Compose publishes port 8000 on this machine; the container sees Docker's gateway, not 127.0.0.1
+    for base in ("http://127.0.0.1:8000", "http://localhost:8000", "http://[::1]:8000"):
+        assert secure.get(base + "/login", follow_redirects=False).status_code == 200, base
+
+
+def test_https_from_a_trusted_proxy_is_served_with_hsts(secure):
+    page = secure.get("/login", headers={"X-Forwarded-Proto": "https"})
+    assert page.status_code == 200 and page.headers["strict-transport-security"] == "max-age=31536000"
+
+
+def test_forwarded_headers_from_an_untrusted_address_are_ignored(services):
+    from fastapi.testclient import TestClient
+
+    from phishhawk.server.app import create_app
+
+    services.settings.cookie_secure = True  # trusted_proxies stays 127.0.0.1; the test client is not it
+    page = TestClient(create_app(services=services)).get("/login", headers={"X-Forwarded-Proto": "https"})
+    assert page.status_code == 200 and "strict-transport-security" not in page.headers
+
+
+def test_the_login_throttle_keys_on_the_address_the_proxy_reports(services, app):
+    from fastapi.testclient import TestClient
+
+    from phishhawk.server.app import create_app
+
+    services.settings.trusted_proxies = "172.16.0.0/12"
+    app = create_app(services=services)  # the users from the app fixture are in the database
+    client = TestClient(app, client=PROXY)
+    wrong = {"username": "alice", "password": "wrong password"}
+    for _ in range(3):
+        client.post("/api/v1/session", json=wrong, headers={"X-Forwarded-For": "203.0.113.7"})
+    assert app.state.throttle.wait("ip:203.0.113.7") > 0
+    assert app.state.throttle.wait("ip:172.18.0.1") == 0
+
+
+def test_nothing_is_indexed_by_search_engines(anon):
+    robots = anon.get("/robots.txt")
+    assert robots.status_code == 200 and robots.text == "User-agent: *\nDisallow: /\n"
+    for path in ("/robots.txt", "/login", "/api/v1/session", "/healthz"):
+        assert anon.get(path).headers["x-robots-tag"] == "noindex, nofollow", path
+
+
+@pytest.fixture
+def frontend(services, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from phishhawk.server.app import create_app
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text('<!doctype html><title>PhishHawk</title><div id="root"></div>')
+    (dist / "assets" / "index-3f9a1c.js").write_text("console.log('PhishHawk');\n" * 200)
+    services.settings.frontend_dir = str(dist)
+    return TestClient(create_app(services=services))
+
+
+def test_frontend_files_are_compressed_and_api_answers_are_not(frontend, admin):
+    script = frontend.get("/app/assets/index-3f9a1c.js", headers={"Accept-Encoding": "gzip"})
+    assert script.headers["content-encoding"] == "gzip" and script.text.startswith("console.log")
+    # API answers carry the CSRF token and text from reported mail: never compressed (BREACH)
+    answer = admin.get("/api/v1/session", headers={"Accept-Encoding": "gzip"})
+    assert "content-encoding" not in answer.headers
+
+
+def test_hashed_frontend_files_are_cached_for_a_year_and_the_page_is_always_checked(frontend):
+    script = frontend.get("/app/assets/index-3f9a1c.js")
+    assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
+    for path in ("/app/", "/app/queue"):
+        assert frontend.get(path).headers["cache-control"] == "no-cache", path
+
+
+def test_the_login_throttle_forgets_the_oldest_names_beyond_its_limit():
+    from phishhawk.server import auth
+
+    now = [0.0]
+    throttle = auth.LoginThrottle(clock=lambda: now[0], limit=100)
+    for n in range(250):
+        throttle.failed("user:spray%d" % n, "ip:198.51.100.9")
+    assert len(throttle) <= 100
+    assert throttle.wait("ip:198.51.100.9") > 0  # the address that keeps failing is still slowed down
+
+
+def test_domain_settings_must_be_domains(admin):
+    saved = admin.patch("/api/v1/settings", json={"protected_domains": [" Example.COM. ", "bücher.example"]})
+    assert saved.status_code == 200
+    assert saved.json()["protected_domains"] == ["example.com", "xn--bcher-kva.example"]
+    for bad in ("not a domain", "https://example.com/", "example", "-bad.example", "a..example"):
+        answer = admin.patch("/api/v1/settings", json={"block_domains": [bad]})
+        assert answer.status_code == 422 and answer.json()["detail"].startswith("not a domain"), bad
+
+
+
+def test_a_rejected_value_on_the_settings_page_saves_nothing(admin):
+    before = admin.get("/api/v1/settings").json()
+    form = {"protected_domains": "example.com", "block_domains": "bad domain", "retention_days": "30",
+            "max_upload_mb": "25", "max_batch_messages": "500", "campaign_window_days": "90"}
+    page = admin.post("/settings", data=form, follow_redirects=False)
+    assert page.status_code == 422 and "not a domain: bad domain" in page.text
+    assert admin.get("/api/v1/settings").json() == before
+```
+
+- [ ] **Step 2: Run them and see them fail**
+
+```bash
+python -m pytest tests/server/test_launch.py
+```
+
+Expected: FAIL. The first error is `ValueError: "ServerSettings" object has no field "trusted_proxies"`.
+
+- [ ] **Step 3: Write the code**
+
+Change `src/phishhawk/server/config.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/config.py
++++ b/src/phishhawk/server/config.py
+@@ -33,6 +33,7 @@
+     analysis_cpu_seconds: int = 120
+     cookie_secure: bool = True  # False only for plain-HTTP local testing
+     frontend_dir: str = ""  # a frontend's build, served at /app/ (docs/FRONTEND.md)
++    trusted_proxies: str = "127.0.0.1"  # reverse proxies (addresses or networks) whose X-Forwarded-* count
+ 
+     @property
+     def db_url(self) -> str:
+```
+
+Change `src/phishhawk/server/security.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/security.py
++++ b/src/phishhawk/server/security.py
+@@ -13,5 +13,6 @@
+     "Referrer-Policy": "no-referrer",
+     "Cross-Origin-Opener-Policy": "same-origin",
+     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
++    "X-Robots-Tag": "noindex, nofollow",
+ }
+ HSTS = "max-age=31536000"
+```
+
+Change `src/phishhawk/server/frontend.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/frontend.py
++++ b/src/phishhawk/server/frontend.py
+@@ -1,7 +1,9 @@
+ """A frontend built elsewhere (docs/FRONTEND.md), served from this origin at
+ /app/: its files, and its index.html for any path without a file extension,
+ so the frontend's own routes survive a reload. Everything else in the build
+-folder's parent stays out of reach."""
++folder's parent stays out of reach. Vite names every file in assets/ after
++its content, so those are cached for a year; the page itself is checked on
++every load, so a new build is picked up at once."""
+ 
+ from __future__ import annotations
+ 
+@@ -10,6 +12,8 @@
+ from starlette.staticfiles import StaticFiles
+ from starlette.types import Scope
+ 
++IMMUTABLE = "public, max-age=31536000, immutable"
++
+ 
+ class Frontend(StaticFiles):
+     def __init__(self, directory: str) -> None:
+@@ -17,8 +21,10 @@
+ 
+     async def get_response(self, path: str, scope: Scope) -> Response:
+         try:
+-            return await super().get_response(path, scope)
++            response = await super().get_response(path, scope)
+         except HTTPException as exc:
+-            if exc.status_code == 404 and "." not in path.rsplit("/", 1)[-1]:
+-                return await super().get_response("index.html", scope)
+-            raise
++            if exc.status_code != 404 or "." in path.rsplit("/", 1)[-1]:
++                raise
++            response = await super().get_response("index.html", scope)
++        response.headers["Cache-Control"] = IMMUTABLE if path.startswith("assets/") else "no-cache"
++        return response
+```
+
+Change `src/phishhawk/server/auth.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/auth.py
++++ b/src/phishhawk/server/auth.py
+@@ -137,12 +137,19 @@
+ 
+ class LoginThrottle:
+     """After three failures for a username or an address, each new attempt
+-    waits twice as long as the last (1 s, 2 s, 4 s ... up to 5 minutes)."""
++    waits twice as long as the last (1 s, 2 s, 4 s ... up to 5 minutes). It
++    remembers at most `limit` names and addresses, forgetting the one that
++    failed longest ago first, so a flood of made-up usernames cannot use up
++    the memory."""
+ 
+-    def __init__(self, clock: object = time.monotonic) -> None:
++    def __init__(self, clock: object = time.monotonic, limit: int = 10000) -> None:
+         self._clock = clock
++        self._limit = limit
+         self._failures: dict[str, tuple[int, float]] = {}
+ 
++    def __len__(self) -> int:
++        return len(self._failures)
++
+     def wait(self, *keys: str) -> float:
+         now = self._clock()  # type: ignore[operator]
+         return max([0.0] + [until - now for count, until in (self._failures.get(k, (0, 0.0)) for k in keys)])
+@@ -150,9 +157,11 @@
+     def failed(self, *keys: str) -> None:
+         now = self._clock()  # type: ignore[operator]
+         for key in keys:
+-            count = self._failures.get(key, (0, 0.0))[0] + 1
++            count = self._failures.pop(key, (0, 0.0))[0] + 1  # popped, so it moves to the newest end
+             delay = 0.0 if count < 3 else min(2.0 ** (count - 3), 300.0)
+             self._failures[key] = (count, now + delay)
++        while len(self._failures) > self._limit:
++            del self._failures[next(iter(self._failures))]
+ 
+     def succeeded(self, *keys: str) -> None:
+         for key in keys:
+```
+
+Change `src/phishhawk/server/routes/api.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/routes/api.py
++++ b/src/phishhawk/server/routes/api.py
+@@ -3,6 +3,7 @@
+ 
+ from __future__ import annotations
+ 
++import re
+ from typing import Annotated, Any
+ 
+ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+@@ -233,23 +234,44 @@
+     return appsettings.public_view(db, s.box, s.settings)
+ 
+ 
++DOMAIN = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]")
++
++
++def domain(value: str) -> str:
++    """A domain as the engine compares it: lower case, IDNA (xn--), no final dot; 422 for anything else."""
++    name = value.strip().lower().rstrip(".")
++    try:
++        name = name.encode("idna").decode("ascii")
++    except UnicodeError:
++        name = ""
++    if len(name) > 253 or not DOMAIN.fullmatch(name):
++        raise HTTPException(422, "not a domain: %s" % value.strip()[:100])
++    return name
++
++
+ def apply_settings(db: DB, s: Any, body: SettingsPatch) -> list[str]:
+-    changed: list[str] = []
++    """Checks everything first, so a rejected value leaves every setting as it was."""
++    lists: dict[str, list[str]] = {}
+     for name in appsettings.LISTS:
+         value = getattr(body, name)
+         if value is not None:
+-            appsettings.set_value(db, name, sorted({v.strip().lower() for v in value if v.strip()}))
+-            changed.append(name)
+-    for name in appsettings.LIMITS:
+-        value = getattr(body, name)
+-        if value is not None:
+-            if not 1 <= value <= 100000:
+-                raise HTTPException(422, "%s must be between 1 and 100000" % name)
+-            appsettings.set_value(db, name, value)
+-            changed.append(name)
+-    for provider, key in (body.keys or {}).items():
++            values = [v for v in value if v.strip()]
++            lists[name] = sorted({v.strip().lower() if name == "providers" else domain(v) for v in values})
++    limits = {name: getattr(body, name) for name in appsettings.LIMITS if getattr(body, name) is not None}
++    for name, number in limits.items():
++        if not 1 <= number <= 100000:
++            raise HTTPException(422, "%s must be between 1 and 100000" % name)
++    for provider in body.keys or {}:
+         if provider not in appsettings.KEYED:
+             raise HTTPException(422, "no API key for %s" % provider)
++    changed: list[str] = []
++    for name, values in lists.items():
++        appsettings.set_value(db, name, values)
++        changed.append(name)
++    for name, number in limits.items():
++        appsettings.set_value(db, name, number)
++        changed.append(name)
++    for provider, key in (body.keys or {}).items():
+         appsettings.set_secret(db, s.box, "key:" + provider, key.strip())
+         changed.append("key:" + provider)  # the key itself is never audited
+     return changed
+```
+
+Change `src/phishhawk/server/app.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/app.py
++++ b/src/phishhawk/server/app.py
+@@ -9,10 +9,12 @@
+ 
+ from fastapi import FastAPI, HTTPException, Request
+ from fastapi.exceptions import RequestValidationError
+-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
++from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+ from fastapi.staticfiles import StaticFiles
+ from fastapi.templating import Jinja2Templates
+ from sqlalchemy import func, select, text
++from starlette.middleware.gzip import GZipMiddleware
++from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+ 
+ from .. import __version__
+ from ..report.common import printable
+@@ -44,6 +46,19 @@
+     templates.env.filters["printable"] = lambda value: printable(str(value)) if value is not None else ""
+     app.state.templates = templates
+ 
++    @app.middleware("http")
++    async def https_only(request: Request, call_next: Any) -> Response:
++        """With Secure cookies on, a browser that reaches the server over plain HTTP, and not through a
++        proxy, is sent to HTTPS; a proxy redirects its own HTTP port. Browsers accept Secure cookies over
++        HTTP on this machine's own names, so those stay, as does the health check."""
++        host = request.url.hostname or ""
++        if (services.settings.cookie_secure and request.url.scheme == "http" and request.url.path != "/healthz"
++                and "x-forwarded-proto" not in request.headers
++                and host not in LOCAL_NAMES and not host.endswith(".localhost")):
++            return RedirectResponse(str(request.url.replace(scheme="https")), status_code=308)
++        response: Response = await call_next(request)
++        return response
++
+     @app.middleware("http")
+     async def security_headers(request: Request, call_next: Any) -> Response:
+         response: Response = await call_next(request)
+@@ -70,6 +85,10 @@
+     async def invalid(request: Request, exc: RequestValidationError) -> Response:
+         return JSONResponse({"error": "invalid", "detail": "the request is not valid"}, status_code=422)
+ 
++    @app.get("/robots.txt", include_in_schema=False)
++    def robots() -> PlainTextResponse:
++        return PlainTextResponse("User-agent: *\nDisallow: /\n")
++
+     @app.get("/healthz")
+     def healthz() -> dict[str, Any]:
+         with transaction(services.sessions) as db:
+@@ -84,9 +103,14 @@
+ 
+     app.include_router(api.router)
+     app.include_router(pages.router)
+-    app.mount("/static", StaticFiles(directory=str(files("phishhawk.server") / "static")), name="static")
++    # files only: they hold no secret, so compressing them cannot leak one (BREACH); API answers stay as they are
++    static = StaticFiles(directory=str(files("phishhawk.server") / "static"))
++    app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
+     if services.settings.frontend_dir:
+-        app.mount("/app", Frontend(services.settings.frontend_dir), name="frontend")
++        app.mount("/app", GZipMiddleware(Frontend(services.settings.frontend_dir), minimum_size=1024),
++                  name="frontend")
++    # outermost: the scheme and the client's address come from a trusted reverse proxy's X-Forwarded-* headers
++    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=services.settings.trusted_proxies)
+     return app
+ 
+ 
+@@ -99,6 +123,7 @@
+     return json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+ 
+ 
++LOCAL_NAMES = ("localhost", "127.0.0.1", "::1", "[::1]")
+ ERROR_CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
+                410: "gone", 413: "too_large", 415: "unsupported", 422: "invalid", 429: "throttled"}
+ 
+```
+
+Change `src/phishhawk/server/cli.py` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/src/phishhawk/server/cli.py
++++ b/src/phishhawk/server/cli.py
+@@ -153,7 +153,7 @@
+     try:
+         uvicorn.run("phishhawk.server.app:create_app", factory=True, host=settings.host, port=settings.port,
+                     ssl_certfile=settings.tls_cert or None, ssl_keyfile=settings.tls_key or None,
+-                    server_header=False)
++                    server_header=False, proxy_headers=False)  # the app reads them (PHISHHAWK_TRUSTED_PROXIES)
+     finally:
+         worker.terminate()
+         worker.join(30)
+```
+
+Change `pyproject.toml` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -28,7 +28,7 @@
+ dev = ["pytest>=7.4", "ruff>=0.6", "mypy>=1.10", "types-requests", "coverage>=7.4", "stix2>=3.0", "segno>=1.5",
+        "zxing-cpp>=2.2", "Pillow>=10.0", "jsonschema>=4.18", "hypothesis>=6.80", "httpx2>=2.13"]
+ # the web app: phishhawk server (docs/SERVER.md)
+-server = ["fastapi>=0.142", "uvicorn>=0.30", "jinja2>=3.1.6", "sqlalchemy>=2.0.30", "alembic>=1.13",
++server = ["fastapi>=0.142", "uvicorn>=0.31", "jinja2>=3.1.6", "sqlalchemy>=2.0.30", "alembic>=1.13",
+           "argon2-cffi>=23.1", "cryptography>=44.0.1", "python-multipart>=0.0.18", "pydantic-settings>=2.4"]
+ # decode QR codes in images, PDFs and drawn tables (quishing)
+ qr = ["zxing-cpp>=2.2", "Pillow>=10.0"]
+```
+
+Change `compose.yaml` (apply with `git apply`, or edit by hand):
+
+```diff
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -17,6 +17,8 @@
+     environment:
+       # false only to test over plain HTTP with a client other than a browser (CI does)
+       PHISHHAWK_COOKIE_SECURE: ${PHISHHAWK_COOKIE_SECURE:-true}
++      # a reverse proxy on this machine or on a Docker network reaches the container from these addresses
++      PHISHHAWK_TRUSTED_PROXIES: ${PHISHHAWK_TRUSTED_PROXIES:-127.0.0.1,172.16.0.0/12}
+       # your own frontend's build, served at /app/ (docs/FRONTEND.md), with the mount below
+       # PHISHHAWK_FRONTEND_DIR: /frontend
+     volumes:
+```
+
+Change `docs/SERVER.md` (apply with `git apply`, or edit by hand):
+
+````diff
+--- a/docs/SERVER.md
++++ b/docs/SERVER.md
+@@ -38,6 +38,35 @@
+ machine only. To reach it from other machines, put a reverse proxy with TLS
+ (Caddy or nginx) in front of it; do not publish port 8000 on a network.
+ 
++## HTTPS through a reverse proxy
++
++On this machine, Caddy gets a certificate, sends plain HTTP to HTTPS and passes
++the rest on, with this `Caddyfile`:
++
++```
++phishhawk.example.org {
++    reverse_proxy 127.0.0.1:8000
++}
++```
++
++The server believes a proxy's `X-Forwarded-Proto` and `X-Forwarded-For` only
++from the addresses in `PHISHHAWK_TRUSTED_PROXIES`. Compose trusts this machine
++and Docker's networks (`127.0.0.1,172.16.0.0/12`), where a proxy on this
++machine or in another container comes from. With that:
++
++- pages reached over HTTPS carry `Strict-Transport-Security`, so the browser
++  uses HTTPS from then on;
++- the login throttle slows down each person's own address, not the proxy's
++  (which would slow down everyone);
++- a browser that reaches the server over plain HTTP by any name other than
++  `localhost` or `127.0.0.1`, without a proxy, is redirected to HTTPS (the
++  health check at `/healthz` is not).
++
++Every answer carries `X-Robots-Tag: noindex, nofollow` and `/robots.txt`
++disallows everything, so a server reachable from the internet stays out of
++search engines. The frontend's files are sent compressed; its hashed files in
++`/app/assets/` are cached for a year and its page is checked on every load.
++
+ **Keep a copy of `secrets/phishhawk_encryption_key` somewhere safe.** Every
+ stored message and report is encrypted with it. Without it, nothing in a backup
+ can be read, by you or anyone else.
+@@ -87,6 +116,7 @@
+ | `PHISHHAWK_SESSION_IDLE_MINUTES` | `480` | A session not used for this long ends. |
+ | `PHISHHAWK_ANALYSIS_MEMORY_MB`, `PHISHHAWK_ANALYSIS_CPU_SECONDS` | `2048`, `120` | Limits for the process that analyses one message. A message that exceeds them fails; the server does not. |
+ | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
++| `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
+ | `PHISHHAWK_FRONTEND_DIR` | empty | The build of your own frontend, served at `/app/`; see [FRONTEND.md](FRONTEND.md). |
+ 
+ An admin can change the retention period and the upload limit on the Settings
+````
+
+- [ ] **Step 4: Run the tests again**
+
+Run, in order:
+
+```bash
+python -m pip install -e ".[dev,server]"   # picks up the uvicorn floor
+python -m pytest tests/server/test_launch.py
+```
+
+Expected: 11 passed.
+
+```bash
+python -m pytest
+ruff check src tests samples eval tools phishhawk && mypy
+python tools/make_openapi.py && git diff --exit-code docs/api/openapi.json
+```
+
+Expected: 812 passed, 1 skipped (the browser test runs with a Chromium for Playwright); ruff and mypy report nothing; the API document is unchanged.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add compose.yaml docs/SERVER.md pyproject.toml src/phishhawk/server/app.py src/phishhawk/server/auth.py src/phishhawk/server/cli.py src/phishhawk/server/config.py src/phishhawk/server/frontend.py src/phishhawk/server/routes/api.py src/phishhawk/server/security.py tests/server/test_launch.py
+git commit -m "Launch checks: HTTPS behind a proxy, no indexing, compressed and cached frontend, bounded login throttle, domain settings"
+```
+
 ## Spec coverage
 
 How each M1 requirement in the spec maps to the tasks above.
@@ -7780,3 +8352,4 @@ How each M1 requirement in the spec maps to the tasks above.
 | 11 (M1) | Docker image and Compose file | 16 |
 | 12 | Role matrix, CSRF, session expiry, throttle, scopes, store, jobs, decompression bomb, duplicates, hostile payload on every page, CSP, sandbox, attachments, audit tampering, browser, performance, CI jobs | 2 to 17 |
 | Owner | The main frontend built in Google AI Studio, served at `/app/` on the same origin, with its rules documented | 13, 18 |
+| Owner | Launch checklist: HTTPS (redirect, HSTS behind a trusted proxy), no indexing, compressed and cached frontend files, bot-proof login throttle, server-side checks on settings | 19 |
