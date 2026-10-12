@@ -209,13 +209,15 @@ def _traits(a: Analysis) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     return {kind: values for kind, values in found.items() if values}, dict(under)
 
 
+
+
 def trait_record(a: Analysis) -> dict[str, Any]:
     """What correlation needs from one message, as plain JSON, so a stored
     record can still be correlated after the message itself is deleted."""
     found, under = _traits(a)
     return {"traits": {kind: sorted(values) for kind, values in found.items()},
             "under": {base: sorted(hosts) for base, hosts in under.items()},
-            "flagged": a.verdict != "NO STRONG INDICATORS"}
+            "flagged": a.verdict != "NO STRONG INDICATORS", "date": _iso(_when(a.date))}
 
 
 def _platforms(unders: list[dict[str, set[str]]]) -> list[dict[str, Any]]:
@@ -281,19 +283,31 @@ def _summary(path: str, a: Analysis) -> dict[str, Any]:
 
 def correlate(items: list[tuple[str, Analysis]], min_size: int = 2, weak_cap: int = 200) -> dict[str, Any]:
     """{"messages": n, "clusters": [...], "unclustered": [...]} for (path, analysis) pairs."""
-    pairs = [_traits(a) for _, a in items]
-    found = [traits for traits, _ in pairs]
-    suspicious = [a.verdict != "NO STRONG INDICATORS" for _, a in items]
-    platforms = _platforms([under for _, under in pairs])
+    records = [dict(trait_record(a), verdict=a.verdict, sender=(a.from_address or "").lower(),
+                    recipients=sorted(_recipients(a)), summary=_summary(path, a)) for path, a in items]
+    return correlate_records(records, min_size, weak_cap)
+
+
+def correlate_records(records: list[dict[str, Any]], min_size: int = 2, weak_cap: int = 200) -> dict[str, Any]:
+    """correlate() on stored records instead of analyses, so messages whose
+    content was deleted can still be grouped. A record is trait_record()
+    with the message's verdict, sender, recipients (or none, once they are
+    gone) and summary added; a summary is passed through as it is, ordered
+    by its "path". Values compare as they are, so a trait kept only as a
+    keyed hash links exactly as the value it hides."""
+    found = [{kind: set(values) for kind, values in r["traits"].items()} for r in records]
+    unders = [{base: set(hosts) for base, hosts in r["under"].items()} for r in records]
+    suspicious = [bool(r["flagged"]) for r in records]
+    platforms = _platforms(unders)
     platform_names = {p["domain"] for p in platforms}
-    for message_traits, (_, under) in zip(found, pairs, strict=True):
+    for message_traits, under in zip(found, unders, strict=True):
         for kind in ("domain", "sender domain"):
             for base in message_traits.get(kind, set()) & platform_names:
                 message_traits[kind].discard(base)
                 message_traits.setdefault("host", set()).update(under[base])
         for kind in [k for k, values in message_traits.items() if not values]:
             del message_traits[kind]
-    groups = _Groups(len(items))
+    groups = _Groups(len(records))
     holders: dict[tuple[str, str], list[int]] = defaultdict(list)
     for index, message_traits in enumerate(found):
         for kind, values in message_traits.items():
@@ -318,15 +332,14 @@ def correlate(items: list[tuple[str, Analysis]], min_size: int = 2, weak_cap: in
             groups.join(first, second)
 
     members_of: dict[int, list[int]] = defaultdict(list)
-    for index in range(len(items)):
+    for index in range(len(records)):
         members_of[groups.find(index)].append(index)
     clusters: list[dict[str, Any]] = []
     unclustered: list[dict[str, Any]] = []
     for members in members_of.values():
         if len(members) < max(2, min_size):
-            unclustered += [_summary(*items[i]) for i in members]
+            unclustered += [records[i]["summary"] for i in members]
             continue
-        analyses = [items[i][1] for i in members]
         shared: list[dict[str, Any]] = []
         for kind in STRONG_KINDS + WEAK_KINDS:
             counts: dict[str, int] = defaultdict(int)
@@ -337,23 +350,29 @@ def correlate(items: list[tuple[str, Analysis]], min_size: int = 2, weak_cap: in
                        if n >= 2 and (kind, value) not in inactive]
         shared.sort(key=lambda item: (-item["messages"], (STRONG_KINDS + WEAK_KINDS).index(item["kind"]),
                                       item["value"]))
-        moments = sorted(m for m in (_when(a.date) for a in analyses) if m is not None)
+        # as the times they name: a year before 1000 is written with fewer digits
+        moments = sorted((records[i]["date"] for i in members if records[i]["date"]),
+                         key=lambda d: (d.index("-"), d))
         verdicts: dict[str, int] = defaultdict(int)
-        for a in analyses:
-            verdicts[a.verdict] += 1
+        for i in members:
+            verdicts[records[i]["verdict"]] += 1
         clusters.append({
             "size": len(members),
-            "messages": sorted((_summary(*items[i]) for i in members), key=lambda m: m["path"]),
+            "messages": sorted((records[i]["summary"] for i in members), key=_path),
             "shared": shared[:25],
-            "recipients": sorted(set().union(*(_recipients(a) for a in analyses))),
-            "senders": sorted({a.from_address.lower() for a in analyses if a.from_address}),
-            "first_seen": _iso(moments[0]) if moments else "",
-            "last_seen": _iso(moments[-1]) if moments else "",
+            "recipients": sorted(set().union(*(records[i].get("recipients") or () for i in members))),
+            "senders": sorted({records[i]["sender"] for i in members if records[i]["sender"]}),
+            "first_seen": moments[0] if moments else "",
+            "last_seen": moments[-1] if moments else "",
             "verdicts": dict(sorted(verdicts.items(), key=lambda item: VERDICT_ORDER.index(item[0]))),
             "worst_verdict": max(verdicts, key=VERDICT_ORDER.index),
         })
-    clusters.sort(key=lambda c: (-c["size"], c["first_seen"] or "~", c["messages"][0]["path"]))
+    clusters.sort(key=lambda c: (-c["size"], c["first_seen"] or "~", _path(c["messages"][0])))
     for number, cluster in enumerate(clusters, 1):
         cluster["id"] = "C%d" % number
-    return {"messages": len(items), "clusters": [dict(id=c.pop("id"), **c) for c in clusters],
-            "unclustered": sorted(unclustered, key=lambda m: m["path"]), "platforms": platforms}
+    return {"messages": len(records), "clusters": [dict(id=c.pop("id"), **c) for c in clusters],
+            "unclustered": sorted(unclustered, key=_path), "platforms": platforms}
+
+
+def _path(summary: dict[str, Any]) -> str:
+    return str(summary.get("path", ""))
