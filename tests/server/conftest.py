@@ -28,3 +28,10 @@ def box(settings):
 @pytest.fixture
 def store(settings, box):
     return BlobStore(settings.data_dir / "blobs", box)
+
+
+@pytest.fixture
+def services(settings, db, box, store):
+    from phishhawk.server.processing import Services
+
+    return Services(settings, db, box, store)
