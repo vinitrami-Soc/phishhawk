@@ -18,7 +18,9 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .. import __version__
 from ..report.common import printable
+from . import appsettings
 from .auth import LoginThrottle
+from .bodylimit import BATCH_FACTOR, MB, BodyLimit
 from .config import ServerSettings, load_settings
 from .crypto import Box
 from .db import make_engine, make_sessionmaker, transaction
@@ -45,6 +47,12 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     templates = Jinja2Templates(directory=str(files("phishhawk.server") / "templates"))
     templates.env.filters["printable"] = lambda value: printable(str(value)) if value is not None else ""
     app.state.templates = templates
+
+    def upload_limit() -> int:
+        with transaction(services.sessions) as db:
+            return BATCH_FACTOR * appsettings.limit(db, services.settings, "max_upload_mb") * MB
+
+    app.add_middleware(BodyLimit, limit=upload_limit)  # innermost: its refusals get the security headers too
 
     @app.middleware("http")
     async def https_only(request: Request, call_next: Any) -> Response:
