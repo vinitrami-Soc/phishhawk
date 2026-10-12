@@ -1,0 +1,45 @@
+# PhishHawk web app. Before the first start, create the two keys (docs/SERVER.md):
+#   mkdir -m 700 secrets
+#   openssl rand -base64 32 > secrets/phishhawk_secret_key
+#   openssl rand -base64 32 > secrets/phishhawk_encryption_key
+#   chmod 644 secrets/*    # the container's user reads them; the folder keeps others out
+# Then: docker compose up -d
+#       docker compose exec phishhawk phishhawk server create-admin admin
+# Keep a copy of the encryption key: without it no backup can be read.
+services:
+  phishhawk:
+    build:
+      context: .
+      dockerfile: server.Dockerfile
+    image: phishhawk-server
+    ports:
+      - "127.0.0.1:8000:8000"  # this machine only; put a TLS reverse proxy in front for anything else
+    environment:
+      # false only to test over plain HTTP with a client other than a browser (CI does)
+      PHISHHAWK_COOKIE_SECURE: ${PHISHHAWK_COOKIE_SECURE:-true}
+      # your own frontend's build, served at /app/ (docs/FRONTEND.md), with the mount below
+      # PHISHHAWK_FRONTEND_DIR: /frontend
+    volumes:
+      - phishhawk-data:/data
+      # - ./frontend-dist:/frontend:ro
+    secrets:
+      - phishhawk_secret_key
+      - phishhawk_encryption_key
+    init: true  # reaps the worker's helper processes
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+secrets:
+  phishhawk_secret_key:
+    file: ./secrets/phishhawk_secret_key
+  phishhawk_encryption_key:
+    file: ./secrets/phishhawk_encryption_key
+
+volumes:
+  phishhawk-data:

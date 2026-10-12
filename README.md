@@ -238,6 +238,15 @@ with `--build-arg BASE=public.ecr.aws/docker/library/python:3.12-slim`.
 ./phishhawk suspicious.eml      # straight from the checkout; needs `requests` importable
 ```
 
+### The web app (preview)
+
+For a team, `phishhawk server` runs PhishHawk as a web app: log in, upload or
+paste a reported message, read the report and download every format, with
+encrypted storage, retention and an audit log. It needs the `server` extra
+(`pip install "phishhawk[server]"`) or Docker Compose (`docker compose up -d`).
+Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md). To put your own frontend
+on its API, for example one built in Google AI Studio: [docs/FRONTEND.md](docs/FRONTEND.md).
+
 ### Check the install
 
 ```console
@@ -721,7 +730,7 @@ For extra isolation, use the Docker image with `--network none` and a read-only 
 phishhawk/
 ├── src/phishhawk/
 │   ├── cli.py          scan / imap / graph / gmail / campaign / sweep / evidence / doctor / cache /
-│   │                   techniques / help
+│   │                   techniques / server / help
 │   ├── banner.py       start-up banner (_logo_art.py is generated from docs/images/logo.svg)
 │   ├── mailpolicy.py   the email parser, hardened against headers written to break it
 │   ├── parse.py        MIME walk, unwrapping, inline forwards, hidden text, the mail path
@@ -749,15 +758,20 @@ phishhawk/
 │   ├── cache.py        SQLite TTL cache
 │   ├── enrich/         VirusTotal, urlscan.io, RDAP, AbuseIPDB
 │   ├── report/         console, HTML, JSON, STIX, MISP, Markdown, CSV; campaign and sweep output
-│   └── pipeline.py     parse → detect → enrich
+│   ├── pipeline.py     parse → detect → enrich
+│   ├── analysis.py     one message in, the analysis and every report format out (the web app's entry)
+│   └── server/         the web app (optional extra): API, pages, worker, encrypted store, audit log
 ├── tests/              643 offline tests: unit, security, fuzz-found regressions, Hypothesis properties,
 │                       and the evaluation gate
 ├── samples/            five inert sample emails and the script that makes them
 ├── eval/               labelled corpus, evaluation runner, real-corpus fetchers, results.json
 ├── tools/              scripts that draw the logo, banner, demo and charts in docs/images
-├── docs/               usage, detections, integrations and security review; the JSON Schema; images
+├── docs/               usage, the web app and your own frontend, detections, integrations and security
+│                       review; the JSON Schema;
+│                       the API description (api/openapi.json); images
 ├── install.sh          user-level installer (pipx or virtualenv)
-├── Dockerfile          non-root image
+├── Dockerfile          non-root image for the command line
+├── server.Dockerfile   the web app's image; compose.yaml runs it
 └── phishhawk           run-from-checkout launcher
 ```
 

@@ -1,0 +1,112 @@
+# Your own frontend
+
+The web app comes with its own pages, but you can build a frontend of your own,
+for example in Google AI Studio, and let PhishHawk serve it at `/app/`. It runs
+on the same origin as the API, so it needs no CORS and the session cookie
+stays `SameSite=Strict`. The built-in pages keep working beside it, as the
+backup and admin interface.
+
+- [The rules](#the-rules)
+- [The API in five calls](#the-api-in-five-calls)
+- [Build and deploy](#build-and-deploy)
+- [A starting prompt for Google AI Studio](#a-starting-prompt-for-google-ai-studio)
+
+## The rules
+
+Everything in a reported email is written by the attacker: the subject, the
+sender's name, every indicator, every value in the report. Your frontend shows
+that text to your analysts, so it is part of the defence.
+
+1. **Show message data as text, never as HTML.** In React, `{value}` is safe.
+   Never pass message data to `dangerouslySetInnerHTML`, `innerHTML`, a
+   Markdown-to-HTML renderer, or an `href`. That includes `subject`, `sender`,
+   `sender_domain`, file names, indicators and anything inside `report`.
+2. **Open the full report only in a sandboxed frame**, from the server:
+
+   ```html
+   <iframe sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"
+           src="/analyses/{id}/files/{html file name}"></iframe>
+   ```
+
+   Never fetch the report and insert it into your page.
+3. **Load nothing from other sites.** The app's Content-Security-Policy allows
+   scripts, styles, fonts, images and requests from this server only. No CDN,
+   no import map that points at a CDN, no Google Fonts: install packages with
+   npm and let the build bundle them.
+4. **Send no message data anywhere else.** No Gemini or other AI calls, no
+   analytics. PhishHawk is self-hosted so that reported mail stays on your
+   server; the CSP blocks such requests anyway.
+5. **Use relative URLs** (`/api/v1/...`), so the browser sends the session
+   cookie, and send the CSRF token on every request that changes something.
+
+## The API in five calls
+
+The full description is [docs/api/openapi.json](api/openapi.json). Errors are
+JSON: `{"error": "<code>", "detail": "<text>"}`.
+
+| Step | Call | Notes |
+|---|---|---|
+| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf"}`; keep `csrf` in memory. |
+| Log in | `POST /api/v1/session` with JSON `{"username", "password"}` | 200: `{"csrf"}` and the session cookie. 401: wrong details. 429: wait (the `Retry-After` header says how long). |
+| Submit | `POST /api/v1/submissions`, multipart: `file` (an .eml or .msg) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202: `{"id", "status", "error", "analysis_id", "submitted_at"}`. |
+| Wait | `GET /api/v1/submissions/{id}` every second or two | Until `status` is `done` (then `analysis_id` is set) or `failed` (then `error` says why). |
+| Show | `GET /api/v1/analyses/{id}` | `verdict`, `score`, `report_id`, `sha256`, `sender`, `subject`, `submitted_by` (a user ID) and `submitted_by_name`, `techniques`, `lookups`, `hold`, `files` (each with `name`, `kind`, `type`, `size`, `sha256`, `available`) and `report` (the full JSON report while the message is kept). |
+
+Also useful: `GET /api/v1/analyses?q=&verdict=&offset=` (the queue, 50 at a
+time; `q` matches a SHA-256, a report ID or an indicator), downloads at
+`/api/v1/analyses/{id}/files/{name}?download=1`, `DELETE /api/v1/session` to
+log out, and `GET /api/v1/audit`. Settings, users and tokens are admin calls;
+the built-in pages already cover them.
+
+Roles: analysts submit and read everything, and delete their own submissions;
+admins also hold, release and delete completely. Show only the buttons the
+user's `role` allows; the server refuses the rest (403) whatever the frontend
+shows.
+
+## Build and deploy
+
+1. Build static files with base path `/app/`. With Vite, set `base: '/app/'` in
+   `vite.config.ts`, then run `npm run build`. The result is a `dist/` folder.
+2. Copy `dist/` to the server, for example to `/srv/phishhawk-frontend`.
+3. Set `PHISHHAWK_FRONTEND_DIR=/srv/phishhawk-frontend` and restart. With
+   Compose, mount the folder read-only and set the variable; `compose.yaml`
+   has the two lines, commented out.
+4. Open `/app/`. Your frontend's own routes (`/app/queue`, `/app/analyses/12`)
+   load `index.html`, so a reload works.
+
+If the page stays blank, open the browser's console. A "Content Security
+Policy" error names the script, style or font that came from another site;
+bundle it instead.
+
+## A starting prompt for Google AI Studio
+
+Attach `docs/api/openapi.json` and paste:
+
+```text
+Build a web frontend for PhishHawk, a phishing triage service, in React and
+TypeScript with Vite. The attached OpenAPI file describes its API.
+
+- It is served by the PhishHawk server at /app/ on the same origin: set Vite's
+  base to '/app/' and call the API with relative URLs such as /api/v1/session.
+- Install every library with npm. Do not load scripts, styles or fonts from a
+  CDN or Google Fonts, and do not use an import map. Do not call Gemini or any
+  other external service.
+- On start, GET /api/v1/session. On 401 show a login form that POSTs
+  {"username", "password"} to /api/v1/session. Keep the returned "csrf" value
+  in memory and send it as the X-CSRF-Token header on every POST, PATCH and
+  DELETE.
+- Pages: Submit (upload an .eml or .msg file, or paste raw text, with an
+  "Offline" checkbox; then poll GET /api/v1/submissions/{id} until status is
+  done or failed), Queue (GET /api/v1/analyses with search and a verdict
+  filter), and Analysis (GET /api/v1/analyses/{id}: verdict, score, report ID,
+  sender, the downloads, and the full report in
+  <iframe sandbox="allow-popups allow-popups-to-escape-sandbox allow-downloads"
+  src="/analyses/{id}/files/{name of the file whose kind is html}">).
+- Every value that comes from an email is attacker-controlled. Render it as
+  text only: never dangerouslySetInnerHTML, innerHTML, a Markdown renderer, or
+  a link built from it.
+- Accessible: one h1 per page, labels on every field, visible keyboard focus,
+  WCAG AA contrast in light and dark.
+```
+
+Review what it produces against [the rules](#the-rules) before you deploy it.
