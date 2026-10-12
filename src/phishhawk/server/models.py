@@ -6,7 +6,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Dialect, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Dialect, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -94,6 +94,40 @@ class Batch(Base):
     finished_at: Mapped[dt.datetime | None] = mapped_column(default=None)
 
 
+class Mailbox(Base):
+    """A report mailbox the worker reads, read-only (spec 6.3). Its credential is sealed, bound to its ID."""
+    __tablename__ = "mailboxes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(48), unique=True)
+    kind: Mapped[str] = mapped_column(String(8))  # imap, graph or gmail
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer, default=5)
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # where it is; no secret
+    secret: Mapped[str | None] = mapped_column(Text, default=None)  # base64 of the sealed credential
+    cursor: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # where the last poll stopped
+    status: Mapped[str] = mapped_column(String(16), default="never")  # never, ok or error
+    error: Mapped[str] = mapped_column(Text, default="")  # sanitised
+    failures: Mapped[int] = mapped_column(Integer, default=0)  # in a row
+    last_poll_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    next_poll_at: Mapped[dt.datetime | None] = mapped_column(default=None)  # None: due now
+    last_counts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # imported, duplicates, skipped
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class MailboxItem(Base):
+    """A message a mailbox has seen, so it is never imported twice."""
+    __tablename__ = "mailbox_items"
+    __table_args__ = (UniqueConstraint("mailbox_id", "remote_id", name="uq_mailbox_items_remote"),
+                      Index("ix_mailbox_items_message_id_hmac", "message_id_hmac"))
+    id: Mapped[int] = mapped_column(primary_key=True)
+    mailbox_id: Mapped[int] = mapped_column(ForeignKey("mailboxes.id", ondelete="CASCADE"))
+    remote_id: Mapped[str] = mapped_column(String(255))  # IMAP UIDVALIDITY:UID, a Graph or Gmail message ID
+    message_id: Mapped[int | None] = mapped_column(ForeignKey("messages.id", ondelete="SET NULL"), default=None)
+    message_id_hmac: Mapped[str] = mapped_column(String(64), default="")  # its Message-ID, under the trait key
+    outcome: Mapped[str] = mapped_column(String(16))  # imported, duplicate or skipped
+    seen_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
 class Submission(Base):
     __tablename__ = "submissions"
     __table_args__ = (Index("ix_submissions_batch", "batch_id", "position"),)
@@ -102,7 +136,8 @@ class Submission(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     batch_id: Mapped[int | None] = mapped_column(ForeignKey("batches.id", ondelete="SET NULL"), default=None)
     position: Mapped[int] = mapped_column(Integer, default=0)  # its place in the batch, from 1
-    source: Mapped[str] = mapped_column(String(16))  # "upload", "paste", "batch" (M3: "mailbox")
+    mailbox_id: Mapped[int | None] = mapped_column(ForeignKey("mailboxes.id", ondelete="SET NULL"), default=None)
+    source: Mapped[str] = mapped_column(String(16))  # "upload", "paste", "batch" or "mailbox"
     offline: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued, running, done, failed
     error: Mapped[str] = mapped_column(Text, default="")
