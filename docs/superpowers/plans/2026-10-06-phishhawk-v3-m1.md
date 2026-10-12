@@ -7809,7 +7809,6 @@ without bound, and domain settings that must be domains."""
 
 import pytest
 
-
 PROXY = ("172.18.0.1", 50000)  # a reverse proxy as the container sees it, on a Docker network
 
 
