@@ -200,6 +200,19 @@ the JSON and STIX output are the public interface.
 - Tests for spreadsheet-formula escaping in the campaign and sweep CSVs: a
   cell opening with `=`, `+`, `-` or `@` gets a leading `'`. The escaping was
   already applied; each output path is now tested on its own.
+- Security review round 5 attacked the web app; every finding is fixed, with
+  a test that fails on the old code (round 5 in
+  [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md)):
+  - Only an upload may be larger than 1 MB, and one over 1 MB is read only
+    from a caller who is logged in. Before, anyone could make the server hold
+    100 MB requests without a password.
+  - A new password ends every other session of that user, disabling a user
+    ends theirs at once, and idle sessions are removed every hour.
+  - A request another site started (`Sec-Fetch-Site: cross-site`), a login
+    included, can no longer change anything.
+  - An IMAP server that understates a message's size cannot make the poll, or
+    `phishhawk imap`, read more than the limit.
+  - A .zip with a damaged member is refused (415), not a server error.
 
 ## [2.2.0] - 2026-10-06
 

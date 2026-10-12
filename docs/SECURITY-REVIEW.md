@@ -4,9 +4,12 @@ PhishHawk reads hostile input for a living, so it was tested the way a
 bug-bounty hunter would test it: as a target, not as a detector. It was tested
 twice before 2.0.0, once against 1.2.0 and again after 2.0 added a dozen
 file-format readers of its own, and a third time before 2.1.0, which added
-7z decompression, virtual disks and NTFS, and two mail APIs. Every finding
-below was reproduced, fixed, and turned into a test that fails on the old code
-(most in [`tests/test_security.py`](../tests/test_security.py)).
+7z decompression, virtual disks and NTFS, and two mail APIs. Round 4 covered
+2.2, and round 5 the web app of 3.0 (the server, its API, its pages and its
+mailbox import). Every finding below was reproduced, fixed, and turned into a
+test that fails on the old code (most in
+[`tests/test_security.py`](../tests/test_security.py), the web app's in
+[`tests/server/`](../tests/server/)).
 
 ## Threat model
 
@@ -15,9 +18,13 @@ below was reproduced, fixed, and turned into a test that fails on the old code
 | Phishing sender | every byte of the email: headers, bodies, attachments, file names | a clean verdict, or to act on the analyst's machine |
 | Someone who can drop files where a batch runs | file names and file types in a folder of reported mail | to stop or confuse the batch |
 | Anyone who reads a report | nothing directly | to be tricked by what the report shows |
+| Anyone who can reach the web app | requests without a login, and pages on other sites the analysts visit | to take it down, log in, or act as an analyst |
+| An analyst | a session or an API token of their own | to do what only an admin may, or to see raw messages that are not theirs |
+| A hostile or broken mail server | everything an IMAP, Graph or Gmail answer holds | to take the worker down or the credential away |
 
 The analyst runs PhishHawk on a workstation, in a terminal, and pastes the
-Markdown note into a ticketing system.
+Markdown note into a ticketing system; or a SOC team runs the web app on a
+server, behind a TLS reverse proxy, and imports reported mail from a mailbox.
 
 ## Round 1: 1.2.0 attacked (fixed in 2.0.0)
 
@@ -131,6 +138,44 @@ checked by pip-audit and gitleaks, which now run in CI.
 | 60 | **A forward to the SOC counted as a reply** to the phish. Found by the independent review. | Users wrongly shown as having replied | Medium | Only mail sent to the copy's sender or reply-to address counts |
 | 61 | **`evidence verify` could not catch a rewritten log**, and a crash mid-write left half a message that later read as tampering. Found by the independent review. | False assurance; false alarms | Medium | `--head` checks against a value recorded elsewhere; messages are written to a temporary file and linked into place |
 
+## Round 5: the 3.0 web app attacked (fixed before release)
+
+The web app was mapped route by route (every API route, page and form, who
+may call it, and what it reads), scanned by CodeQL's security-extended
+queries for Python and TypeScript and by Bandit, and attacked on a running
+server: without a login, as an analyst, with API tokens of each scope, from
+another site, and from a hostile IMAP server.
+
+| # | Finding | Impact | Severity | Fix |
+|---|---|---|---|---|
+| 62 | **Anyone could make the server hold 100 MB requests.** Every request that was not a GET could be as large as a whole upload (4 x `MAX_UPLOAD_MB`), and its body was read before anyone was asked to log in. Four unauthenticated 99 MB requests took a running server from 194 MB to 1.46 GB. | Memory exhausted without a password | High | Only an upload may be larger than 1 MB, and one over 1 MB is read only from a caller with a valid session or API token; anything else over 1 MB is refused from its `Content-Length`. The same requests leave the server at 196 MB |
+| 63 | **A password reset left the old session working.** Sessions were checked against the user's disabled flag only, so an account reset because someone else had it stayed in their hands. | Account takeover survives the response | Medium | A new password ends every other session of that user; an admin changing their own keeps the one in use |
+| 64 | **A disabled user got their session back** when enabled again before it was next used: a session ended only when it was presented. | Disabling did not log out | Low | Disabling ends the user's sessions at once |
+| 65 | **Login CSRF.** A form on another site could sign an analyst into an account of the attacker's, and read what they then submit. SameSite=Strict cookies do not stop a login. | Submissions shown to an attacker | Low | Any request that changes something, a login included, is refused when the browser marks it `Sec-Fetch-Site: cross-site` |
+| 66 | **A damaged deflate, bzip2 or LZMA stream in an uploaded .zip** raised `zlib.error`, `OSError` or `LZMAError`, a server error. | An error page instead of a reason | Low | Refused as an archive that could not be read (415) |
+| 67 | **An IMAP server could send gigabytes as one message.** `imaplib` reads a literal of whatever size is announced; the poll checks `RFC822.SIZE` first, but a server could understate it. The CLI's `imap` command read the same way. | The worker's memory exhausted by a hostile or broken server | Low | A literal larger than the limit plus 64 KB stops the connection unread; the mailbox shows why |
+| 68 | **Idle sessions stayed in the database for ever** unless their cookie came back. | A table that only grows | Low | The hourly sweep removes sessions idle past `SESSION_IDLE_MINUTES` |
+| 69 | **The CSRF token was compared with `!=`.** | None measurable over a network | Hardening | Compared in constant time |
+
+### The web app: tested and found safe
+
+| Attack | Result |
+|---|---|
+| Every route as every role | The role matrix test calls every API route as an admin, an analyst, a read token, a submit token and nobody. Admin actions, raw message downloads and deletions need a person's session. A token cannot do them, whoever owns it. Analysts read only their own audit records |
+| Raw messages of other analysts | Only the submitter or an admin downloads a raw message or deletes it (analysts share one queue of analyses by design) |
+| Stored script in pages | Every template is autoescaped, nothing is marked safe, and the hostile-payload test renders a sender-controlled payload in every field on every page. The frontend renders text only; no `dangerouslySetInnerHTML`, and no indicator becomes a link |
+| The stored HTML report | Served with its own policy (`sandbox` without scripts, `default-src 'none'`), so it runs in an opaque origin even when opened directly, outside the frontend's frame |
+| CSRF on a session | `SameSite=Strict`, `HttpOnly` and `Secure` cookies, and a CSRF token on every change: a header for the API, a form field for the pages |
+| Sessions and passwords | Argon2id passwords, at least 12 characters; session cookies and API tokens random and stored only as an HMAC or a hash, so a copy of the database logs nobody in; a new `SECRET_KEY` ends every session; the same work for an unknown user as for a wrong password |
+| Guessing passwords | After three failures for a name or an address, each attempt waits twice as long (up to 5 minutes); the address comes from `X-Forwarded-For` only through a trusted proxy |
+| SQL injection | Every query is built by SQLAlchemy with parameters; the search escapes `%` and `_` |
+| Paths | A stored file is found by its name in the analysis's list, never on disk; the frontend's files are served by Starlette, which keeps to its folder |
+| Uploads | Never spooled to disk; an archive bomb, a 2,000-entry archive and an over-limit batch are refused before they are inflated; a name inside an archive is never used |
+| Mailbox credentials | Sealed with the encryption key and bound to the mailbox, never returned (only `secret_set`); Graph and Gmail tokens go only to their API's host, a next link elsewhere stops the poll, the key's own `token_uri` is ignored, and every reason shown is stripped of the credential, any bearer token and control characters |
+| Static analysis | CodeQL security-extended: 3 results, none a flaw. The CLI prints a count of re-encrypted secrets (a count, not a secret). The domain pattern in the settings is cut at 253 characters and only an admin reaches it (0.0 s at worst). One pattern is in a frontend test. Bandit: two constant SQL strings in a migration |
+| Headers | A strict Content-Security-Policy, `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `Cross-Origin-Opener-Policy`, HSTS behind TLS, `no-store` on API answers, nothing indexed |
+| The container | Runs as an unprivileged user on a read-only file system, every capability dropped, `no-new-privileges`; Compose publishes the port on this machine only |
+
 ## Tested and found safe
 
 | Attack | Result |
@@ -176,9 +221,10 @@ checked by pip-audit and gitleaks, which now run in CI.
   Every action is pinned to a full commit SHA (its version in a comment), so
   a moved tag or branch cannot change what CI runs; Dependabot proposes each
   update as a reviewable change.
-- **An IMAP server is trusted** to send what it says it sends: `imaplib` reads
-  a whole message literal into memory whatever its declared size. Point
-  `phishhawk imap` only at your own mail server.
+- **An IMAP server is trusted** to answer as a mail server should. A message
+  larger than the limit is no longer read (#67), but the server still decides
+  what the messages say. Point `phishhawk imap`, and a mailbox in the web app,
+  only at your own mail server.
 - **A Graph or Gmail token can do what its permission allows.** PhishHawk
   only sends `GET` requests, but it cannot stop a token with `Mail.ReadWrite`
   from being used elsewhere: give it a read-only one (`Mail.Read`,
@@ -203,5 +249,20 @@ checked by pip-audit and gitleaks, which now run in CI.
   application access policy.
 - **Clicks and opened attachments are not in a mailbox.** `sweep` reports
   copies, read state and replies; who clicked is in your proxy and EDR logs.
+- **`/healthz` needs no login**, so a load balancer can call it. It says the
+  version, the queue length and the free disk space. If the server is
+  reachable from outside the SOC, keep `/healthz` to the proxy's own checks.
+- **A slow upload holds a connection.** The server has no time limit for
+  reading a body. Put the TLS reverse proxy that the docs ask for in front of
+  it, with its own timeouts.
+- **An admin chooses a mailbox's IMAP host**, and the poll connects wherever
+  that is, inside the network too. The reason it shows tells whether a port
+  answered. Admins are trusted with this.
+- **Submissions are not rate-limited per user.** An analyst, or a submit
+  token, can fill the queue. Each analysis is limited in memory, CPU and
+  time, so one message cannot take the worker down.
+- **Very old browsers send no `Sec-Fetch-Site`.** Their sessions are still
+  protected by SameSite=Strict cookies and the CSRF token; only a login
+  started on another site (#65) gets through there.
 
 Report anything new privately: see [SECURITY.md](../SECURITY.md).
