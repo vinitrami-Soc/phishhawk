@@ -7,13 +7,14 @@ from phishhawk.server.crypto import Box, new_key
 from phishhawk.server.db import make_engine, make_sessionmaker, migrate
 from phishhawk.server.store import BlobStore
 
-from .serverkit import PASSWORD, login
+from .serverkit import PASSWORD, fresh_database, login
 
 
 @pytest.fixture
 def settings(tmp_path):
-    return ServerSettings(data_dir=tmp_path, secret_key=new_key(),
-                          encryption_key=new_key(), cookie_secure=False)
+    with fresh_database() as url:  # SQLite in tmp_path, or Postgres (serverkit.TEST_DATABASE)
+        yield ServerSettings(data_dir=tmp_path, database_url=url, secret_key=new_key(),
+                             encryption_key=new_key(), cookie_secure=False)
 
 
 @pytest.fixture

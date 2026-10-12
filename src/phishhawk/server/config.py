@@ -17,7 +17,7 @@ class ServerSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PHISHHAWK_", extra="ignore")
 
     data_dir: Path = Path("/var/lib/phishhawk")
-    database_url: str = ""  # empty: SQLite at <data_dir>/phishhawk.sqlite3
+    database_url: str = ""  # empty: SQLite at <data_dir>/phishhawk.sqlite3; postgresql://... for Postgres
     secret_key: SecretStr  # keys the session HMAC; a new value logs everyone out
     encryption_key: SecretStr  # 32 bytes, base64: encrypts every blob and stored secret
     retention_days: int = 30
@@ -37,7 +37,12 @@ class ServerSettings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        return self.database_url or "sqlite:///%s" % (self.data_dir / "phishhawk.sqlite3")
+        """Postgres through psycopg 3 (the postgres extra), whichever way the URL names it."""
+        url = self.database_url or "sqlite:///%s" % (self.data_dir / "phishhawk.sqlite3")
+        for prefix in ("postgresql://", "postgres://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url[len(prefix):]
+        return url
 
 
 def load_settings() -> ServerSettings:

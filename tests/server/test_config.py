@@ -41,3 +41,12 @@ def test_the_keys_have_no_defaults(secrets_dir):
     with pytest.raises(ValidationError) as caught:
         config.load_settings()
     assert {error["loc"][0] for error in caught.value.errors()} == {"secret_key", "encryption_key"}
+
+
+def test_a_postgres_url_uses_the_psycopg_driver(secrets_dir, monkeypatch):
+    monkeypatch.setenv("PHISHHAWK_SECRET_KEY", "s")
+    monkeypatch.setenv("PHISHHAWK_ENCRYPTION_KEY", "e")
+    for given in ("postgresql://phishhawk@db:5432/phishhawk", "postgres://phishhawk@db:5432/phishhawk",
+                  "postgresql+psycopg://phishhawk@db:5432/phishhawk"):
+        monkeypatch.setenv("PHISHHAWK_DATABASE_URL", given)
+        assert config.load_settings().db_url == "postgresql+psycopg://phishhawk@db:5432/phishhawk", given
