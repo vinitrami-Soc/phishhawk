@@ -11,7 +11,7 @@ P = '"><svg onload=alert(1)>'
 APP_TAGS = {"html", "head", "meta", "title", "link", "body", "a", "header", "nav", "form", "input", "span",
             "button", "main", "h1", "h2", "p", "div", "label", "textarea", "table", "caption", "thead", "tbody",
             "tr", "th", "td", "em", "strong", "section", "dl", "dt", "dd", "ul", "li", "details", "summary",
-            "iframe", "footer", "script", "select", "option", "fieldset", "legend"}
+            "iframe", "footer", "script", "select", "option", "fieldset", "legend", "code", "br"}
 
 
 class _Tags(HTMLParser):
@@ -42,12 +42,17 @@ def test_no_page_turns_attacker_text_into_markup(alice, services):
     batch = alice.post("/api/v1/submissions", data={"offline": "true"},
                        files=[("files", (P + ".eml", _hostile_eml(), "message/rfc822")),
                               ("files", (P + ".eml", other, "message/rfc822"))])
-    for _ in range(2):
-        worker.run_one(services)
+    while worker.run_one(services):
+        pass
+    [campaign] = alice.get("/api/v1/campaigns").json()  # the three share their attachment
+    assert campaign["size"] == 3
+    shown = alice.get("/api/v1/campaigns/%d" % campaign["id"]).json()["shared"]
+    assert any(s["kind"] == "subject" and "<svg onload" in s["value"] for s in shown)  # in clear, as text
     for path in ("/", "/queue", "/analyses/%d" % analysis, "/audit", "/queue?q=" + P,
-                 "/batches/%d" % batch.json()["batch_id"]):
+                 "/batches/%d" % batch.json()["batch_id"], "/campaigns", "/campaigns/%d" % campaign["id"]):
         page = alice.get(path).text
-        assert "<svg" not in page and "onload=alert" not in page.replace("onload=alert(1)&gt;", ""), path
+        text = page.replace("onload=alert(1)&gt;", "").replace("onload=alert(#)&gt;", "")  # escaped: text
+        assert "<svg" not in page and "onload=alert" not in text, path
         parser = _Tags()
         parser.feed(page)
         for tag, attrs in parser.found:

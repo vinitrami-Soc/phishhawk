@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Campaign {{ c.id }} · PhishHawk{% endblock %}
+{% block main %}
+<h1>Campaign {{ c.id }}</h1>
+<p>{{ c.size }} messages, seen {{ c.first_seen[:16]|replace('T', ' ') or 'at an unknown time' }}{% if c.last_seen != c.first_seen %} to {{ c.last_seen[:16]|replace('T', ' ') }}{% endif %} (UTC, from their Date lines). Worst verdict: {% with verdict=c.worst_verdict %}{% include "_verdict.html" %}{% endwith %}</p>
+<section aria-labelledby="shared-heading" class="card">
+  <h2 id="shared-heading">What links them</h2>
+  <ul>{% for s in c.shared %}<li>{% include "_shared.html" %}</li>{% endfor %}</ul>
+</section>
+<section aria-labelledby="who-heading" class="card">
+  <h2 id="who-heading">Senders and recipients</h2>
+  <p>Senders: {% for s in c.senders %}<code>{{ s|printable }}</code>{% if not loop.last %}, {% endif %}{% else %}none recorded{% endfor %}</p>
+  {% if c.recipients %}<p>Recipients: {% for r in c.recipients %}<code>{{ r|printable }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% if not c.recipients_complete %}<p>{{ c.recipient_count }} recipients in all. Recipient addresses are shown only while a message's content is kept.</p>{% endif %}
+</section>
+<h2>Messages</h2>
+<table class="list">
+  <caption class="sr-only">The campaign's messages, oldest first</caption>
+  <thead><tr><th scope="col">Subject</th><th scope="col">Sender</th><th scope="col">Verdict</th><th scope="col">Score</th></tr></thead>
+  <tbody>
+  {% for m in c.messages %}
+  <tr>
+    <td data-label="Subject"><a href="/analyses/{{ m.analysis_id }}">{% if m.subject is not none %}{{ (m.subject|printable)[:90] or '(no subject)' }}{% else %}<em>deleted after retention</em>{% endif %}</a></td>
+    <td data-label="Sender">{{ m.sender|printable }}</td>
+    <td data-label="Verdict">{% with verdict=m.verdict %}{% include "_verdict.html" %}{% endwith %}</td>
+    <td data-label="Score">{{ m.score }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

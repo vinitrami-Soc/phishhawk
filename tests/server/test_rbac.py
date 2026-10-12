@@ -16,6 +16,8 @@ MATRIX = [
     ("GET", "/api/v1/submissions/{submission}", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/batches/{batch}", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/batches/{batch}/files/{batch_file}", (401, 200, 200, 200, 200)),
+    ("GET", "/api/v1/campaigns", (401, 200, 200, 200, 200)),
+    ("GET", "/api/v1/campaigns/{campaign}", (401, 200, 200, 200, 200)),
     ("POST", "/api/v1/analyses/{analysis}/reanalyze", (401, 202, 202, 403, 202)),
     ("GET", "/api/v1/messages/{message}/raw", (401, 403, 200, 403, 403)),
     ("DELETE", "/api/v1/messages/{message}", (401, 403, 200, 403, 403)),
@@ -31,6 +33,8 @@ MATRIX = [
     ("GET", "/users", (303, 403, 200, 403, 403)),
     ("GET", "/queue", (303, 200, 200, 200, 200)),
     ("GET", "/batches/{batch}", (303, 200, 200, 200, 200)),
+    ("GET", "/campaigns", (303, 200, 200, 200, 200)),
+    ("GET", "/campaigns/{campaign}", (303, 200, 200, 200, 200)),
 ]
 BODIES = {("PATCH", "/api/v1/settings"): {"retention_days": 20},
           ("POST", "/api/v1/users"): {"username": "carol", "password": "another long password", "role": "analyst"}}
@@ -49,13 +53,16 @@ def world(app, services, admin):
     tokens = {scope: admin.post("/api/v1/tokens", json={"name": scope, "scope": scope,
                                                         "user_id": users["admin"]}).json()["token"]
               for scope in ("read", "submit")}
-    two = [("files", ("m%d.eml" % i, build_eml(subject="Batch %d" % i), "message/rfc822")) for i in range(2)]
+    doc = (b"%PDF-1.4 shared", "application", "pdf", "shared.pdf")  # one campaign
+    two = [("files", ("m%d.eml" % i, build_eml(subject="Batch %d" % i, attachments=[doc]), "message/rfc822"))
+           for i in range(2)]
     batch = admin.post("/api/v1/submissions", files=two, data={"offline": "true"}).json()["batch_id"]
     while worker.run_one(services):  # its messages, then its combined exports
         pass
     batch_file = admin.get("/api/v1/batches/%d" % batch).json()["files"][0]["name"]
+    campaign = admin.get("/api/v1/campaigns").json()[0]["id"]
     return {"analysis": analysis, "message": message, "submission": submitted["id"], "tokens": tokens,
-            "batch": batch, "batch_file": batch_file}
+            "batch": batch, "batch_file": batch_file, "campaign": campaign}
 
 
 @pytest.mark.parametrize("method, path, expected", MATRIX)

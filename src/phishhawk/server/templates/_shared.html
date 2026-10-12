@@ -1,0 +1,2 @@
+{# one shared trait: hidden ones (subject, display name) in clear only while a message's content exists #}
+{% if s.value is none %}<em>Same {{ s.kind }}</em>{% else %}<span class="kind">{{ s.kind|capitalize }}:</span> <code>{{ s.value|printable }}</code>{% endif %} <span class="count">({{ s.messages }} messages)</span>
