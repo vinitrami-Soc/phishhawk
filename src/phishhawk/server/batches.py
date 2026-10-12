@@ -6,7 +6,9 @@ message becomes a submission of the batch, analysed on its own."""
 from __future__ import annotations
 
 import io
+import lzma
 import zipfile
+import zlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -109,7 +111,8 @@ def _zip_messages(data: bytes, limits: _Limits) -> tuple[list[bytes], int]:
                     skipped += 1
     except BatchError:
         raise
-    except (zipfile.BadZipFile, NotImplementedError, EOFError, ValueError) as exc:  # damaged, or a method we lack
+    except (zipfile.BadZipFile, NotImplementedError, EOFError, ValueError,  # damaged, or a method we lack
+            zlib.error, lzma.LZMAError, OSError) as exc:  # a damaged deflate, LZMA or bzip2 (OSError) stream
         raise BatchError(415, "the .zip file could not be read") from exc
     return messages, skipped
 
