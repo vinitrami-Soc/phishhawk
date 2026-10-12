@@ -1,0 +1,156 @@
+/* Liquid metal button. The values are ThreeUI's (MIT, liquid-metal-button.html),
+   in the reference's own units: the pill measured 1407 x 516, everything is
+   scaled off one knob, the button height --h. Selectors are scoped to .lm
+   (the original styled body, #fx and .btn of its own iframe), and the bloom
+   stage is laid over the button instead of around it, so the page only
+   reserves the button's own size. */
+
+.lm {
+  --h: 52px; /* a normal control height */
+  --u: calc(var(--h) / 516);
+  --lm-units: 1407; /* pill width, set per label like the original wrapper */
+  --bw: calc(var(--lm-units) * var(--u));
+  --bh: var(--h);
+  /* the canvas has to clear the bloom's full reach (~4 sigma) */
+  --pad: calc(900 * var(--u));
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: var(--bw);
+  height: var(--bh);
+  flex: none;
+  vertical-align: middle;
+  isolation: isolate;
+  touch-action: manipulation;
+}
+
+.lm-stage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 0;
+  display: grid;
+  place-items: center;
+  width: calc(var(--bw) + 2 * var(--pad));
+  height: calc(var(--bh) + 2 * var(--pad));
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* the button's own solid body, and the shadow it casts on the pool */
+.lm-plate {
+  position: absolute;
+  width: var(--bw);
+  height: var(--bh);
+  border-radius: 999px;
+  background: #0b0c0e;
+  box-shadow:
+    0 calc(var(--h) * 0.1) calc(var(--h) * 0.22) rgba(0, 0, 0, 0.72),
+    0 calc(var(--h) * 0.3) calc(var(--h) * 0.66) rgba(0, 0, 0, 0.62),
+    0 calc(var(--h) * 0.62) calc(var(--h) * 1.3) rgba(0, 0, 0, 0.42);
+  transition:
+    box-shadow 0.38s cubic-bezier(0.22, 0.61, 0.36, 1),
+    background 0.38s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+/* deepen it while the metal is lit, so the bright face keeps its edge */
+.lm.is-hot .lm-plate {
+  background: #08090a;
+  box-shadow:
+    0 calc(var(--h) * 0.12) calc(var(--h) * 0.26) rgba(0, 0, 0, 0.8),
+    0 calc(var(--h) * 0.4) calc(var(--h) * 0.86) rgba(0, 0, 0, 0.72),
+    0 calc(var(--h) * 0.86) calc(var(--h) * 1.8) rgba(0, 0, 0, 0.55);
+}
+/* pressed: the button settles onto the surface, so the shadow tightens */
+.lm.is-press .lm-plate {
+  background: #070809;
+  box-shadow:
+    0 calc(var(--h) * 0.05) calc(var(--h) * 0.13) rgba(0, 0, 0, 0.82),
+    0 calc(var(--h) * 0.16) calc(var(--h) * 0.4) rgba(0, 0, 0, 0.7),
+    0 calc(var(--h) * 0.34) calc(var(--h) * 0.8) rgba(0, 0, 0, 0.5);
+  transition-duration: 0.1s;
+}
+
+.lm-fx {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lm-btn {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(88 * var(--u));
+  width: var(--bw);
+  height: var(--bh);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: #fff;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: calc(207 * var(--u));
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+/* The original drew a 4-unit ring (0.4px at 52px): kept, but never under 2px,
+   so keyboard focus stays visible. */
+.lm-btn:focus-visible {
+  outline: max(2px, calc(4 * var(--u))) solid rgba(255, 255, 255, 0.75);
+  outline-offset: max(3px, calc(10 * var(--u)));
+}
+.lm-btn .lm-ico {
+  display: block;
+  flex: none;
+  width: calc(115 * var(--u));
+  height: calc(115 * var(--u));
+  overflow: visible;
+}
+/* descenders pull the flex box up; nudge back so the cap box sits centred */
+.lm-btn .lm-lbl {
+  display: block;
+  transform: translateY(calc(2 * var(--u)));
+}
+
+.lm-btn:disabled {
+  cursor: not-allowed;
+}
+.lm[data-disabled='true'] {
+  opacity: 0.55;
+  filter: saturate(0.6);
+}
+
+/* Without WebGL (or past the per-page budget, or after a lost context) the
+   button keeps its plate and gets a still, brushed rim instead of the shader. */
+.lm[data-render='static'] .lm-plate {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0) 55%),
+    #0b0c0e;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 calc(var(--h) * 0.1) calc(var(--h) * 0.22) rgba(0, 0, 0, 0.72),
+    0 calc(var(--h) * 0.3) calc(var(--h) * 0.66) rgba(0, 0, 0, 0.62);
+}
+.lm[data-render='static'].is-hot .lm-plate,
+.lm[data-render='static'] .lm-btn:hover ~ .lm-stage .lm-plate {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 calc(var(--h) * 0.12) calc(var(--h) * 0.26) rgba(0, 0, 0, 0.8);
+}
+
+@media (forced-colors: active) {
+  .lm-btn {
+    border: 1px solid ButtonText;
+  }
+}

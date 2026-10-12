@@ -46,6 +46,16 @@ def test_without_a_built_frontend_nothing_is_served_at_app(anon):
     assert anon.get("/app/").status_code == 404
 
 
+def test_with_a_frontend_the_servers_address_opens_it_and_the_built_in_pages_stay(frontend):
+    page = frontend.get("/", follow_redirects=False)
+    assert page.status_code == 307 and page.headers["location"] == "/app/"
+    assert frontend.get("/login").status_code == 200
+
+
+def test_without_a_frontend_the_servers_address_is_the_built_in_home(anon):
+    assert anon.get("/", follow_redirects=False).headers["location"] == "/login"
+
+
 def test_the_session_endpoint_says_who_is_calling(alice, admin, anon):
     assert anon.get("/api/v1/session").status_code == 401
     alice_id = next(u["id"] for u in admin.get("/api/v1/users").json() if u["username"] == "alice")

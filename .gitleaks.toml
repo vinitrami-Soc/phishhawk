@@ -1,0 +1,10 @@
+# gitleaks (CI's "dependencies and secrets" job): its default rules, minus one
+# file they misread. locked-files.json holds the SHA-256 of each locked frontend
+# file; names such as useAuth.ts or tokens.css beside a 64-character hash look
+# like API keys to the generic rule.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "SHA-256 fingerprints of the frontend's locked files, not secrets"
+paths = ['''^frontend/src/__tests__/locked-files\.json$''']

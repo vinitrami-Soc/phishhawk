@@ -19,7 +19,7 @@ services:
       PHISHHAWK_COOKIE_SECURE: ${PHISHHAWK_COOKIE_SECURE:-true}
       # a reverse proxy on this machine or on a Docker network reaches the container from these addresses
       PHISHHAWK_TRUSTED_PROXIES: ${PHISHHAWK_TRUSTED_PROXIES:-127.0.0.1,172.16.0.0/12}
-      # your own frontend's build, served at /app/ (docs/FRONTEND.md), with the mount below
+      # the image serves the frontend in frontend/ at /app/; to serve another build, mount it below and use
       # PHISHHAWK_FRONTEND_DIR: /frontend
     volumes:
       - phishhawk-data:/data

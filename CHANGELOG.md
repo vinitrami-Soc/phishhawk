@@ -9,6 +9,14 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **The web app's own frontend.** The browser app built in Google AI Studio
+  is in `frontend/` and the Docker image serves it at `/app/`; the server's
+  address opens it, and the built-in pages stay as the backup and admin
+  interface. Triage, the queue, analyses with the sandboxed report and files,
+  audit, health, settings, users and tokens, light and dark themes, privacy
+  and help pages, from 320 px phones to desktops. CI runs its tests, builds it
+  and drives it in Chromium against a real server
+  ([docs/FRONTEND.md](docs/FRONTEND.md)).
 - **Web app, milestone 1 (preview).** `pip install "phishhawk[server]"` adds
   `phishhawk server`: a web app and API for a small team on one machine. Log
   in, upload or paste a reported message, see the verdict and the full HTML

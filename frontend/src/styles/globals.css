@@ -1,0 +1,33 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --color-ph-bg: #07080c;
+  --color-ph-surface: #0e1017;
+  --color-ph-raised: #151823;
+  --color-ph-text: #eef0f5;
+  --color-ph-dim: #b4b8c5;
+  --color-ph-muted: #8b91a3;
+  --color-ph-accent: #6ee7f9;
+}
+
+:root {
+  color-scheme: dark;
+}
+html,
+body {
+  background: var(--color-ph-bg);
+  color: var(--color-ph-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The liquid metal bloom and other glows reach past their element on purpose.
+   clip (not hidden) keeps them from adding a sideways scroll on phones without
+   turning body into a scroll container, so sticky headers keep working. */
+body {
+  overflow-x: clip;
+}
