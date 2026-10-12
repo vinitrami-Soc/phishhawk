@@ -115,3 +115,37 @@ test('the queue filters by source and by who submitted', async () => {
   assert.deepEqual(none, []);
   assert.equal((await call('GET', '/api/v1/analyses?since=yesterday')).status, 422);
 });
+
+test('mailboxes: listed without their credentials, added, changed, polled and deleted', async () => {
+  const listed = (await call('GET', '/api/v1/mailboxes')).body;
+  assert.ok(listed.length >= 2);
+  assert.ok(listed.every((m: { secret_set: boolean }) => m.secret_set === true && !('secret' in m)));
+  assert.ok(listed.some((m: { status: string; error: string }) => m.status === 'error' && m.error));
+
+  const refused = await call('POST', '/api/v1/mailboxes', { name: 'X', kind: 'imap', secret: 'pw', config: { host: 'imaps://imap.example.com', user: 'soc' } });
+  assert.equal(refused.status, 422);
+  assert.match(refused.body.detail, /host/);
+  const secret = 'app-password-for-the-preview';
+  const made = await call('POST', '/api/v1/mailboxes', { name: 'Reports', kind: 'imap', secret, config: { host: 'imap.example-corp.co.uk', user: 'soc' } });
+  assert.equal(made.status, 201);
+  assert.equal(made.body.config.port, 993);
+  assert.equal(made.body.status, 'never');
+  assert.ok(!JSON.stringify(made.body).includes(secret));
+  assert.equal((await call('POST', '/api/v1/mailboxes', { name: 'Reports', kind: 'imap', secret, config: { host: 'imap.example-corp.co.uk', user: 'soc' } })).status, 409);
+
+  const id = made.body.id;
+  assert.equal((await call('PATCH', `/api/v1/mailboxes/${id}`, { interval_minutes: 15 })).body.interval_minutes, 15);
+  assert.equal((await call('PATCH', `/api/v1/mailboxes/${id}`, { interval_minutes: 4 })).status, 422);
+  assert.deepEqual((await call('POST', `/api/v1/mailboxes/${id}/poll`)).body, { queued: true });
+  const polled = (await call('GET', '/api/v1/mailboxes')).body.find((m: { id: number }) => m.id === id);
+  assert.equal(polled.status, 'ok');
+  assert.equal(polled.last_counts.imported, 1);
+  const imported = (await call('GET', '/api/v1/analyses?source=mailbox')).body;
+  assert.ok(imported.some((a: { submitted_by_name: string }) => a.submitted_by_name === 'Reports'));
+
+  await call('PATCH', `/api/v1/mailboxes/${id}`, { enabled: false });
+  assert.equal((await call('POST', `/api/v1/mailboxes/${id}/poll`)).status, 409);
+  assert.equal((await call('DELETE', `/api/v1/mailboxes/${id}`)).status, 200);
+  assert.ok(!(await call('GET', '/api/v1/mailboxes')).body.some((m: { id: number }) => m.id === id));
+  assert.equal((await call('POST', `/api/v1/mailboxes/${id}/poll`)).status, 404);
+});

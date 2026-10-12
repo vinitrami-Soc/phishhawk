@@ -138,3 +138,7 @@ Each PR is based on the one before it and merged with a merge commit, so each ta
 ### Task 7: The frontend's Mailboxes screen
 
 The browser app gains a Mailboxes screen for admins (each mailbox's kind, status, last poll, sanitised error and counts; add, change, Poll now, delete; the secret written, never shown), "Mailbox" among the queue's sources, and the mock API's mailboxes. Its own tests, the lock test, `tsc`, the build, and the browser test against a real server with a fake IMAP server; the same files as a patch for Google AI Studio.
+
+- [x] Tests (`npm test`): `/app/mailboxes` is a route of its own, for admins only, titled "Mailboxes"; the mock lists two mailboxes without a credential (one in error), refuses a host with a scheme (422) and a name in use (409), adds one with the server's defaults, changes it, polls it (one message imported, in the queue under the mailbox's name), refuses Poll now when it is switched off (409) and deletes it.
+- [x] They failed on the code before: the route was "not found" and the mock answered 404.
+- [x] The browser test: an admin adds an IMAP mailbox on the Mailboxes screen (the test IMAP server, its CA trusted through `SSL_CERT_FILE`), the password is never on the page, Poll now imports both messages ("2 imported", OK), the queue's Mailbox filter shows both, submitted by the mailbox; nothing past the right edge at seven widths; no console errors; the IMAP server saw no write. The locked files' fingerprints are updated. Commit.

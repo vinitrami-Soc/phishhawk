@@ -28,11 +28,13 @@ PHISHHAWK_FRONTEND_DIR="$PWD/dist" phishhawk server run    # then open http://12
 `npm run dev` previews it with a mock API, with no server. CI runs its tests,
 builds it and drives the build in Chromium against a real server at seven
 widths from 320 to 1440 px (`tests/server/test_frontend_browser.py`): one
-message from paste to report and files, and a batch of two from upload to its
-combined reports, its campaign and the queue's filters.
+message from paste to report and files; a batch of two from upload to its
+combined reports, its campaign and the queue's filters; and a mailbox added on
+the Mailboxes screen, polled from a test IMAP server, its reports in the queue.
 
 Several files, an .mbox or a .zip chosen on the triage page open the batch page
-(`/app/batches/{id}`); Campaigns is in the top bar (`/app/campaigns`).
+(`/app/batches/{id}`); Campaigns is in the top bar (`/app/campaigns`), and so
+is Mailboxes for admins (`/app/mailboxes`).
 
 To bring in a change made in Google AI Studio, export the project as a ZIP and
 replace `frontend/` with it, keeping `public/brand/report-*.webp`, then run the

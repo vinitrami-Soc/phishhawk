@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PUBLIC_ROUTES, pageTitle, parseRoute } from '../app/routes';
+import { ADMIN_ONLY, PUBLIC_ROUTES, pageTitle, parseRoute } from '../app/routes';
 
 test('the app routes under /app/', () => {
   assert.deepEqual(parseRoute('/app/'), { name: 'triage' });
@@ -24,6 +24,14 @@ test('batches and campaigns have pages of their own', () => {
   assert.equal(pageTitle({ name: 'batch', id: 7 }, true), 'Batch 7 · PhishHawk');
   assert.equal(pageTitle({ name: 'campaigns' }, true), 'Campaigns · PhishHawk');
   assert.equal(pageTitle({ name: 'campaign', id: 12 }, true), 'Campaign 12 · PhishHawk');
+});
+
+test('mailboxes have a page of their own, for admins only', () => {
+  assert.deepEqual(parseRoute('/app/mailboxes'), { name: 'mailboxes' });
+  assert.deepEqual(parseRoute('/app/mailboxes/'), { name: 'mailboxes' });
+  assert.deepEqual(parseRoute('/app/mailboxes/3'), { name: 'not-found' });
+  assert.ok(ADMIN_ONLY.includes('mailboxes'));
+  assert.equal(pageTitle({ name: 'mailboxes' }, true), 'Mailboxes · PhishHawk');
 });
 
 test('an analysis id is digits only; anything else is not found', () => {
