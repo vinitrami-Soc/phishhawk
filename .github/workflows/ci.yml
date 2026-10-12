@@ -112,6 +112,14 @@ jobs:
         run: |
           coverage run -m pytest
           coverage report
+      - name: "Milestone M2: 500 messages as one batch, the UI answering, campaigns as the CLI's"
+        if: matrix.python == '3.12'
+        env:
+          PHISHHAWK_M2_CHECK: "1"
+        run: |
+          set -o pipefail
+          python -m pytest -s tests/server/test_milestone.py 2>&1 | tee milestone.log
+          grep -q "1 passed" milestone.log
 
   server-docker:
     name: web app in Docker Compose

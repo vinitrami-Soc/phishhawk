@@ -9,6 +9,18 @@ from collections.abc import Callable
 from typing import Any
 
 MB = 1024 * 1024
+# What the children run, loaded once in the process they fork from: a fresh interpreter takes half a second to
+# import the engine, a fork from one that has it takes milliseconds.
+PRELOAD = ["phishhawk.analysis", "phishhawk.server.processing", "phishhawk.server.batches"]
+_context: Any = None
+
+
+def _children() -> Any:
+    global _context
+    if _context is None:
+        _context = multiprocessing.get_context("forkserver")
+        _context.set_forkserver_preload(PRELOAD)
+    return _context
 
 
 class LimitExceeded(Exception):
@@ -38,7 +50,7 @@ def run_limited(fn: Callable[..., Any], args: tuple[Any, ...], memory_mb: int, c
                 on_wait: Callable[[], None] | None = None) -> Any:
     """fn(*args) in a fresh process; on_wait is called every few seconds while
     waiting (the worker uses it to send its heartbeat)."""
-    ctx = multiprocessing.get_context("spawn")
+    ctx = _children()
     receiver, sender = ctx.Pipe(duplex=False)
     process = ctx.Process(target=_child, args=(sender, fn, args, memory_mb, cpu_seconds), daemon=True)
     process.start()
