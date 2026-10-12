@@ -19,9 +19,10 @@ def delete_tier1(db: Session, store: BlobStore, message: Message, reason: str) -
     store.delete(message.raw_blob)
     for analysis in db.scalars(select(Analysis).where(Analysis.message_id == message.id)):
         store.delete(analysis.data_blob)
+        store.delete(analysis.state_blob)
         for entry in analysis.files:
             store.delete(entry.get("blob"))
-        analysis.data_blob = None
+        analysis.data_blob = analysis.state_blob = None
         analysis.files = [dict(entry, blob=None) for entry in analysis.files]
     message.raw_blob = None
     message.tier1_deleted_at, message.deletion_reason = utcnow(), reason

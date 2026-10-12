@@ -38,7 +38,7 @@ def child_analyze(raw: bytes, name: str, options: AnalysisOptions) -> dict[str, 
     result = analyze(raw, name, options)
     return {"data": result.data, "files": [(f.name, f.kind, f.content, f.entry()) for f in result.files],
             "summary": result.summary, "traits": result.traits, "lookups": result.lookups,
-            "providers": sorted(options.providers)}
+            "providers": sorted(options.providers), "state": result.state}
 
 
 def protect_traits(traits: dict[str, Any], key: bytes) -> dict[str, Any]:
@@ -76,13 +76,14 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
             audit.record(db, "system", "analyze_failed", "submission", submission_id, {"reason": reason})
         return
     data_blob = s.store.put(json.dumps(result["data"], ensure_ascii=False).encode("utf-8"))
+    state_blob = s.store.put(result["state"])
     files = [dict(entry, blob=s.store.put(content)) for _, _, content, entry in result["files"]]
     summary = result["summary"]
     with transaction(s.sessions) as db:
         submission = db.get(Submission, submission_id)
         message = db.get(Message, submission.message_id) if submission is not None else None
         if submission is None or message is None:  # deleted while it was being analysed
-            for blob in [data_blob] + [f["blob"] for f in files]:
+            for blob in [data_blob, state_blob] + [f["blob"] for f in files]:
                 s.store.delete(blob)
             return
         analysis = Analysis(message_id=message.id, submission_id=submission.id,
@@ -90,7 +91,7 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
                             verdict=summary["verdict"], score=summary["score"], providers=result["providers"],
                             lookups=result["lookups"], techniques=summary["techniques"],
                             traits=protect_traits(result["traits"], appsettings.trait_key(db, s.box)),
-                            files=files, data_blob=data_blob)
+                            files=files, data_blob=data_blob, state_blob=state_blob)
         db.add(analysis)
         db.flush()
         db.add_all(Indicator(analysis_id=analysis.id, type=i["type"], value=i["value"])
