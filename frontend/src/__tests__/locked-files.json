@@ -74,6 +74,6 @@
   "src/screens/PrivacyScreen.tsx": "4d83bdfeca765eca12fe866d88288a0c7c4497f6b5d75f78094e7f110e7b64c9",
   "src/security/safe.ts": "d4e0cb336b255b7935490f045dc6365bdacfd566472f23087240717088f5b104",
   "src/styles/globals.css": "f4539443d44c1434d50ee5806541728aad6594ce7581bf6844e352f13a6370a2",
-  "src/styles/tokens.css": "24830b2199a66742ce4513ee1926357e04035cb4b3f39f10a8657f3a84e1b468",
+  "src/styles/tokens.css": "f722d440b5d791efdff835c012aed6dcd1451d518c168aca27b3d0bf5137ef48",
   "vite.config.ts": "fbb2fdad933e8d794429160bd6f4868d3d2e4f78da1bed68dd3ec6915387060d"
 }

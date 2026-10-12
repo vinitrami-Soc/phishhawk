@@ -35,6 +35,14 @@ PAST_EDGE = """() => {
   }).slice(0, 3).map((e) => e.tagName + '.' + String(e.className).slice(0, 60));
 }"""
 
+# The light and dark switch in the command bar: as tall as Sign out beside it, and on the same line
+# (differences in height and in middle, in pixels).
+TOGGLE_BESIDE_SIGN_OUT = """() => {
+  const t = document.querySelector('.ph-commandbar__toggle').getBoundingClientRect();
+  const s = document.querySelector('.ph-commandbar .atd-modern__cta').getBoundingClientRect();
+  return [Math.round(t.height - s.height), Math.round(t.top + t.height / 2 - (s.top + s.height / 2))];
+}"""
+
 
 @pytest.fixture(scope="module")
 def browser():
@@ -88,4 +96,5 @@ def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_
                     page.set_input_files("input[type=file]", sample("sample_phish.eml"))
                 page.wait_for_timeout(600)
                 assert page.evaluate(PAST_EDGE) == [], (width, url)
+            assert page.evaluate(TOGGLE_BESIDE_SIGN_OUT) == [0, 0], width
         assert errors == []
