@@ -26,7 +26,10 @@ dependencies = ["requests>=2.28"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4", "ruff>=0.6", "mypy>=1.10", "types-requests", "coverage>=7.4", "stix2>=3.0", "segno>=1.5",
-       "zxing-cpp>=2.2", "Pillow>=10.0", "jsonschema>=4.18", "hypothesis>=6.80"]
+       "zxing-cpp>=2.2", "Pillow>=10.0", "jsonschema>=4.18", "hypothesis>=6.80", "httpx2>=2.13"]
+# the web app: phishhawk server (docs/SERVER.md)
+server = ["fastapi>=0.142", "uvicorn>=0.30", "jinja2>=3.1.6", "sqlalchemy>=2.0.30", "alembic>=1.13",
+          "argon2-cffi>=23.1", "cryptography>=44.0.1", "python-multipart>=0.0.18", "pydantic-settings>=2.4"]
 # decode QR codes in images, PDFs and drawn tables (quishing)
 qr = ["zxing-cpp>=2.2", "Pillow>=10.0"]
 # run your own YARA rules over messages and every file inside them
@@ -52,6 +55,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 # the HTML report embeds these fonts; licences travel with them
 "phishhawk.report" = ["fonts/*.woff2", "fonts/*.txt", "fonts/*.md"]
+"phishhawk.server" = ["templates/*.html", "static/*", "migrations/script.py.mako"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
