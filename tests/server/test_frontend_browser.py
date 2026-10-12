@@ -1,8 +1,9 @@
 """The frontend in frontend/, built with `npm run build`, served by a real
 server at /app/ and driven in headless Chromium: sign in, analyse a bundled
-sample offline, read the verdict, the sandboxed report and the files, then
-check phone, tablet and desktop widths for anything past the right edge. No
-console errors, so nothing broke the CSP. Skipped unless
+sample offline, read the verdict, the sandboxed report and the files; upload
+two messages as a batch and follow them to their combined reports and their
+campaign; then check phone, tablet and desktop widths for anything past the
+right edge. No console errors, so nothing broke the CSP. Skipped unless
 PHISHHAWK_FRONTEND_BUILD names the build (CI's frontend job makes it);
 PHISHHAWK_CHROMIUM may name the browser's executable."""
 
@@ -12,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from .serverkit import PASSWORD, running_server
-from conftest import sample
+from conftest import build_eml, sample
 
 sync_api = pytest.importorskip("playwright.sync_api")
 BUILD = os.environ.get("PHISHHAWK_FRONTEND_BUILD", "")
@@ -55,21 +56,26 @@ def browser():
         chromium.close()
 
 
+def _signed_in(browser, server):
+    """A page signed in as root, and the list its console errors and page errors go to."""
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    errors = []
+    # the frontend asks who is signed in before anyone is: that one 401 is expected
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" and "401" not in m.text else None)
+    page.on("pageerror", lambda exc: errors.append(str(exc)))
+    page.goto(server.base + "/")  # the server's address opens the frontend
+    page.wait_for_selector("#login-username")
+    assert page.url == server.base + "/app/"
+    page.fill("#login-username", "root")
+    page.fill("#login-password", PASSWORD)
+    page.locator("form [type=submit]").click()
+    page.wait_for_selector(".ph-commandbar")
+    return page, errors
+
+
 def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_path):
     with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
-        page = browser.new_page(viewport={"width": 1280, "height": 900})
-        errors = []
-        # the frontend asks who is signed in before anyone is: that one 401 is expected
-        page.on("console", lambda m: errors.append(m.text) if m.type == "error" and "401" not in m.text else None)
-        page.on("pageerror", lambda exc: errors.append(str(exc)))
-
-        page.goto(server.base + "/")  # the server's address opens the frontend
-        page.wait_for_selector("#login-username")
-        assert page.url == server.base + "/app/"
-        page.fill("#login-username", "root")
-        page.fill("#login-password", PASSWORD)
-        page.locator("form [type=submit]").click()
-        page.wait_for_selector(".ph-commandbar")
+        page, errors = _signed_in(browser, server)
 
         page.get_by_role("button", name="Paste the message").click()
         with open(sample("sample_phish.eml"), encoding="utf-8") as message:
@@ -97,4 +103,61 @@ def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_
                 page.wait_for_timeout(600)
                 assert page.evaluate(PAST_EDGE) == [], (width, url)
             assert page.evaluate(TOGGLE_BESIDE_SIGN_OUT) == [0, 0], width
+        assert errors == []
+
+
+def test_a_batch_leads_to_its_combined_reports_and_its_campaign_at_every_width(browser, tmp_path):
+    invoice = (b"%PDF-1.4 invoice 7731", "application", "pdf", "invoice.pdf")
+    files = []
+    for number in range(2):  # the same attachment from two senders: one campaign
+        path = tmp_path / ("invoice%d.eml" % number)
+        path.write_bytes(build_eml(subject="Invoice %d" % number, sender="<a%d@one%d.example>" % (number, number),
+                                   to="alice@corp.example", attachments=[invoice]))
+        files.append(str(path))
+    (tmp_path / "server").mkdir()
+    with running_server(tmp_path / "server", PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        page, errors = _signed_in(browser, server)
+        page.set_input_files("input[type=file]", files)
+        page.get_by_text("analysed as a batch").first.wait_for()
+        page.get_by_role("switch", name="Offline analysis").click()
+        page.get_by_role("button", name="Analyze").click()
+        page.wait_for_url("**/app/batches/*", timeout=60000)
+        page.get_by_text("Every message is done.").wait_for(timeout=120000)
+        batch = page.url
+        page.get_by_text("Combined reports").wait_for(timeout=30000)
+        opened = page.get_by_role("link", name="Open").first
+        assert opened.get_attribute("target") == "_blank" and "noopener" in opened.get_attribute("rel")
+        with page.expect_download() as download:
+            page.get_by_role("link", name="Download").first.click()
+        assert download.value.suggested_filename.startswith("phishhawk-")
+        assert page.locator("a[href^='/app/analyses/']").count() == 2
+
+        for _ in range(60):  # the campaigns are rebuilt after the analyses, in the worker
+            page.goto(server.base + "/app/campaigns")
+            page.wait_for_selector("h1")
+            page.wait_for_timeout(500)
+            if page.locator("a[href^='/app/campaigns/']").count():
+                break
+        page.locator("a[href^='/app/campaigns/']").first.click()
+        page.get_by_text("What links them").wait_for()
+        assert "Attachment (SHA-256)" in page.inner_text("main")
+        assert page.locator("main a[href^='/app/analyses/']").count() == 2
+        campaign = page.url
+
+        page.goto(server.base + "/app/analyses")
+        page.get_by_role("button", name="Paste").click()
+        page.get_by_text("No analyses match this search.").wait_for()
+        page.get_by_role("button", name="Batch").click()
+        page.get_by_role("button", name="Only mine").click()
+        page.wait_for_timeout(600)
+        assert page.locator("main table a[href^='/app/analyses/']").count() == 2
+        page.get_by_label("From").fill("2999-01-01")
+        page.get_by_text("No analyses match this search.").wait_for()
+
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            for url in (batch, server.base + "/app/campaigns", campaign, server.base + "/app/analyses"):
+                page.goto(url)
+                page.wait_for_timeout(600)
+                assert page.evaluate(PAST_EDGE) == [], (width, url)
         assert errors == []

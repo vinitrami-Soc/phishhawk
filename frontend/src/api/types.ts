@@ -17,13 +17,24 @@ export type Session = {
   csrf: string;
 };
 
-/** POST /api/v1/submissions, GET /api/v1/submissions/{id}, POST /api/v1/analyses/{id}/reanalyze */
+/** POST /api/v1/submissions (one message), GET /api/v1/submissions/{id}, POST /api/v1/analyses/{id}/reanalyze */
 export type Submission = {
   id: number;
   status: SubmissionStatus;
   error: string;
   analysis_id: number | null;
   submitted_at: string;
+  /** set when the submission is one message of a batch */
+  batch_id: number | null;
+};
+
+/** POST /api/v1/submissions with several messages (several files, an .mbox or a .zip): one batch */
+export type BatchCreated = {
+  batch_id: number;
+  total: number;
+  submission_ids: number[];
+  /** files in a .zip that are not messages */
+  skipped: number;
 };
 
 export type FileKind = 'json' | 'stix' | 'misp' | 'md' | 'csv' | 'html' | 'manifest';
@@ -64,6 +75,78 @@ export type AnalysisSummary = {
   hold: boolean;
   tier1_deleted_at: string | null;
   files: AnalysisFile[];
+};
+
+export type BatchStatus = 'running' | 'finalizing' | 'done' | 'failed';
+
+/** One message of GET /api/v1/batches/{id}, in upload order */
+export type BatchMessage = {
+  position: number;
+  submission_id: number;
+  status: SubmissionStatus;
+  error: string;
+  message_id: number;
+  analysis_id: number | null;
+  verdict: Verdict | null;
+  score: number | null;
+  sender: string;
+  sender_domain: string;
+};
+
+/** GET /api/v1/batches/{id} */
+export type Batch = {
+  id: number;
+  created_at: string;
+  submitted_by: number | null;
+  submitted_by_name: string | null;
+  offline: boolean;
+  total: number;
+  status: BatchStatus;
+  error: string;
+  counts: Record<SubmissionStatus, number>;
+  verdicts: Partial<Record<Verdict, number>>;
+  messages: BatchMessage[];
+  finished_at: string | null;
+  /** the combined reports, once the batch is done */
+  files: AnalysisFile[];
+  files_deleted_at: string | null;
+};
+
+/** What links a campaign's messages. A subject or display name is null once no message's content is kept. */
+export type SharedTrait = { kind: string; value: string | null; messages: number };
+
+/** One row of GET /api/v1/campaigns (shared subjects and display names are always null here) */
+export type CampaignSummary = {
+  id: number;
+  size: number;
+  first_seen: string;
+  last_seen: string;
+  verdicts: Partial<Record<Verdict, number>>;
+  worst_verdict: Verdict;
+  shared: SharedTrait[];
+  senders: string[];
+  recipient_count: number;
+  rebuilt_at: string;
+};
+
+export type CampaignMessage = {
+  message_id: number;
+  analysis_id: number;
+  sha256: string;
+  verdict: Verdict;
+  score: number;
+  sender: string;
+  /** null once the message's content is deleted */
+  subject: string | null;
+  date: string;
+};
+
+/** GET /api/v1/campaigns/{id} */
+export type Campaign = CampaignSummary & {
+  messages: CampaignMessage[];
+  /** only while the messages' content is kept */
+  recipients: string[];
+  recipients_complete: boolean;
 };
 
 export type Signal = { severity: Severity; label: string; techniques: string[]; family?: string };

@@ -1,12 +1,13 @@
-/* The queue: every analysis, newest first, 50 at a time, with search and a
-   verdict filter. One state at a time: loading, error, empty or rows. */
+/* The queue: every analysis, newest first, 50 at a time, with search and
+   filters for verdict, source, who submitted and days. One state at a time:
+   loading, error, empty or rows. */
 
 import { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Search, X } from 'lucide-react';
 import { SlidingNumber } from '@/components/core/sliding-number';
-import { listAnalyses } from '@/api/client';
+import { listAnalyses, type AnalysisQuery } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
-import type { AnalysisSummary, Verdict } from '@/api/types';
+import type { AnalysisSummary, Session, Verdict } from '@/api/types';
 import { Link } from '@/app/router';
 import { VERDICTS } from '@/app/vocabulary';
 import { showIndicator } from '@/security/safe';
@@ -19,10 +20,30 @@ type State = { rows: AnalysisSummary[]; phase: 'loading' | 'ready' | 'loading-mo
 
 const lookups = (row: AnalysisSummary) => (row.offline ? 'Offline' : row.providers.join(', ') || 'None');
 
-export default function QueueScreen() {
+type Source = NonNullable<AnalysisQuery['source']>;
+const SOURCES: { value: Source; label: string }[] = [
+  { value: '', label: 'Any source' },
+  { value: 'upload', label: 'Upload' },
+  { value: 'paste', label: 'Paste' },
+  { value: 'batch', label: 'Batch' },
+];
+
+const pill = (on: boolean) =>
+  cn(
+    'h-9 shrink-0 rounded-full border px-3.5 text-xs font-medium transition-colors',
+    on ? 'border-transparent [background:var(--pill-active-bg)] text-[var(--pill-active-ink)]' : 'border-line bg-surface text-ink-dim hover:text-ink',
+  );
+
+const dateInput = 'h-9 rounded-full border border-line-strong bg-surface px-3 text-xs text-ink focus:border-accent/60 focus:outline-none';
+
+export default function QueueScreen({ session }: { session: Session }) {
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [verdict, setVerdict] = useState<Verdict | ''>('');
+  const [source, setSource] = useState<Source>('');
+  const [mine, setMine] = useState(false);
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
   const [state, setState] = useState<State>({ rows: [], phase: 'loading', end: false });
   const [attempt, setAttempt] = useState(0);
   const current = useRef<AbortController | null>(null);
@@ -33,33 +54,44 @@ export default function QueueScreen() {
     return () => clearTimeout(t);
   }, [query]);
 
-  // first page whenever the search or filter changes
+  const user = mine ? session.user_id : null;
+  const filters: AnalysisQuery = { q: search, verdict, source, user, since, until };
+
+  // first page whenever the search or a filter changes
   useEffect(() => {
     current.current?.abort();
     const controller = new AbortController();
     current.current = controller;
     setState({ rows: [], phase: 'loading', end: false });
-    listAnalyses({ q: search, verdict }, controller.signal)
+    listAnalyses({ q: search, verdict, source, user, since, until }, controller.signal)
       .then((rows) => setState({ rows, phase: 'ready', end: rows.length < PAGE }))
       .catch((e) => {
         if (!isAbort(e)) setState({ rows: [], phase: 'error', end: false, error: e instanceof ApiError ? e.detail : NETWORK_MESSAGE });
       });
     return () => controller.abort();
-  }, [search, verdict, attempt]);
+  }, [search, verdict, source, user, since, until, attempt]);
 
   async function loadMore() {
     const controller = new AbortController();
     current.current = controller;
     setState((s) => ({ ...s, phase: 'loading-more' }));
     try {
-      const more = await listAnalyses({ q: search, verdict, offset: state.rows.length }, controller.signal);
+      const more = await listAnalyses({ ...filters, offset: state.rows.length }, controller.signal);
       setState((s) => ({ rows: [...s.rows, ...more], phase: 'ready', end: more.length < PAGE }));
     } catch (e) {
       if (!isAbort(e)) setState((s) => ({ ...s, phase: 'ready', error: e instanceof ApiError ? e.detail : NETWORK_MESSAGE }));
     }
   }
 
-  const filtered = Boolean(search || verdict);
+  const filtered = Boolean(search || verdict || source || mine || since || until);
+  const clear = () => {
+    setQuery('');
+    setVerdict('');
+    setSource('');
+    setMine(false);
+    setSince('');
+    setUntil('');
+  };
 
   return (
     <div className="grid grid-cols-1 gap-8">
@@ -100,14 +132,36 @@ export default function QueueScreen() {
               type="button"
               aria-pressed={verdict === v}
               onClick={() => setVerdict(v)}
-              className={cn(
-                'h-9 shrink-0 rounded-full border px-3.5 text-xs font-medium transition-colors',
-                verdict === v ? 'border-transparent [background:var(--pill-active-bg)] text-[var(--pill-active-ink)]' : 'border-line bg-surface text-ink-dim hover:text-ink',
-              )}
+              className={pill(verdict === v)}
             >
               {v ? v.charAt(0) + v.slice(1).toLowerCase() : 'All'}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div className="-mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+        <div className="flex gap-2 overflow-x-auto [scrollbar-width:none]" role="group" aria-label="Filter by source">
+          {SOURCES.map((s) => (
+            <button key={s.value || 'any'} type="button" aria-pressed={source === s.value} onClick={() => setSource(s.value)} className={pill(source === s.value)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        {session.user_id !== null && (
+          <button type="button" aria-pressed={mine} onClick={() => setMine((m) => !m)} className={pill(mine)}>
+            Only mine
+          </button>
+        )}
+        <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+          <label className="flex items-center gap-2">
+            From
+            <input type="date" value={since} max={until || undefined} onChange={(e) => setSince(e.target.value)} className={dateInput} />
+          </label>
+          <label className="flex items-center gap-2">
+            To
+            <input type="date" value={until} min={since || undefined} onChange={(e) => setUntil(e.target.value)} className={dateInput} />
+          </label>
         </div>
       </div>
 
@@ -120,7 +174,7 @@ export default function QueueScreen() {
           <EmptyState
             title="No analyses match this search."
             action={
-              <Button size="sm" onClick={() => { setQuery(''); setVerdict(''); }}>
+              <Button size="sm" onClick={clear}>
                 Clear search
               </Button>
             }

@@ -16,6 +16,10 @@ import type {
   Analysis,
   AnalysisSummary,
   AuditEntry,
+  Batch,
+  BatchCreated,
+  Campaign,
+  CampaignSummary,
   Health,
   NewToken,
   Role,
@@ -135,23 +139,44 @@ export async function logout(): Promise<void> {
 
 /* ---- submissions and analyses ---- */
 
-export function submit(input: { file?: File; raw?: string; offline: boolean }, signal?: AbortSignal): Promise<Submission> {
+/** One message is a Submission; several (several files, an .mbox or a .zip) are a batch: see isBatch(). */
+export function submit(input: { files?: File[]; raw?: string; offline: boolean }, signal?: AbortSignal): Promise<Submission | BatchCreated> {
   const form = new FormData();
-  if (input.file) form.append('file', input.file);
+  if (input.files?.length) input.files.forEach((file) => form.append('files', file));
   else form.append('raw', input.raw ?? '');
   form.append('offline', input.offline ? 'true' : 'false');
-  return request<Submission>('POST', '/api/v1/submissions', { form, signal });
+  return request<Submission | BatchCreated>('POST', '/api/v1/submissions', { form, signal });
+}
+
+export function isBatch(created: Submission | BatchCreated): created is BatchCreated {
+  return 'submission_ids' in created;
 }
 
 export function getSubmission(id: number, signal?: AbortSignal): Promise<Submission> {
   return request<Submission>('GET', `/api/v1/submissions/${id}`, { signal });
 }
 
+export type AnalysisQuery = {
+  q?: string;
+  verdict?: Verdict | '';
+  source?: 'upload' | 'paste' | 'batch' | '';
+  /** a user's ID */
+  user?: number | null;
+  /** days, YYYY-MM-DD (UTC), both included */
+  since?: string;
+  until?: string;
+  offset?: number;
+};
+
 /** 50 per page, newest first; an empty page means there are no more. */
-export function listAnalyses(query: { q?: string; verdict?: Verdict | ''; offset?: number }, signal?: AbortSignal) {
+export function listAnalyses(query: AnalysisQuery, signal?: AbortSignal) {
   const params = new URLSearchParams();
   if (query.q) params.set('q', query.q);
   if (query.verdict) params.set('verdict', query.verdict);
+  if (query.source) params.set('source', query.source);
+  if (query.user != null) params.set('user', String(query.user));
+  if (query.since) params.set('since', query.since);
+  if (query.until) params.set('until', query.until);
   if (query.offset) params.set('offset', String(query.offset));
   const qs = params.toString();
   return request<AnalysisSummary[]>('GET', `/api/v1/analyses${qs ? `?${qs}` : ''}`, { signal });
@@ -170,6 +195,21 @@ export function deleteMessage(messageId: number, scope: 'tier1' | 'all'): Promis
   return request('DELETE', `/api/v1/messages/${messageId}?scope=${scope}`);
 }
 
+/* ---- batches and campaigns ---- */
+
+export function getBatch(id: number, signal?: AbortSignal): Promise<Batch> {
+  return request<Batch>('GET', `/api/v1/batches/${id}`, { signal });
+}
+
+/** Largest first. A shared subject or display name is always null here: the campaign itself shows it. */
+export function listCampaigns(signal?: AbortSignal): Promise<CampaignSummary[]> {
+  return request<CampaignSummary[]>('GET', '/api/v1/campaigns', { signal });
+}
+
+export function getCampaign(id: number, signal?: AbortSignal): Promise<Campaign> {
+  return request<Campaign>('GET', `/api/v1/campaigns/${id}`, { signal });
+}
+
 export function holdMessage(messageId: number): Promise<{ hold: boolean }> {
   return request('POST', `/api/v1/messages/${messageId}/hold`);
 }
@@ -183,6 +223,11 @@ export function releaseMessage(messageId: number): Promise<{ hold: boolean }> {
 /** `name` must be a `files[].name` from the analysis, never an attachment's file name. */
 export function fileUrl(analysisId: number, name: string, download = false): string {
   return `/api/v1/analyses/${analysisId}/files/${enc(name)}${download ? '?download=1' : ''}`;
+}
+
+/** `name` must be a `files[].name` from the batch. */
+export function batchFileUrl(batchId: number, name: string, download = false): string {
+  return `/api/v1/batches/${batchId}/files/${enc(name)}${download ? '?download=1' : ''}`;
 }
 
 export function rawMessageUrl(messageId: number): string {

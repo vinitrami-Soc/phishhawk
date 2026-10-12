@@ -64,3 +64,54 @@ test('a user created on the Users screen can sign in', async () => {
   assert.equal((await signIn('carol', 'anything')).status, 200);
   assert.equal((await call('GET', '/api/v1/session')).body.username, 'carol');
 });
+
+test('several files are one batch, which finishes with combined reports', async () => {
+  csrf = (await signIn('boss', 'x')).body.csrf;
+  const form = new FormData();
+  form.append('files', new File(['From: a@b.example\r\n'], 'one.eml'));
+  form.append('files', new File(['From: c@d.example\r\n'], 'two.eml'));
+  form.append('offline', 'true');
+  const sent = await mockFetch('/api/v1/submissions', { method: 'POST', headers: { 'X-CSRF-Token': csrf }, body: form });
+  assert.equal(sent.status, 202);
+  const created = await sent.json();
+  assert.equal(created.total, 2);
+  assert.equal(created.submission_ids.length, 2);
+  const realNow = Date.now;
+  const later = realNow() + 60_000;
+  Date.now = () => later;
+  try {
+    const batch = (await call('GET', `/api/v1/batches/${created.batch_id}`)).body;
+    assert.equal(batch.status, 'done');
+    assert.equal(batch.counts.done, 2);
+    assert.ok(batch.messages.every((m: { analysis_id: number | null }) => m.analysis_id));
+    assert.deepEqual(batch.files.map((f: { kind: string }) => f.kind), ['json', 'stix', 'misp', 'md', 'csv', 'html', 'manifest']);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('one file is not a batch', async () => {
+  const form = new FormData();
+  form.append('files', new File(['From: a@b.example\r\n'], 'one.eml'));
+  const sent = await mockFetch('/api/v1/submissions', { method: 'POST', headers: { 'X-CSRF-Token': csrf }, body: form });
+  assert.equal((await sent.json()).batch_id, null);
+});
+
+test('campaigns: a list, and each one with its messages', async () => {
+  const list = (await call('GET', '/api/v1/campaigns')).body;
+  assert.ok(list.length >= 1);
+  assert.ok(list.every((c: { shared: { kind: string; value: string | null }[] }) =>
+    c.shared.every((s) => !['subject', 'display name'].includes(s.kind) || s.value === null)));
+  const detail = (await call('GET', `/api/v1/campaigns/${list[0].id}`)).body;
+  assert.equal(detail.messages.length, detail.size);
+  assert.equal(typeof detail.recipients_complete, 'boolean');
+  assert.equal((await call('GET', '/api/v1/campaigns/999999')).status, 404);
+});
+
+test('the queue filters by source and by who submitted', async () => {
+  const batch = (await call('GET', '/api/v1/analyses?source=batch')).body;
+  assert.ok(batch.length >= 2 && batch.every((a: { source: string }) => a.source === 'batch'));
+  const none = (await call('GET', '/api/v1/analyses?user=999')).body;
+  assert.deepEqual(none, []);
+  assert.equal((await call('GET', '/api/v1/analyses?since=yesterday')).status, 422);
+});
