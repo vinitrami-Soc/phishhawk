@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from typing import Any
 
@@ -53,12 +54,23 @@ def find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] 
     return analysis, message, submission
 
 
-def listing(db: Session, store: BlobStore, q: str = "", verdict: str = "",
-            offset: int = 0) -> list[dict[str, Any]]:
+def listing(db: Session, store: BlobStore, q: str = "", verdict: str = "", offset: int = 0, source: str = "",
+            user: int | None = None, since: dt.date | None = None,
+            until: dt.date | None = None) -> list[dict[str, Any]]:
+    """Newest first. since and until are days (UTC), both included."""
     query = (select(Analysis, Message, Submission).join(Message, Analysis.message_id == Message.id)
              .join(Submission, Analysis.submission_id == Submission.id).order_by(Analysis.id.desc()))
     if verdict:
         query = query.where(Analysis.verdict == verdict)
+    if source:
+        query = query.where(Submission.source == source)
+    if user is not None:
+        query = query.where(Submission.user_id == user)
+    if since is not None:
+        query = query.where(Analysis.created_at >= dt.datetime.combine(since, dt.time(), dt.timezone.utc))
+    if until is not None:
+        next_day = dt.datetime.combine(until + dt.timedelta(days=1), dt.time(), dt.timezone.utc)
+        query = query.where(Analysis.created_at < next_day)
     q = q.strip()
     if q:
         query = query.where(or_(Message.sha256.startswith(q.lower(), autoescape=True),

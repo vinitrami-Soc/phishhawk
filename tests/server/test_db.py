@@ -7,7 +7,10 @@ from sqlalchemy import select, text
 from phishhawk.server.db import make_engine, transaction
 from phishhawk.server.models import Setting
 
+from .serverkit import TEST_DATABASE
 
+
+@pytest.mark.skipif(bool(TEST_DATABASE), reason="SQLite only")
 def test_sqlite_uses_wal_and_enforces_foreign_keys(settings, db):
     with make_engine(settings.db_url).connect() as connection:
         assert connection.execute(text("PRAGMA journal_mode")).scalar() == "wal"

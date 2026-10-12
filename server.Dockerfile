@@ -22,7 +22,7 @@ WORKDIR /opt/phishhawk
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY --from=frontend /frontend/dist ./frontend
-RUN pip install --no-cache-dir ".[server,qr]" \
+RUN pip install --no-cache-dir ".[server,qr,postgres]" \
  && useradd --create-home --uid 10001 phishhawk \
  && install -d -o phishhawk -m 700 /data
 

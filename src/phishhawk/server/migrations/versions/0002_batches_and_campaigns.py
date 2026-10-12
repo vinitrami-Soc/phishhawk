@@ -64,6 +64,9 @@ def upgrade() -> None:
         batch_op.create_index("ix_submissions_batch", ["batch_id", "position"], unique=False)
         batch_op.create_foreign_key("fk_submissions_batch_id", "batches", ["batch_id"], ["id"],
                                     ondelete="SET NULL")
+    # The audit chain's head exists from the start, so several workers' first records cannot race to create it.
+    op.execute("INSERT INTO audit_head (id, hash, count) SELECT 1, '%s', 0 "
+               "WHERE NOT EXISTS (SELECT 1 FROM audit_head)" % ("0" * 64))
 
 
 def downgrade() -> None:
