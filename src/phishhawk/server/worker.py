@@ -1,5 +1,6 @@
 """The worker process: requeues jobs whose worker died, schedules the hourly
-retention sweep and campaign rebuild, and runs one job at a time."""
+retention sweep and campaign rebuild and each mailbox's polls, and runs one
+job at a time."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
-from . import appsettings, audit, batches, campaigns, jobs
+from . import appsettings, audit, batches, campaigns, jobs, mailbox
 from .db import transaction
 from .models import Job, Submission, utcnow
 from .processing import Services, process_submission
@@ -28,12 +29,16 @@ def schedule(services: Services) -> None:
                 _submission_ended(db, int(job.payload["submission_id"]), job.error)
             elif job.kind == "batch_finalize":
                 batches.failed(db, int(job.payload["batch_id"]), job.error)
+            elif job.kind == "mailbox_poll":
+                mailbox.gave_up(db, int(job.payload["mailbox_id"]), job.error)
         last = jobs.last_finished(db, "retention_sweep")
         if not jobs.pending(db, "retention_sweep") and (last is None or utcnow() - last >= SWEEP_EVERY):
             jobs.enqueue(db, "retention_sweep")
         last = jobs.last_finished(db, "campaign_rebuild")
         if last is not None and utcnow() - last >= SWEEP_EVERY:  # messages leave the window as time passes
             campaigns.queue_rebuild(db)
+        for mailbox_id in mailbox.due(db):
+            mailbox.queue_poll(db, mailbox_id)
 
 
 def run_one(services: Services) -> bool:
@@ -54,6 +59,8 @@ def run_one(services: Services) -> bool:
             process_submission(services, int(payload["submission_id"]), beat)
         elif kind == "batch_finalize":
             batches.finalize(services, int(payload["batch_id"]), beat)
+        elif kind == "mailbox_poll":
+            mailbox.poll(services, int(payload["mailbox_id"]), beat)
         elif kind == "campaign_rebuild":
             with transaction(services.sessions) as db:
                 campaigns.rebuild(db, appsettings.limit(db, services.settings, "campaign_window_days"))

@@ -35,7 +35,7 @@ def kind_of(raw: bytes) -> str:
 
 def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: int | None, actor: str,
            offline: bool, max_bytes: int, batch_id: int | None = None, position: int = 0,
-           known_message: bool = False) -> Submission:
+           known_message: bool = False, mailbox_id: int | None = None) -> Submission:
     """known_message: batches.split() found it as a message (an mbox says where each one starts), so its type is
     not checked again."""
     if not raw:
@@ -53,11 +53,14 @@ def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: i
     elif message.raw_blob is None:  # submitted again after its tier 1 was deleted
         message.raw_blob, message.tier1_deleted_at, message.deletion_reason = store.put(raw), None, ""
     submission = Submission(message_id=message.id, user_id=user_id, source=source, offline=offline,
-                            batch_id=batch_id, position=position)
+                            batch_id=batch_id, position=position, mailbox_id=mailbox_id)
     db.add(submission)
     db.flush()
     jobs.enqueue(db, "analyze", {"submission_id": submission.id})
     details = {"sha256": sha256, "source": source, "offline": offline}
-    audit.record(db, actor, "submit", "submission", submission.id,
-                 details if batch_id is None else dict(details, batch=batch_id))
+    if batch_id is not None:
+        details["batch"] = batch_id
+    if mailbox_id is not None:
+        details["mailbox"] = mailbox_id
+    audit.record(db, actor, "submit", "submission", submission.id, details)
     return submission

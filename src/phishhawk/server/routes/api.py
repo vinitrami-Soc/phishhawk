@@ -180,9 +180,8 @@ def _found(db: DB, analysis_id: int) -> tuple[Any, Message, Submission]:
 @router.get("/analyses/{analysis_id}")
 def get_analysis(request: Request, db: DB, actor: CurrentActor, analysis_id: int) -> dict[str, Any]:
     analysis, message, submission = _found(db, analysis_id)
-    submitter = views.usernames(db).get(submission.user_id or 0)
     return views.summary(services(request).store, analysis, message, submission, with_report=True,
-                         submitter=submitter)
+                         submitter=views.submitter_of(db, submission))
 
 
 @router.get("/analyses/{analysis_id}/files/{name}")
