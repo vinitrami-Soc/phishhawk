@@ -225,7 +225,7 @@ jobs:
         run: |
           set -o pipefail
           python -m pytest tests/server/test_frontend_browser.py -p no:cacheprovider -rs | tee "$RUNNER_TEMP/frontend.txt"
-          grep -q "1 passed" "$RUNNER_TEMP/frontend.txt"  # a skipped test is not a pass
+          grep -qE "^[0-9]+ passed in " "$RUNNER_TEMP/frontend.txt"  # every test passed: a skipped one is not a pass
 
   installer:
     runs-on: ubuntu-latest
