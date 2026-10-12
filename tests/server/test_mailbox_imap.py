@@ -270,3 +270,31 @@ def test_a_credential_that_does_not_open_is_an_error_not_a_crash(services, serve
     state = _state(services, second)
     assert state["status"] == "error" and "cannot be opened" in state["error"]
     assert state["next_poll_at"] is not None
+
+
+def test_a_real_server_and_worker_import_from_the_mailbox(server, tmp_path):
+    """phishhawk server run as a process: Poll now queues a poll, its worker reads the mailbox over TLS and the
+    messages are analysed."""
+    import time
+
+    import requests
+
+    from .serverkit import PASSWORD, running_server
+
+    server.add(report(1))
+    server.add(report(2))
+    (tmp_path / "server").mkdir()
+    with running_server(tmp_path / "server") as running:
+        web = requests.Session()
+        session = web.post(running.base + "/api/v1/session", json={"username": "root", "password": PASSWORD})
+        web.headers["X-CSRF-Token"] = session.json()["csrf"]
+        made = web.post(running.base + "/api/v1/mailboxes", json={
+            "name": "Reports", "kind": "imap", "secret": server.password_for_tests,
+            "config": {"host": "127.0.0.1", "port": server.port, "user": USER}}).json()
+        assert web.post(running.base + "/api/v1/mailboxes/%d/poll" % made["id"]).status_code == 202
+        deadline = time.monotonic() + 90
+        while len(web.get(running.base + "/api/v1/analyses?source=mailbox").json()) < 2:
+            assert time.monotonic() < deadline, running.log.read_text("utf-8", "replace")
+            time.sleep(0.5)
+        state = web.get(running.base + "/api/v1/mailboxes/%d" % made["id"]).json()
+        assert (state["status"], state["last_counts"]["imported"]) == ("ok", 2)

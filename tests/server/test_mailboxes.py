@@ -155,3 +155,105 @@ def test_a_mailbox_keeps_its_kind(services):
     with transaction(services.sessions) as s, pytest.raises(MailboxError) as refused:
         mailboxes.update(s, services.box, s.get(Mailbox, made["id"]), {"kind": "graph"})
     assert refused.value.status == 422
+
+
+# ---------------------------------------------------------------------- the API and the page --
+
+def _body(**extra):
+    return {"name": "Reports", "kind": "imap", "secret": secrets.token_hex(8),
+            "config": {"host": "imap.example-corp.co.uk", "user": "soc@example-corp.co.uk"}} | extra
+
+
+def test_an_admin_manages_mailboxes_through_the_api_and_each_change_is_audited(admin, services):
+    from sqlalchemy import select
+
+    from phishhawk.server.models import AuditRecord, Job
+
+    first, second = _body(), secrets.token_hex(8)
+    made = admin.post("/api/v1/mailboxes", json=first)
+    assert made.status_code == 201 and made.json()["secret_set"] and first["secret"] not in made.text
+    box = made.json()["id"]
+    assert [m["name"] for m in admin.get("/api/v1/mailboxes").json()] == ["Reports"]
+    assert admin.get("/api/v1/mailboxes/%d" % box).json()["config"]["port"] == 993
+    changed = admin.patch("/api/v1/mailboxes/%d" % box, json={"interval_minutes": 15, "secret": second})
+    assert changed.status_code == 200 and changed.json()["interval_minutes"] == 15
+    assert admin.post("/api/v1/mailboxes/%d/poll" % box).json() == {"queued": True}
+    assert admin.post("/api/v1/mailboxes/%d/poll" % box).json() == {"queued": False}  # one waits already
+    with transaction(services.sessions) as s:
+        assert len(s.scalars(select(Job).where(Job.kind == "mailbox_poll")).all()) == 1
+    assert admin.delete("/api/v1/mailboxes/%d" % box).json() == {"deleted": True}
+    assert admin.get("/api/v1/mailboxes").json() == []
+    with transaction(services.sessions) as s:
+        records = s.scalars(select(AuditRecord).where(AuditRecord.action.startswith("mailbox"))).all()
+        assert [r.action for r in records] == ["mailbox_create", "mailbox_change", "mailbox_poll_now",
+                                               "mailbox_poll_now", "mailbox_delete"]
+        assert records[1].details == {"name": "Reports", "changed": ["interval_minutes", "secret"]}
+        logged = repr([(r.details, r.object_id) for r in records])
+    assert first["secret"] not in logged and second not in logged
+
+
+def test_what_the_api_refuses(admin):
+    refused = admin.post("/api/v1/mailboxes", json=_body(config={"host": "imaps://x.example", "user": "u"}))
+    assert refused.status_code == 422 and "host" in refused.json()["detail"]
+    box = admin.post("/api/v1/mailboxes", json=_body()).json()["id"]
+    assert admin.post("/api/v1/mailboxes", json=_body()).status_code == 409
+    for method, path in (("GET", ""), ("PATCH", ""), ("DELETE", ""), ("POST", "/poll")):
+        assert admin.request(method, "/api/v1/mailboxes/999%s" % path, json={}).status_code == 404
+    admin.patch("/api/v1/mailboxes/%d" % box, json={"enabled": False})
+    switched_off = admin.post("/api/v1/mailboxes/%d/poll" % box)
+    assert switched_off.status_code == 409 and "switched off" in switched_off.json()["detail"]
+
+
+def test_the_mailboxes_page_adds_changes_polls_and_deletes_without_javascript(admin, services):
+    from sqlalchemy import select
+
+    from phishhawk.server.models import Job
+
+    page = admin.get("/mailboxes")
+    assert page.status_code == 200
+    assert all('name="kind" value="%s"' % kind in page.text for kind in ("imap", "graph", "gmail"))
+    password = secrets.token_hex(8)
+    added = admin.post("/mailboxes", data={"kind": "imap", "name": "Reports", "host": "imap.example-corp.co.uk",
+                                           "user": "soc", "folder": "Phish reports", "secret": password,
+                                           "interval_minutes": "5"}, follow_redirects=False)
+    assert added.status_code == 303 and added.headers["location"] == "/mailboxes"
+    [made] = admin.get("/api/v1/mailboxes").json()
+    assert made["config"]["folder"] == "Phish reports" and password not in admin.get("/mailboxes").text
+    changed = admin.post("/mailboxes/%d" % made["id"], data={
+        "name": "Phish reports", "interval_minutes": "10", "enabled": "true", "host": "imap.example-corp.co.uk",
+        "user": "soc", "folder": "Phish reports", "port": "993", "secret": ""}, follow_redirects=False)
+    assert changed.status_code == 303
+    after = admin.get("/api/v1/mailboxes").json()[0]
+    assert (after["name"], after["interval_minutes"], after["enabled"]) == ("Phish reports", 10, True)
+    assert admin.post("/mailboxes/%d/poll" % made["id"], follow_redirects=False).status_code == 303
+    with transaction(services.sessions) as s:
+        assert s.scalars(select(Job).where(Job.kind == "mailbox_poll")).first() is not None
+    wrong = admin.post("/mailboxes", data={"kind": "graph", "name": "M365", "tenant_id": "../evil",
+                                           "client_id": "x", "address": "phish@example-corp.co.uk",
+                                           "secret": "s"})
+    assert wrong.status_code == 422 and "tenant must be" in wrong.text
+    assert admin.post("/mailboxes/%d/delete" % made["id"], follow_redirects=False).status_code == 303
+    assert admin.get("/api/v1/mailboxes").json() == []
+
+
+def test_a_hostile_name_and_error_are_shown_as_text(admin, services):
+    from html.parser import HTMLParser
+
+    from phishhawk.server.models import Mailbox
+
+    hostile = '"><svg onload=alert(1)>'
+    box = admin.post("/api/v1/mailboxes", json=_body(name=hostile)).json()["id"]
+    with transaction(services.sessions) as s:
+        s.get(Mailbox, box).status, s.get(Mailbox, box).error = "error", "no folder '%s' on x" % hostile
+
+    class Tags(HTMLParser):
+        found: list = []
+
+        def handle_starttag(self, tag, attrs):
+            self.found.append((tag, dict(attrs)))
+
+    page = admin.get("/mailboxes").text
+    assert "<svg" not in page and page.count("&lt;svg onload=alert(1)&gt;") >= 2
+    parser = Tags()
+    parser.feed(page)
+    assert not [attrs for _, attrs in parser.found if any(name.startswith("on") for name in attrs)]

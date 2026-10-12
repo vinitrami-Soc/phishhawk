@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Mailboxes · PhishHawk{% endblock %}
+{% block main %}
+<h1>Mailboxes</h1>
+<p>Report mailboxes PhishHawk reads, read-only: it never marks, moves or deletes a message. Each new message is analysed as an upload is.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if rows %}
+<table class="list">
+  <caption class="sr-only">Mailboxes</caption>
+  <thead><tr><th scope="col">Mailbox</th><th scope="col">Status</th><th scope="col">Last poll</th><th scope="col">Actions</th></tr></thead>
+  <tbody>
+  {% for m in rows %}
+  <tr>
+    <td data-label="Mailbox">{{ m.name|printable }}<br><span class="mono">{{ m.kind }}{% if m.kind == 'imap' %} · {{ m.config.host }}:{{ m.config.port }} · {{ m.config.folder|printable }}{% elif m.kind == 'graph' %} · {{ m.config.address }} · {{ m.config.folder|printable }}{% else %} · {{ m.config.address }} · {{ m.config.label|printable }}{% endif %}</span></td>
+    <td data-label="Status">{% if not m.enabled %}switched off{% elif m.status == 'never' %}not polled yet{% else %}{{ m.status }}{% endif %}{% if m.error %}<br><span class="error">{{ m.error|printable }}</span>{% endif %}</td>
+    <td data-label="Last poll">{% if m.last_poll_at %}{{ m.last_poll_at[:16]|replace('T', ' ') }} UTC: {{ m.last_counts.get('imported', 0) }} imported, {{ m.last_counts.get('duplicates', 0) }} duplicates, {{ m.last_counts.get('skipped', 0) }} skipped{% else %}never{% endif %}{% if m.enabled and m.next_poll_at %}<br>next {{ m.next_poll_at[:16]|replace('T', ' ') }} UTC{% endif %}</td>
+    <td data-label="Actions">
+      <form method="post" action="/mailboxes/{{ m.id }}/poll" class="inline"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><button type="submit">Poll now</button></form>
+      <form method="post" action="/mailboxes/{{ m.id }}/delete" class="inline"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><button type="submit" class="danger">Delete</button></form>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% for m in rows %}
+<details class="card">
+  <summary>Change {{ m.name|printable }}</summary>
+  <form method="post" action="/mailboxes/{{ m.id }}">
+    <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+    <label for="name-{{ m.id }}">Name</label><input id="name-{{ m.id }}" name="name" value="{{ m.name }}" required maxlength="48">
+    <label for="interval-{{ m.id }}">Minutes between polls (5 or more)</label><input id="interval-{{ m.id }}" name="interval_minutes" type="number" min="5" max="1440" value="{{ m.interval_minutes }}">
+    <label for="enabled-{{ m.id }}">Polling</label><select id="enabled-{{ m.id }}" name="enabled"><option value="true"{% if m.enabled %} selected{% endif %}>on</option><option value="false"{% if not m.enabled %} selected{% endif %}>off</option></select>
+    {% for field, label in {'host': 'Host', 'port': 'Port', 'user': 'User', 'tenant_id': 'Tenant', 'client_id': 'Client ID', 'address': 'Report mailbox', 'folder': 'Folder', 'label': 'Label'}.items() if field in m.config %}
+    <label for="{{ field }}-{{ m.id }}">{{ label }}</label><input id="{{ field }}-{{ m.id }}" name="{{ field }}" value="{{ m.config[field] }}">
+    {% endfor %}
+    {% if m.kind == 'imap' %}<label class="check"><input type="checkbox" name="starttls" value="true"{% if m.config.starttls %} checked{% endif %}> STARTTLS (port 143)</label>{% endif %}
+    <label for="secret-{{ m.id }}">{% if m.kind == 'imap' %}New password{% elif m.kind == 'graph' %}New client secret{% else %}New service account key (JSON){% endif %}, or leave empty to keep it</label>
+    {% if m.kind == 'gmail' %}<textarea id="secret-{{ m.id }}" name="secret" rows="4" autocomplete="off"></textarea>{% else %}<input id="secret-{{ m.id }}" name="secret" type="password" autocomplete="new-password">{% endif %}
+    <button type="submit">Save</button>
+  </form>
+</details>
+{% endfor %}
+{% else %}
+<p>No mailbox yet.</p>
+{% endif %}
+<h2>Add a mailbox</h2>
+<form method="post" action="/mailboxes" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><input type="hidden" name="kind" value="imap">
+  <h3>IMAP</h3>
+  <p>Any server with IMAP over TLS. Use an app password where the provider offers one.</p>
+  <label for="i-name">Name</label><input id="i-name" name="name" required maxlength="48">
+  <label for="i-host">Host</label><input id="i-host" name="host" required placeholder="imap.example.com">
+  <label for="i-port">Port (993, or 143 with STARTTLS)</label><input id="i-port" name="port" type="number" min="1" max="65535">
+  <label class="check"><input type="checkbox" name="starttls" value="true"> STARTTLS</label>
+  <label for="i-user">User</label><input id="i-user" name="user" required autocomplete="off">
+  <label for="i-folder">Folder</label><input id="i-folder" name="folder" placeholder="INBOX">
+  <label for="i-secret">Password</label><input id="i-secret" name="secret" type="password" required autocomplete="new-password">
+  <label for="i-interval">Minutes between polls</label><input id="i-interval" name="interval_minutes" type="number" min="5" max="1440" value="5">
+  <button type="submit">Add</button>
+</form>
+<form method="post" action="/mailboxes" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><input type="hidden" name="kind" value="graph">
+  <h3>Microsoft 365 (Graph)</h3>
+  <p>An app registration with the Mail.Read application permission, restricted to the report mailbox (docs/SERVER.md).</p>
+  <label for="g-name">Name</label><input id="g-name" name="name" required maxlength="48">
+  <label for="g-tenant">Tenant ID or domain</label><input id="g-tenant" name="tenant_id" required>
+  <label for="g-client">Application (client) ID</label><input id="g-client" name="client_id" required>
+  <label for="g-address">Report mailbox</label><input id="g-address" name="address" type="email" required>
+  <label for="g-folder">Folder</label><input id="g-folder" name="folder" placeholder="inbox">
+  <label for="g-secret">Client secret</label><input id="g-secret" name="secret" type="password" required autocomplete="new-password">
+  <label for="g-interval">Minutes between polls</label><input id="g-interval" name="interval_minutes" type="number" min="5" max="1440" value="5">
+  <button type="submit">Add</button>
+</form>
+<form method="post" action="/mailboxes" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><input type="hidden" name="kind" value="gmail">
+  <h3>Gmail (Google Workspace)</h3>
+  <p>A service account with domain-wide delegation for the gmail.readonly scope only (docs/SERVER.md). Personal Gmail: use IMAP with an app password.</p>
+  <label for="m-name">Name</label><input id="m-name" name="name" required maxlength="48">
+  <label for="m-address">Report mailbox</label><input id="m-address" name="address" type="email" required>
+  <label for="m-label">Label</label><input id="m-label" name="label" placeholder="INBOX">
+  <label for="m-secret">Service account key (the JSON file's contents)</label><textarea id="m-secret" name="secret" rows="4" required autocomplete="off"></textarea>
+  <label for="m-interval">Minutes between polls</label><input id="m-interval" name="interval_minutes" type="number" min="5" max="1440" value="5">
+  <button type="submit">Add</button>
+</form>
+{% endblock %}

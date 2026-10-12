@@ -1,6 +1,8 @@
 """Every route, called as anonymous, analyst, admin and with both kinds of
 API token: the status says who may do what (spec 7.2)."""
 
+import secrets
+
 import pytest
 
 from phishhawk.server import worker
@@ -29,6 +31,13 @@ MATRIX = [
     ("POST", "/api/v1/users", (401, 403, 201, 403, 403)),
     ("GET", "/api/v1/tokens", (401, 403, 200, 403, 403)),
     ("GET", "/api/v1/audit", (401, 200, 200, 200, 200)),
+    ("GET", "/api/v1/mailboxes", (401, 403, 200, 403, 403)),
+    ("POST", "/api/v1/mailboxes", (401, 403, 201, 403, 403)),
+    ("GET", "/api/v1/mailboxes/{mailbox}", (401, 403, 200, 403, 403)),
+    ("PATCH", "/api/v1/mailboxes/{mailbox}", (401, 403, 200, 403, 403)),
+    ("POST", "/api/v1/mailboxes/{mailbox}/poll", (401, 403, 202, 403, 403)),
+    ("DELETE", "/api/v1/mailboxes/{mailbox}", (401, 403, 200, 403, 403)),
+    ("GET", "/mailboxes", (303, 403, 200, 403, 403)),
     ("GET", "/settings", (303, 403, 200, 403, 403)),
     ("GET", "/users", (303, 403, 200, 403, 403)),
     ("GET", "/queue", (303, 200, 200, 200, 200)),
@@ -37,6 +46,9 @@ MATRIX = [
     ("GET", "/campaigns/{campaign}", (303, 200, 200, 200, 200)),
 ]
 BODIES = {("PATCH", "/api/v1/settings"): {"retention_days": 20},
+          ("POST", "/api/v1/mailboxes"): {"name": "Matrix", "kind": "imap", "secret": secrets.token_hex(8),
+                                          "config": {"host": "imap.example-corp.co.uk", "user": "soc"}},
+          ("PATCH", "/api/v1/mailboxes/{mailbox}"): {"interval_minutes": 10},
           ("POST", "/api/v1/users"): {"username": "carol", "password": "another long password", "role": "analyst"}}
 
 
@@ -61,8 +73,11 @@ def world(app, services, admin):
         pass
     batch_file = admin.get("/api/v1/batches/%d" % batch).json()["files"][0]["name"]
     campaign = admin.get("/api/v1/campaigns").json()[0]["id"]
+    mailbox = admin.post("/api/v1/mailboxes", json={"name": "Reports", "kind": "imap",
+                                                    "secret": secrets.token_hex(8),
+                                                    "config": {"host": "imap.example-corp.co.uk", "user": "soc"}})
     return {"analysis": analysis, "message": message, "submission": submitted["id"], "tokens": tokens,
-            "batch": batch, "batch_file": batch_file, "campaign": campaign}
+            "batch": batch, "batch_file": batch_file, "campaign": campaign, "mailbox": mailbox.json()["id"]}
 
 
 @pytest.mark.parametrize("method, path, expected", MATRIX)
