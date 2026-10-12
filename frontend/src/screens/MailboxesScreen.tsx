@@ -38,7 +38,7 @@ function StatusPill({ m }: { m: Mailbox }) {
   const [text, tone] = !m.enabled
     ? ['Off', 'border-line text-ink-muted']
     : m.status === 'ok'
-      ? ['OK', 'border-v-clean/40 text-v-clean']
+      ? ['OK', 'border-accent/40 text-accent']
       : m.status === 'error'
         ? ['Error', 'border-v-malicious/40 text-v-malicious']
         : ['Not polled yet', 'border-line text-ink-muted'];
