@@ -8,6 +8,7 @@ import zipfile
 import pytest
 from sqlalchemy import select
 
+from phishhawk.analysis import load_state
 from phishhawk.server import audit, intake, retention, worker
 from phishhawk.server.db import transaction
 from phishhawk.server.models import Analysis, Indicator, Job, Message, Submission
@@ -60,6 +61,8 @@ def test_the_worker_analyses_a_submission_and_stores_both_tiers(services):
         assert analysis.providers == [] and analysis.lookups == []
         report = json.loads(services.store.get(analysis.data_blob))
         assert report["verdict"] == "LIKELY PHISHING"
+        # the analysis itself, sealed, for a batch's combined exports
+        assert load_state(services.store.get(analysis.state_blob)).verdict == "LIKELY PHISHING"
         html = services.store.get(next(f["blob"] for f in analysis.files if f["kind"] == "html"))
         assert b"<!doctype html>" in html
         assert s.scalars(select(Indicator).where(Indicator.value == "examp1e-corp.co.uk")).first() is not None
@@ -97,7 +100,8 @@ def test_retention_deletes_tier1_keeps_tier2_and_skips_held_messages(services):
         gone = s.get(Message, s.get(Submission, kept_id).message_id)
         assert gone.raw_blob is None and gone.deletion_reason == "retention"
         analysis = s.scalars(select(Analysis).where(Analysis.message_id == gone.id)).one()
-        assert analysis.data_blob is None and all(f["blob"] is None for f in analysis.files)
+        assert analysis.data_blob is None and analysis.state_blob is None
+        assert all(f["blob"] is None for f in analysis.files)
         assert analysis.verdict == "LIKELY PHISHING" and analysis.traits  # tier 2 stays
         assert not services.store._path(raw_blob).exists()
         held = s.get(Message, s.get(Submission, held_id).message_id)

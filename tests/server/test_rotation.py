@@ -27,7 +27,7 @@ def _analysed(services):
 def _blob_ids(s):
     ids = [m.raw_blob for m in s.scalars(select(Message))]
     for analysis in s.scalars(select(Analysis)):
-        ids += [analysis.data_blob] + [f["blob"] for f in analysis.files]
+        ids += [analysis.data_blob, analysis.state_blob] + [f["blob"] for f in analysis.files]
     return ids
 
 
@@ -35,7 +35,7 @@ def test_rotation_moves_every_blob_and_secret_to_the_new_key(services):
     _analysed(services)
     new_box = Box.from_b64(new_key())
     with transaction(services.sessions) as s:
-        assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 9, "secrets": 2}
+        assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 10, "secrets": 2}
     moved = BlobStore(services.store.root, new_box)
     with transaction(services.sessions) as s:
         for blob_id in _blob_ids(s):
@@ -46,7 +46,7 @@ def test_rotation_moves_every_blob_and_secret_to_the_new_key(services):
         with pytest.raises(DecryptError):
             appsettings.get_secret(s, services.box, "key:virustotal")
         entry = s.scalars(select(AuditRecord).where(AuditRecord.action == "rotate_key")).one()
-        assert entry.actor == "cli" and entry.details == {"blobs": 9, "secrets": 2}
+        assert entry.actor == "cli" and entry.details == {"blobs": 10, "secrets": 2}
         assert audit.verify(s) == []
 
 
@@ -57,7 +57,7 @@ def test_rotation_run_again_after_a_crash_skips_what_already_moved(services):
         first = _blob_ids(s)[0]
     services.store.reseal(first, new_box)  # the crash happened after one blob
     with transaction(services.sessions) as s:
-        assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 8, "secrets": 2}
+        assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 9, "secrets": 2}
     with transaction(services.sessions) as s:
         assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 0, "secrets": 0}
 
@@ -71,3 +71,15 @@ def test_a_blob_neither_key_opens_stops_the_rotation_and_deletes_nothing(service
         rotation.rotate(s, services.store, Box.from_b64(new_key()), actor="cli")
     with transaction(services.sessions) as s:
         assert all(services.store._path(blob_id).exists() for blob_id in _blob_ids(s))
+
+
+def test_rotation_moves_a_batchs_combined_exports_too(services):
+    from phishhawk.server.models import Batch
+
+    blob = services.store.put(b"combined report")
+    with transaction(services.sessions) as s:
+        s.add(Batch(total=2, files=[{"name": "r.html", "kind": "html", "blob": blob}]))
+    new_box = Box.from_b64(new_key())
+    with transaction(services.sessions) as s:
+        assert rotation.rotate(s, services.store, new_box, actor="cli")["blobs"] == 1
+    assert BlobStore(services.store.root, new_box).get(blob) == b"combined report"

@@ -79,12 +79,30 @@ class Message(Base):
     recipient_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class Batch(Base):
+    """Several messages uploaded together (several files, an .mbox or a .zip), and their combined exports."""
+    __tablename__ = "batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    offline: Mapped[bool] = mapped_column(Boolean, default=False)
+    total: Mapped[int] = mapped_column(Integer)  # messages in it
+    status: Mapped[str] = mapped_column(String(16), default="running")  # running, finalizing, done, failed
+    error: Mapped[str] = mapped_column(Text, default="")
+    files: Mapped[list[Any]] = mapped_column(JSON, default=list)  # combined exports: manifest entries plus "blob"
+    files_deleted_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+
+
 class Submission(Base):
     __tablename__ = "submissions"
+    __table_args__ = (Index("ix_submissions_batch", "batch_id", "position"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
-    source: Mapped[str] = mapped_column(String(16))  # "upload", "paste" (M2: "batch", M3: "mailbox")
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("batches.id", ondelete="SET NULL"), default=None)
+    position: Mapped[int] = mapped_column(Integer, default=0)  # its place in the batch, from 1
+    source: Mapped[str] = mapped_column(String(16))  # "upload", "paste", "batch" (M3: "mailbox")
     offline: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued, running, done, failed
     error: Mapped[str] = mapped_column(Text, default="")
@@ -106,6 +124,7 @@ class Analysis(Base):
     traits: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # campaign record, subject and name as HMAC
     files: Mapped[list[Any]] = mapped_column(JSON, default=list)  # manifest entries plus "blob"
     data_blob: Mapped[str | None] = mapped_column(String(32))  # full JSON report (tier 1)
+    state_blob: Mapped[str | None] = mapped_column(String(32), default=None)  # analysis.save_state() (tier 1)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
 
 
@@ -116,6 +135,30 @@ class Indicator(Base):
     analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"))
     type: Mapped[str] = mapped_column(String(32))
     value: Mapped[str] = mapped_column(Text)
+
+
+class Campaign(Base):
+    """Messages that share infrastructure (campaign.correlate_records()), rebuilt from tier 2 as a whole."""
+    __tablename__ = "campaigns"
+    # the ID of its oldest message, so a link to the campaign stays while it grows
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    size: Mapped[int] = mapped_column(Integer)
+    first_seen: Mapped[str] = mapped_column(String(32), default="")  # from the messages' Date lines, ISO
+    last_seen: Mapped[str] = mapped_column(String(32), default="")
+    verdicts: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)  # verdict -> messages
+    worst_verdict: Mapped[str] = mapped_column(String(32))
+    shared: Mapped[list[Any]] = mapped_column(JSON, default=list)  # [{kind, value, messages}]; subject: HMAC
+    senders: Mapped[list[Any]] = mapped_column(JSON, default=list)
+    recipient_count: Mapped[int] = mapped_column(Integer, default=0)  # summed over its messages
+    rebuilt_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class CampaignMember(Base):
+    __tablename__ = "campaign_members"
+    __table_args__ = (Index("ix_campaign_members_message", "message_id"),)
+    campaign_id: Mapped[int] = mapped_column(ForeignKey("campaigns.id", ondelete="CASCADE"), primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True)
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"))
 
 
 class Job(Base):

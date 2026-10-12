@@ -12,15 +12,17 @@ from sqlalchemy.orm import Session
 
 from . import audit
 from .crypto import Box, DecryptError
-from .models import Analysis, Message, Setting
+from .models import Analysis, Batch, Message, Setting
 from .store import BlobStore
 
 
 def _blob_ids(db: Session) -> list[str]:
     ids = [m.raw_blob for m in db.scalars(select(Message)) if m.raw_blob]
     for analysis in db.scalars(select(Analysis)):
-        ids += [analysis.data_blob] if analysis.data_blob else []
+        ids += [blob for blob in (analysis.data_blob, analysis.state_blob) if blob]
         ids += [f["blob"] for f in analysis.files if f.get("blob")]
+    for batch in db.scalars(select(Batch)):
+        ids += [f["blob"] for f in batch.files if f.get("blob")]
     return ids
 
 

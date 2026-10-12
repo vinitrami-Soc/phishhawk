@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .models import Job, utcnow
 
-KINDS = ("analyze", "retention_sweep")  # M2 adds batch_finalize and campaign_rebuild, M3 mailbox_poll
+KINDS = ("analyze", "batch_finalize", "retention_sweep")  # M2 adds campaign_rebuild, M3 mailbox_poll
 MAX_ATTEMPTS = 3
 
 
@@ -46,14 +46,16 @@ def finish(db: Session, job_id: int, error: str = "") -> None:
         job.error, job.finished_at = error[:500], utcnow()
 
 
-def requeue_stale(db: Session, stale_after: dt.timedelta) -> int:
+def requeue_stale(db: Session, stale_after: dt.timedelta, given_up: list[Job] | None = None) -> int:
     """Running jobs whose worker stopped sending heartbeats: back to the
-    queue, or failed after MAX_ATTEMPTS."""
+    queue, or failed after MAX_ATTEMPTS (and added to given_up)."""
     cutoff, moved = utcnow() - stale_after, 0
     for job in db.scalars(select(Job).where(Job.status == "running", Job.heartbeat_at < cutoff)):
         if job.attempts >= MAX_ATTEMPTS:
             job.status, job.finished_at = "failed", utcnow()
             job.error = "the worker stopped %d times" % job.attempts
+            if given_up is not None:
+                given_up.append(job)
         else:
             job.status = "queued"
         moved += 1

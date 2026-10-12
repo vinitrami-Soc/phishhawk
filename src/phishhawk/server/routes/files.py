@@ -3,10 +3,11 @@ sandbox; everything else, and the raw message, downloads as an attachment."""
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import HTTPException
 from fastapi.responses import Response
 
-from ..models import Analysis
 from ..security import REPORT_CSP
 from ..store import BlobStore
 
@@ -15,8 +16,9 @@ MEDIA = {"json": "application/json", "stix": "application/json", "misp": "applic
          "html": "text/html; charset=utf-8"}
 
 
-def serve_file(store: BlobStore, analysis: Analysis, name: str, download: bool) -> Response:
-    entry = next((f for f in analysis.files if f["name"] == name), None)
+def serve_file(store: BlobStore, files: list[Any], name: str, download: bool) -> Response:
+    """One of an analysis's files, or one of a batch's combined exports."""
+    entry = next((f for f in files if f["name"] == name), None)
     if entry is None:
         raise HTTPException(404, "no such file")
     if not entry.get("blob"):

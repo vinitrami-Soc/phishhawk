@@ -6,8 +6,8 @@
 <form method="post" action="/" enctype="multipart/form-data" class="card">
   <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
   <div class="drop" data-drop>
-    <label for="file">An .eml or .msg file</label>
-    <input id="file" name="file" type="file" accept=".eml,.msg,message/rfc822,application/vnd.ms-outlook">
+    <label for="files">One or more .eml or .msg files, an .mbox or a .zip</label>
+    <input id="files" name="files" type="file" multiple accept=".eml,.msg,.mbox,.zip,message/rfc822,application/vnd.ms-outlook,application/mbox,application/zip">
   </div>
   <label for="raw">Or paste the raw message (headers and body)</label>
   <textarea id="raw" name="raw" rows="8" spellcheck="false"></textarea>

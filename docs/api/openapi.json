@@ -15,6 +15,21 @@
             ],
             "title": "File"
           },
+          "files": {
+            "anyOf": [
+              {
+                "items": {
+                  "contentMediaType": "application/octet-stream",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Files"
+          },
           "offline": {
             "default": false,
             "title": "Offline",
@@ -577,6 +592,103 @@
         "summary": "List Audit"
       }
     },
+    "/api/v1/batches/{batch_id}": {
+      "get": {
+        "operationId": "get_batch_api_v1_batches__batch_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Batch Api V1 Batches  Batch Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch"
+      }
+    },
+    "/api/v1/batches/{batch_id}/files/{name}": {
+      "get": {
+        "operationId": "get_batch_file_api_v1_batches__batch_id__files__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "title": "Batch Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "download",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Download",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Batch File"
+      }
+    },
     "/api/v1/messages/{message_id}": {
       "delete": {
         "operationId": "delete_message_api_v1_messages__message_id__delete",
@@ -870,6 +982,7 @@
     },
     "/api/v1/submissions": {
       "post": {
+        "description": "One message (a file or pasted text) is one submission. Several (several files, an .mbox or a .zip) are a\nbatch: the answer then holds the batch ID and the submissions' IDs.",
         "operationId": "submit_api_v1_submissions_post",
         "requestBody": {
           "content": {

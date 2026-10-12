@@ -44,7 +44,7 @@ def test_pages_redirect_to_login_and_the_login_form_works(anon):
                          follow_redirects=False)
     assert response.status_code == 303 and response.headers["location"] == "/"
     page = anon.get("/").text
-    assert page.count("<h1") == 1 and 'name="csrf_token"' in page and '<label for="file">' in page
+    assert page.count("<h1") == 1 and 'name="csrf_token"' in page and '<label for="files">' in page
 
 
 def test_the_page_flow_from_submit_to_the_analysis_page(alice, services):
