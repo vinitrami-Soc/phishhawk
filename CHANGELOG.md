@@ -9,6 +9,14 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Mailbox import in the web app.** An admin connects a report mailbox over
+  IMAP, through Microsoft Graph or through the Gmail API, read-only (EXAMINE
+  and BODY.PEEK; GET requests after one token request). The worker polls it
+  every few minutes; each new message is analysed as an upload is, and none is
+  imported twice (by provider ID, SHA-256 and Message-ID). A failed poll shows
+  a reason without the credential, is audited, and backs off up to an hour.
+  Credentials are stored encrypted and never shown again. Setup for each kind:
+  [docs/SERVER.md](docs/SERVER.md#mailboxes).
 - **Batches in the web app.** Several files, an .mbox or a .zip are one batch:
   each message is analysed on its own, the batch page follows them, and when the
   last is done the batch gets combined reports in every format, as one run of
