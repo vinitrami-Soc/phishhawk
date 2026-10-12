@@ -56,9 +56,9 @@ def _reseal_mailbox(mailbox: Mailbox, old_box: Box, new_box: Box) -> bool:
 def rotate(db: Session, store: BlobStore, new_box: Box, actor: str) -> dict[str, int]:
     blobs = sum(store.reseal(blob_id, new_box) for blob_id in _blob_ids(db))
     rows = db.scalars(select(Setting).where(Setting.key.startswith("secret:"))).all()
-    secrets = sum(_reseal_secret(row, store.box, new_box) for row in rows if row.value)
-    secrets += sum(_reseal_mailbox(m, store.box, new_box) for m in db.scalars(select(Mailbox)) if m.secret)
-    counts = {"blobs": blobs, "secrets": secrets}
-    if blobs or secrets:
+    resealed = sum(_reseal_secret(row, store.box, new_box) for row in rows if row.value)
+    resealed += sum(_reseal_mailbox(m, store.box, new_box) for m in db.scalars(select(Mailbox)) if m.secret)
+    counts = {"blobs": blobs, "secrets": resealed}
+    if blobs or resealed:
         audit.record(db, actor, "rotate_key", details=counts)
     return counts

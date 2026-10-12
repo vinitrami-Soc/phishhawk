@@ -8,6 +8,7 @@ import base64
 import os
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..analysis import PROVIDERS, AnalysisOptions
@@ -55,7 +56,11 @@ def trait_key(db: Session, box: Box) -> bytes:
     if existing:
         return base64.b64decode(existing)
     key = os.urandom(32)
-    set_secret(db, box, "trait_key", base64.b64encode(key).decode("ascii"))
+    try:
+        with db.begin_nested():  # another worker may be making it at this moment: the first stored is kept
+            set_secret(db, box, "trait_key", base64.b64encode(key).decode("ascii"))
+    except IntegrityError:
+        return base64.b64decode(get_secret(db, box, "trait_key"))
     return key
 
 
