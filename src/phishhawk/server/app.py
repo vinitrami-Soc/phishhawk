@@ -14,16 +14,18 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.requests import cookie_parser
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .. import __version__
 from ..report.common import printable
-from . import appsettings
+from . import appsettings, auth
 from .auth import LoginThrottle
 from .bodylimit import BATCH_FACTOR, MB, BodyLimit
 from .config import ServerSettings, load_settings
 from .crypto import Box
 from .db import make_engine, make_sessionmaker, transaction
+from .deps import COOKIE
 from .frontend import Frontend
 from .models import Job
 from .processing import Services
@@ -52,7 +54,18 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
         with transaction(services.sessions) as db:
             return BATCH_FACTOR * appsettings.limit(db, services.settings, "max_upload_mb") * MB
 
-    app.add_middleware(BodyLimit, limit=upload_limit)  # innermost: its refusals get the security headers too
+    def logged_in(headers: dict[bytes, bytes]) -> bool:
+        """A valid API token or session cookie, checked before a large body is read."""
+        sent = headers.get(b"authorization", b"").decode("latin-1")
+        cookie = cookie_parser(headers.get(b"cookie", b"").decode("latin-1")).get(COOKIE, "")
+        settings = services.settings
+        with transaction(services.sessions) as db:
+            if sent[:7].lower() == "bearer ":
+                return auth.find_token(db, sent[7:].strip()) is not None
+            return bool(cookie) and auth.find_session(db, cookie, settings.secret_key.get_secret_value(),
+                                                      settings.session_idle_minutes) is not None
+
+    app.add_middleware(BodyLimit, limit=upload_limit, logged_in=logged_in)  # innermost: refusals get the headers
 
     @app.middleware("http")
     async def https_only(request: Request, call_next: Any) -> Response:

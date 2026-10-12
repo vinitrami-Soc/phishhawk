@@ -118,7 +118,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_HOST`, `PHISHHAWK_PORT` | `127.0.0.1`, `8000` | Where the web app listens. |
 | `PHISHHAWK_TLS_CERT`, `PHISHHAWK_TLS_KEY` | empty | Serve HTTPS directly. |
 | `PHISHHAWK_RETENTION_DAYS` | `30` | Days before a message's sensitive data is deleted (see below). |
-| `PHISHHAWK_MAX_UPLOAD_MB` | `25` | Largest message accepted. A whole upload (several files, an .mbox or a .zip) may be four times this, and so may its messages together. |
+| `PHISHHAWK_MAX_UPLOAD_MB` | `25` | Largest message accepted. A whole upload (several files, an .mbox or a .zip) may be four times this, and so may its messages together. Any other request may be 1 MB at most, and an upload over 1 MB is read only from a caller who is logged in. |
 | `PHISHHAWK_MAX_BATCH_MESSAGES` | `500` | Most messages in one batch. |
 | `PHISHHAWK_CAMPAIGN_WINDOW_DAYS` | `90` | Campaigns are found among the messages first seen in this many days. |
 | `PHISHHAWK_SESSION_IDLE_MINUTES` | `480` | A session not used for this long ends. |

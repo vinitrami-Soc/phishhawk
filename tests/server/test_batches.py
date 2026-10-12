@@ -84,6 +84,20 @@ def test_an_archive_bomb_is_refused_before_it_is_inflated():
     assert refused.value.status == 413 and "larger than 1 MB" in str(refused.value)
 
 
+@pytest.mark.parametrize("method", [zipfile.ZIP_DEFLATED, zipfile.ZIP_BZIP2, zipfile.ZIP_LZMA])
+def test_a_damaged_archive_member_is_refused_not_a_server_error(method):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w", method) as z:
+        z.writestr("a.eml", b"Subject: a\n\n" + bytes(range(256)) * 40)
+    data = bytearray(archive.getvalue())
+    start = data.index(b"PK\x03\x04") + 30 + len("a.eml")
+    for i in range(start + 10, start + 60):  # the compressed stream, not the headers
+        data[i] ^= 0xFF
+    with pytest.raises(batches.BatchError) as refused:
+        _split([bytes(data)])
+    assert refused.value.status == 415 and "could not be read" in str(refused.value)
+
+
 def test_an_archive_of_countless_entries_is_refused_before_it_is_read():
     with pytest.raises(batches.BatchError) as refused:
         _split([_zip([("%d.txt" % i, b"") for i in range(2000)])], max_messages=500)
