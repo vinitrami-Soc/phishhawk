@@ -93,6 +93,27 @@ def uidvalidity(connection: imaplib.IMAP4) -> int:
     return int(value) if isinstance(value, bytes) and value.isdigit() else 0
 
 
+LITERAL_SLACK = 64 * 1024  # a server's RFC822.SIZE and the message it then sends may differ a little
+
+
+def _limit_literals(connection: imaplib.IMAP4, limit: int) -> None:
+    """imaplib reads a literal of whatever size the server announces, so a server that said a message was
+    small could still send gigabytes as one. A literal over the limit now stops the connection unread."""
+    read = getattr(connection, "_phishhawk_read", None) or getattr(connection, "read", None)
+    if read is None:
+        return
+
+    def bounded(size: int) -> bytes:
+        if size > limit:
+            raise imaplib.IMAP4.abort("the server sent %d bytes for one message, more than the %d it may"
+                                      % (size, limit))
+        data: bytes = read(size)
+        return data
+
+    setattr(connection, "_phishhawk_read", read)  # noqa: B010 - set once, so the wrappers do not pile up
+    setattr(connection, "read", bounded)  # noqa: B010 - imaplib calls self.read for every literal
+
+
 def fetch_uid(connection: imaplib.IMAP4, uid: int, max_bytes: int) -> bytes | Exception:
     """One message, or why it was not fetched: its size first, then BODY.PEEK[], so it is not marked read."""
     try:
@@ -100,6 +121,7 @@ def fetch_uid(connection: imaplib.IMAP4, uid: int, max_bytes: int) -> bytes | Ex
         size = _SIZE_RE.search(data[0] if data and isinstance(data[0], bytes) else b"")
         if size and int(size.group(1)) > max_bytes:
             return ValueError("larger than %d MB" % (max_bytes // (1024 * 1024)))
+        _limit_literals(connection, max_bytes + LITERAL_SLACK)
         status, data = connection.uid("FETCH", str(uid), "(BODY.PEEK[])")
         message = next((part[1] for part in data or [] if isinstance(part, tuple) and len(part) > 1), None)
         if status != "OK" or not isinstance(message, bytes):
