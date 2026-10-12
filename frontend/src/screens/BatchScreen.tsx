@@ -142,7 +142,7 @@ export default function BatchScreen({ id }: { id: number }) {
 
       <Card className="grid gap-4 p-5 sm:p-6">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <p className="text-sm text-ink" aria-live="polite">
+          <div className="text-sm text-ink" aria-live="polite">
             {batch.status === 'done' ? (
               'Every message is done.'
             ) : batch.status === 'failed' ? (
@@ -152,7 +152,7 @@ export default function BatchScreen({ id }: { id: number }) {
             ) : (
               <TextShimmer duration={1.2}>Analyzing the messages</TextShimmer>
             )}
-          </p>
+          </div>
           <span className="inline-flex items-center gap-1 font-mono text-sm tabular-nums text-ink-dim">
             <SlidingNumber value={finished} /> / {batch.total}
           </span>
