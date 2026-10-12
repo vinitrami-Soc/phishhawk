@@ -93,6 +93,12 @@ def normalise_subject(subject: str) -> str:
     return text if len(text) >= MIN_SUBJECT else ""
 
 
+def normalise_display_name(name: str) -> str:
+    """Case and spacing folded; too short to mean anything is ""."""
+    text = " ".join((name or "").lower().split())
+    return text if len(text) >= 4 else ""
+
+
 def _shared_service(a: Analysis, base: str) -> bool:
     return (not base or "." not in base or base in SHORTENERS or base in FREEMAIL or base in BULK_MAIL
             or base in RESERVED_DOMAINS or base in WEB_PLUMBING or a.is_trusted_domain(base))
@@ -200,8 +206,8 @@ def _traits(a: Analysis) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     subject = normalise_subject(a.subject)
     if subject:
         found["subject"].add(subject)
-    display = " ".join((a.from_display or "").lower().split())
-    if len(display) >= 4:
+    display = normalise_display_name(a.from_display)
+    if display:
         found["display name"].add(display)
     if a.originating_ip:
         found["originating IP"].add(a.originating_ip)
