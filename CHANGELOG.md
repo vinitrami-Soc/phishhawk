@@ -9,6 +9,24 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Batches in the web app.** Several files, an .mbox or a .zip are one batch:
+  each message is analysed on its own, the batch page follows them, and when the
+  last is done the batch gets combined reports in every format, as one run of
+  the CLI over them all would write. An .mbox is split exactly as the CLI reads
+  it; a .zip never inflates past the limits, and no name from it is ever used.
+- **Campaigns in the web app.** After each analysis the messages of the last 90
+  days are grouped as `phishhawk campaign` groups them, from the summary kept
+  for each message, so a campaign outlives its messages' content. The subject
+  and display name are shown while a message's content is kept, "same subject"
+  after that. For 500 bundled and synthetic messages the campaigns are exactly
+  the CLI's.
+- **Postgres and several workers.** `PHISHHAWK_DATABASE_URL=postgresql://...`
+  (the `postgres` extra, in the Docker image too) lets several
+  `phishhawk server worker` processes share the queue.
+- **The queue's filters**: source, who submitted it, and the days between.
+- `campaign.correlate_records()`: `correlate()` on stored records instead of
+  analyses. The CLI's output is unchanged.
+
 - **The web app's own frontend.** The browser app built in Google AI Studio
   is in `frontend/` and the Docker image serves it at `/app/`; the server's
   address opens it, and the built-in pages stay as the backup and admin
@@ -112,6 +130,9 @@ the JSON and STIX output are the public interface.
 
 ### Changed
 
+- Analysis children fork from a process that already holds the engine: about
+  0.07 s per message instead of 0.6, with the same limits: 500 messages,
+  their combined reports and campaigns took 44 s on a four-core machine.
 - **Recommended actions no longer read as automatic.** "Purge the message
   from every mailbox" is now "Search every mailbox for copies ... then
   remove confirmed copies through your approved workflow", and indicators
@@ -137,6 +158,11 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- An uploaded message larger than 1 MB was written to a temporary file in
+  clear while the request was read; uploads now stay in memory, and a body
+  larger than the limit is refused before it is read.
+- A job that crashed, or whose worker died three times, left its message
+  "running" for good; it now fails with the reason.
 - The printed HTML report shows the score breakdown (high, medium and low,
   with their points) again. An A4 page is narrower than 900 px, so the
   tablet layout set it beside the ring, past the edge of the printed

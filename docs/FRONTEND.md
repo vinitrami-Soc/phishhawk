@@ -13,7 +13,7 @@ the server's address (`/`) opens it; the built-in pages stay at `/login`,
 
 - [This repository's frontend](#this-repositorys-frontend)
 - [The rules](#the-rules)
-- [The API in five calls](#the-api-in-five-calls)
+- [The API in five calls, and batches and campaigns](#the-api-in-five-calls-and-batches-and-campaigns)
 - [Build and deploy](#build-and-deploy)
 - [A starting prompt for Google AI Studio](#a-starting-prompt-for-google-ai-studio)
 
@@ -62,7 +62,7 @@ that text to your analysts, so it is part of the defence.
 5. **Use relative URLs** (`/api/v1/...`), so the browser sends the session
    cookie, and send the CSRF token on every request that changes something.
 
-## The API in five calls
+## The API in five calls, and batches and campaigns
 
 The full description is [docs/api/openapi.json](api/openapi.json). Errors are
 JSON: `{"error": "<code>", "detail": "<text>"}`.
@@ -71,12 +71,23 @@ JSON: `{"error": "<code>", "detail": "<text>"}`.
 |---|---|---|
 | On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf"}`; keep `csrf` in memory. |
 | Log in | `POST /api/v1/session` with JSON `{"username", "password"}` | 200: `{"csrf"}` and the session cookie. 401: wrong details. 429: wait (the `Retry-After` header says how long). |
-| Submit | `POST /api/v1/submissions`, multipart: `file` (an .eml or .msg) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202: `{"id", "status", "error", "analysis_id", "submitted_at"}`. |
+| Submit | `POST /api/v1/submissions`, multipart: `files` (one or more .eml, .msg, .mbox or .zip files) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202. One message: `{"id", "status", "error", "analysis_id", "submitted_at", "batch_id": null}`. Several: a batch, `{"batch_id", "total", "submission_ids", "skipped"}` (`skipped`: files in a .zip that are not messages). 413: too large or too many messages, 415: not a message; `detail` says which. |
 | Wait | `GET /api/v1/submissions/{id}` every second or two | Until `status` is `done` (then `analysis_id` is set) or `failed` (then `error` says why). |
 | Show | `GET /api/v1/analyses/{id}` | `verdict`, `score`, `report_id`, `sha256`, `sender`, `subject`, `submitted_by` (a user ID) and `submitted_by_name`, `techniques`, `lookups`, `hold`, `files` (each with `name`, `kind`, `type`, `size`, `sha256`, `available`) and `report` (the full JSON report while the message is kept). |
 
-Also useful: `GET /api/v1/analyses?q=&verdict=&offset=` (the queue, 50 at a
-time; `q` matches a SHA-256, a report ID or an indicator), downloads at
+Batches and campaigns:
+
+| Call | Answer |
+|---|---|
+| `GET /api/v1/batches/{id}`, every few seconds | `status` (`running`, `finalizing`, `done` or `failed`), `total`, `counts` (`queued`, `running`, `done`, `failed`), `verdicts`, `messages` (in upload order: `position`, `status`, `error`, `analysis_id`, `verdict`, `score`, `sender`, `sender_domain`) and, once `done`, `files`: the combined reports, like an analysis's. `files_deleted_at` is set once they are gone. |
+| `GET /api/v1/batches/{id}/files/{name}` | One combined report. The HTML one opens sandboxed, as an analysis's does; `?download=1` downloads any. |
+| `GET /api/v1/campaigns` | Largest first: `id`, `size`, `first_seen`, `last_seen`, `verdicts`, `worst_verdict`, `senders`, `recipient_count`, and `shared` (`kind`, `value`, `messages`); a shared `subject` or `display name` has `value: null` here. |
+| `GET /api/v1/campaigns/{id}` | The same, with `shared` values in clear where known (`null` means "same subject", the messages' content being gone), `messages` (`analysis_id`, `sha256`, `verdict`, `score`, `sender`, `subject` or `null`), `recipients` and `recipients_complete`. |
+
+Also useful: `GET /api/v1/analyses?q=&verdict=&source=&user=&since=&until=&offset=`
+(the queue, 50 at a time; `q` matches a SHA-256, a report ID or an indicator;
+`source` is `upload`, `paste` or `batch`; `user` a user ID; `since` and `until`
+are days, `YYYY-MM-DD`, both included), downloads at
 `/api/v1/analyses/{id}/files/{name}?download=1`, `DELETE /api/v1/session` to
 log out, and `GET /api/v1/audit`. Settings, users and tokens are admin calls;
 the built-in pages already cover them.
