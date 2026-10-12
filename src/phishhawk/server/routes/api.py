@@ -3,6 +3,7 @@ call. Every route is in the role matrix test (tests/server/test_rbac.py)."""
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
@@ -233,23 +234,44 @@ def patch_settings(request: Request, db: DB, actor: Admin, body: SettingsPatch) 
     return appsettings.public_view(db, s.box, s.settings)
 
 
+DOMAIN = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]")
+
+
+def domain(value: str) -> str:
+    """A domain as the engine compares it: lower case, IDNA (xn--), no final dot; 422 for anything else."""
+    name = value.strip().lower().rstrip(".")
+    try:
+        name = name.encode("idna").decode("ascii")
+    except UnicodeError:
+        name = ""
+    if len(name) > 253 or not DOMAIN.fullmatch(name):
+        raise HTTPException(422, "not a domain: %s" % value.strip()[:100])
+    return name
+
+
 def apply_settings(db: DB, s: Any, body: SettingsPatch) -> list[str]:
-    changed: list[str] = []
+    """Checks everything first, so a rejected value leaves every setting as it was."""
+    lists: dict[str, list[str]] = {}
     for name in appsettings.LISTS:
         value = getattr(body, name)
         if value is not None:
-            appsettings.set_value(db, name, sorted({v.strip().lower() for v in value if v.strip()}))
-            changed.append(name)
-    for name in appsettings.LIMITS:
-        value = getattr(body, name)
-        if value is not None:
-            if not 1 <= value <= 100000:
-                raise HTTPException(422, "%s must be between 1 and 100000" % name)
-            appsettings.set_value(db, name, value)
-            changed.append(name)
-    for provider, key in (body.keys or {}).items():
+            values = [v for v in value if v.strip()]
+            lists[name] = sorted({v.strip().lower() if name == "providers" else domain(v) for v in values})
+    limits = {name: getattr(body, name) for name in appsettings.LIMITS if getattr(body, name) is not None}
+    for name, number in limits.items():
+        if not 1 <= number <= 100000:
+            raise HTTPException(422, "%s must be between 1 and 100000" % name)
+    for provider in body.keys or {}:
         if provider not in appsettings.KEYED:
             raise HTTPException(422, "no API key for %s" % provider)
+    changed: list[str] = []
+    for name, values in lists.items():
+        appsettings.set_value(db, name, values)
+        changed.append(name)
+    for name, number in limits.items():
+        appsettings.set_value(db, name, number)
+        changed.append(name)
+    for provider, key in (body.keys or {}).items():
         appsettings.set_secret(db, s.box, "key:" + provider, key.strip())
         changed.append("key:" + provider)  # the key itself is never audited
     return changed

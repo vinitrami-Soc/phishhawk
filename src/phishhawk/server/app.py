@@ -9,10 +9,12 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select, text
+from starlette.middleware.gzip import GZipMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from .. import __version__
 from ..report.common import printable
@@ -45,6 +47,19 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     app.state.templates = templates
 
     @app.middleware("http")
+    async def https_only(request: Request, call_next: Any) -> Response:
+        """With Secure cookies on, a browser that reaches the server over plain HTTP, and not through a
+        proxy, is sent to HTTPS; a proxy redirects its own HTTP port. Browsers accept Secure cookies over
+        HTTP on this machine's own names, so those stay, as does the health check."""
+        host = request.url.hostname or ""
+        if (services.settings.cookie_secure and request.url.scheme == "http" and request.url.path != "/healthz"
+                and "x-forwarded-proto" not in request.headers
+                and host not in LOCAL_NAMES and not host.endswith(".localhost")):
+            return RedirectResponse(str(request.url.replace(scheme="https")), status_code=308)
+        response: Response = await call_next(request)
+        return response
+
+    @app.middleware("http")
     async def security_headers(request: Request, call_next: Any) -> Response:
         response: Response = await call_next(request)
         response.headers.setdefault("Content-Security-Policy", APP_CSP)
@@ -70,6 +85,10 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     async def invalid(request: Request, exc: RequestValidationError) -> Response:
         return JSONResponse({"error": "invalid", "detail": "the request is not valid"}, status_code=422)
 
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots() -> PlainTextResponse:
+        return PlainTextResponse("User-agent: *\nDisallow: /\n")
+
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
         with transaction(services.sessions) as db:
@@ -84,9 +103,14 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
 
     app.include_router(api.router)
     app.include_router(pages.router)
-    app.mount("/static", StaticFiles(directory=str(files("phishhawk.server") / "static")), name="static")
+    # files only: they hold no secret, so compressing them cannot leak one (BREACH); API answers stay as they are
+    static = StaticFiles(directory=str(files("phishhawk.server") / "static"))
+    app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
     if services.settings.frontend_dir:
-        app.mount("/app", Frontend(services.settings.frontend_dir), name="frontend")
+        app.mount("/app", GZipMiddleware(Frontend(services.settings.frontend_dir), minimum_size=1024),
+                  name="frontend")
+    # outermost: the scheme and the client's address come from a trusted reverse proxy's X-Forwarded-* headers
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=services.settings.trusted_proxies)
     return app
 
 
@@ -99,6 +123,7 @@ def openapi_json(app: FastAPI) -> str:
     return json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
+LOCAL_NAMES = ("localhost", "127.0.0.1", "::1", "[::1]")
 ERROR_CODES = {400: "bad_request", 401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict",
                410: "gone", 413: "too_large", 415: "unsupported", 422: "invalid", 429: "throttled"}
 

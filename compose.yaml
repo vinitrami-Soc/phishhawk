@@ -17,6 +17,8 @@ services:
     environment:
       # false only to test over plain HTTP with a client other than a browser (CI does)
       PHISHHAWK_COOKIE_SECURE: ${PHISHHAWK_COOKIE_SECURE:-true}
+      # a reverse proxy on this machine or on a Docker network reaches the container from these addresses
+      PHISHHAWK_TRUSTED_PROXIES: ${PHISHHAWK_TRUSTED_PROXIES:-127.0.0.1,172.16.0.0/12}
       # your own frontend's build, served at /app/ (docs/FRONTEND.md), with the mount below
       # PHISHHAWK_FRONTEND_DIR: /frontend
     volumes:

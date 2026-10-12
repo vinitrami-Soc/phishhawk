@@ -38,6 +38,35 @@ Open <http://127.0.0.1:8000> and log in. Compose publishes the port on this
 machine only. To reach it from other machines, put a reverse proxy with TLS
 (Caddy or nginx) in front of it; do not publish port 8000 on a network.
 
+## HTTPS through a reverse proxy
+
+On this machine, Caddy gets a certificate, sends plain HTTP to HTTPS and passes
+the rest on, with this `Caddyfile`:
+
+```
+phishhawk.example.org {
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+The server believes a proxy's `X-Forwarded-Proto` and `X-Forwarded-For` only
+from the addresses in `PHISHHAWK_TRUSTED_PROXIES`. Compose trusts this machine
+and Docker's networks (`127.0.0.1,172.16.0.0/12`), where a proxy on this
+machine or in another container comes from. With that:
+
+- pages reached over HTTPS carry `Strict-Transport-Security`, so the browser
+  uses HTTPS from then on;
+- the login throttle slows down each person's own address, not the proxy's
+  (which would slow down everyone);
+- a browser that reaches the server over plain HTTP by any name other than
+  `localhost` or `127.0.0.1`, without a proxy, is redirected to HTTPS (the
+  health check at `/healthz` is not).
+
+Every answer carries `X-Robots-Tag: noindex, nofollow` and `/robots.txt`
+disallows everything, so a server reachable from the internet stays out of
+search engines. The frontend's files are sent compressed; its hashed files in
+`/app/assets/` are cached for a year and its page is checked on every load.
+
 **Keep a copy of `secrets/phishhawk_encryption_key` somewhere safe.** Every
 stored message and report is encrypted with it. Without it, nothing in a backup
 can be read, by you or anyone else.
@@ -87,6 +116,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_SESSION_IDLE_MINUTES` | `480` | A session not used for this long ends. |
 | `PHISHHAWK_ANALYSIS_MEMORY_MB`, `PHISHHAWK_ANALYSIS_CPU_SECONDS` | `2048`, `120` | Limits for the process that analyses one message. A message that exceeds them fails; the server does not. |
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
+| `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
 | `PHISHHAWK_FRONTEND_DIR` | empty | The build of your own frontend, served at `/app/`; see [FRONTEND.md](FRONTEND.md). |
 
 An admin can change the retention period and the upload limit on the Settings
