@@ -65,6 +65,7 @@ class FakeImapServer:
         self.commands: list[str] = []  # every command as received, the password masked
         self.violations: list[str] = []
         self.drop_after_fetches: int | None = None  # hang up after this many message fetches
+        self.understate_sizes = False  # a hostile server: RFC822.SIZE says 100 bytes, whatever it then sends
         self.fetches = 0
         self._lock = threading.Lock()
         self._listener = socket.create_server(("127.0.0.1", 0))
@@ -196,7 +197,8 @@ class FakeImapServer:
                 found = [(seq, raw) for seq, (uid, raw) in enumerate(messages, 1) if uid == int(uid_text)]
             if items == b"(RFC822.SIZE)":
                 for seq, raw in found:
-                    send(b"* %d FETCH (UID %s RFC822.SIZE %d)\r\n" % (seq, uid_text, len(raw)))
+                    size = 100 if self.understate_sizes else len(raw)
+                    send(b"* %d FETCH (UID %s RFC822.SIZE %d)\r\n" % (seq, uid_text, size))
                 return b"OK FETCH completed"
             if items == b"(BODY.PEEK[])":
                 if self.drop_after_fetches is not None and self.fetches >= self.drop_after_fetches:

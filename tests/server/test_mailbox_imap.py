@@ -164,6 +164,22 @@ def test_a_message_over_the_limit_is_skipped_and_counted(services, server):
     assert mailbox.poll(services, box) == {"imported": 0, "duplicates": 0, "skipped": 0}  # skipped for good
 
 
+def test_a_server_that_understates_a_size_cannot_make_the_poll_read_more_than_the_limit(services, server,
+                                                                                         monkeypatch):
+    """imaplib reads a literal whatever its size: a hostile server could send gigabytes as one message."""
+    with transaction(services.sessions) as s:
+        appsettings.set_value(s, "max_upload_mb", 1)
+    server.understate_sizes = True
+    server.add(build_eml(subject="Large", text="x" * (3 * 1024 * 1024)))
+    reads, read = [], imaplib.IMAP4.read
+    monkeypatch.setattr(imaplib.IMAP4, "read", lambda self, size: reads.append(size) or read(self, size))
+    box = _mailbox(services, server)
+    assert mailbox.poll(services, box) == {"imported": 0, "duplicates": 0, "skipped": 0}
+    assert max(reads, default=0) <= 1024 * 1024 + 64 * 1024
+    state = _state(services, box)
+    assert state["status"] == "error" and "more than" in state["error"]
+
+
 def test_a_dropped_connection_keeps_the_cursor_at_the_last_message_handled(services, server):
     uids = [server.add(report(number)) for number in range(5)]
     box = _mailbox(services, server)
