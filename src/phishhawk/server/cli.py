@@ -153,7 +153,7 @@ def serve(settings: ServerSettings) -> int:
     try:
         uvicorn.run("phishhawk.server.app:create_app", factory=True, host=settings.host, port=settings.port,
                     ssl_certfile=settings.tls_cert or None, ssl_keyfile=settings.tls_key or None,
-                    server_header=False)
+                    server_header=False, proxy_headers=False)  # the app reads them (PHISHHAWK_TRUSTED_PROXIES)
     finally:
         worker.terminate()
         worker.join(30)

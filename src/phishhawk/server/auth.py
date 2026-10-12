@@ -137,11 +137,18 @@ def find_token(db: DbSession, token: str) -> Actor | None:
 
 class LoginThrottle:
     """After three failures for a username or an address, each new attempt
-    waits twice as long as the last (1 s, 2 s, 4 s ... up to 5 minutes)."""
+    waits twice as long as the last (1 s, 2 s, 4 s ... up to 5 minutes). It
+    remembers at most `limit` names and addresses, forgetting the one that
+    failed longest ago first, so a flood of made-up usernames cannot use up
+    the memory."""
 
-    def __init__(self, clock: object = time.monotonic) -> None:
+    def __init__(self, clock: object = time.monotonic, limit: int = 10000) -> None:
         self._clock = clock
+        self._limit = limit
         self._failures: dict[str, tuple[int, float]] = {}
+
+    def __len__(self) -> int:
+        return len(self._failures)
 
     def wait(self, *keys: str) -> float:
         now = self._clock()  # type: ignore[operator]
@@ -150,9 +157,11 @@ class LoginThrottle:
     def failed(self, *keys: str) -> None:
         now = self._clock()  # type: ignore[operator]
         for key in keys:
-            count = self._failures.get(key, (0, 0.0))[0] + 1
+            count = self._failures.pop(key, (0, 0.0))[0] + 1  # popped, so it moves to the newest end
             delay = 0.0 if count < 3 else min(2.0 ** (count - 3), 300.0)
             self._failures[key] = (count, now + delay)
+        while len(self._failures) > self._limit:
+            del self._failures[next(iter(self._failures))]
 
     def succeeded(self, *keys: str) -> None:
         for key in keys:

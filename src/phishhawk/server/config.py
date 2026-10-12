@@ -33,6 +33,7 @@ class ServerSettings(BaseSettings):
     analysis_cpu_seconds: int = 120
     cookie_secure: bool = True  # False only for plain-HTTP local testing
     frontend_dir: str = ""  # a frontend's build, served at /app/ (docs/FRONTEND.md)
+    trusted_proxies: str = "127.0.0.1"  # reverse proxies (addresses or networks) whose X-Forwarded-* count
 
     @property
     def db_url(self) -> str:

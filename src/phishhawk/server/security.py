@@ -13,5 +13,6 @@ BASE_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "X-Robots-Tag": "noindex, nofollow",
 }
 HSTS = "max-age=31536000"
