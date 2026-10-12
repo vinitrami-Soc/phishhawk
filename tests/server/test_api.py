@@ -16,7 +16,7 @@ def _analysed(client, services, name="sample_bec_smuggling.eml"):
     response = client.post("/api/v1/submissions", files={"file": ("m.eml", _raw(name), "message/rfc822")},
                            data={"offline": "true"})
     assert response.status_code == 202, response.text
-    assert set(response.json()) == {"id", "status", "error", "analysis_id", "submitted_at"}
+    assert set(response.json()) == {"id", "status", "error", "analysis_id", "submitted_at", "batch_id"}
     submission_id = response.json()["id"]
     assert worker.run_one(services)
     status = client.get("/api/v1/submissions/%d" % submission_id).json()

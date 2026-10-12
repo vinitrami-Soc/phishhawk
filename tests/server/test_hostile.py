@@ -38,7 +38,14 @@ def test_no_page_turns_attacker_text_into_markup(alice, services):
     worker.run_one(services)
     analysis = alice.get("/api/v1/submissions/%d" % response.json()["id"]).json()["analysis_id"]
     assert analysis, "the hostile message was not analysed"
-    for path in ("/", "/queue", "/analyses/%d" % analysis, "/audit", "/queue?q=" + P):
+    other = _hostile_eml().replace(b"evil-login", b"evil-other")
+    batch = alice.post("/api/v1/submissions", data={"offline": "true"},
+                       files=[("files", (P + ".eml", _hostile_eml(), "message/rfc822")),
+                              ("files", (P + ".eml", other, "message/rfc822"))])
+    for _ in range(2):
+        worker.run_one(services)
+    for path in ("/", "/queue", "/analyses/%d" % analysis, "/audit", "/queue?q=" + P,
+                 "/batches/%d" % batch.json()["batch_id"]):
         page = alice.get(path).text
         assert "<svg" not in page and "onload=alert" not in page.replace("onload=alert(1)&gt;", ""), path
         parser = _Tags()

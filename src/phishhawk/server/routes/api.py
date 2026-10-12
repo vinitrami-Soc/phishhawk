@@ -11,9 +11,10 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from .. import appsettings, audit, auth, intake, jobs, retention, views
+from .. import appsettings, audit, auth, batches, intake, jobs, retention, views
+from ..bodylimit import BATCH_FACTOR
 from ..deps import COOKIE, DB, Admin, CurrentActor, secret, services
-from ..models import Analysis, ApiToken, AuditRecord, Message, Submission, User, utcnow
+from ..models import Analysis, ApiToken, AuditRecord, Batch, Message, Submission, User, utcnow
 from .files import serve_file
 
 router = APIRouter(prefix="/api/v1")
@@ -79,22 +80,42 @@ def delete_session(request: Request, db: DB, actor: CurrentActor) -> Response:
 @router.post("/submissions", status_code=202)
 async def submit(request: Request, db: DB, actor: CurrentActor,
                  file: Annotated[UploadFile | None, File()] = None,
+                 files: Annotated[list[UploadFile] | None, File()] = None,
                  raw: Annotated[str, Form()] = "", offline: Annotated[bool, Form()] = False) -> dict[str, Any]:
+    """One message (a file or pasted text) is one submission. Several (several files, an .mbox or a .zip) are a
+    batch: the answer then holds the batch ID and the submissions' IDs."""
+    return accept_upload(request, db, actor, await read_uploads(request, db, [file, *(files or [])]), raw, offline)
+
+
+async def read_uploads(request: Request, db: DB, uploads: list[UploadFile | None]) -> list[bytes]:
+    """Every uploaded file's bytes; a form's empty file field is no file."""
+    limit = BATCH_FACTOR * appsettings.limit(db, services(request).settings, "max_upload_mb") * MB
+    return [await f.read(limit + 1) for f in uploads if f is not None and (f.filename or f.size)]
+
+
+def accept_upload(request: Request, db: DB, actor: Any, uploads: list[bytes], raw: str,
+                  offline: bool) -> dict[str, Any]:
     s = services(request)
-    data = await file.read(appsettings.limit(db, s.settings, "max_upload_mb") * MB + 1) if file else raw.encode()
+    limit = appsettings.limit(db, s.settings, "max_upload_mb") * MB
+    common = {"user_id": actor.user_id, "actor": actor.label, "offline": offline, "max_bytes": limit}
     try:
-        submission = intake.accept(db, s.store, data, source="upload" if file else "paste", user_id=actor.user_id,
-                                   actor=actor.label, offline=offline,
-                                   max_bytes=appsettings.limit(db, s.settings, "max_upload_mb") * MB)
-    except intake.IntakeError as exc:
+        if not uploads:
+            return submission_view(db, intake.accept(db, s.store, raw.encode(), source="paste", **common))
+        split = batches.split(uploads, max_messages=appsettings.limit(db, s.settings, "max_batch_messages"),
+                              max_message_bytes=limit, max_total=BATCH_FACTOR * limit)
+        if len(split.messages) == 1:
+            return submission_view(db, intake.accept(db, s.store, split.messages[0], source="upload",
+                                                     known_message=True, **common))
+        return batches.created_view(db, batches.accept(db, s.store, split.messages, **common), split.skipped)
+    except (intake.IntakeError, batches.BatchError) as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    return submission_view(db, submission)
 
 
 def submission_view(db: DB, submission: Submission) -> dict[str, Any]:
     analysis = db.scalars(select(Analysis.id).where(Analysis.submission_id == submission.id)).first()
     return {"id": submission.id, "status": submission.status, "error": submission.error,
-            "analysis_id": analysis, "submitted_at": submission.submitted_at.isoformat()}
+            "analysis_id": analysis, "submitted_at": submission.submitted_at.isoformat(),
+            "batch_id": submission.batch_id}
 
 
 @router.get("/submissions/{submission_id}")
@@ -103,6 +124,14 @@ def get_submission(db: DB, actor: CurrentActor, submission_id: int) -> dict[str,
     if submission is None:
         raise HTTPException(404, "no such submission")
     return submission_view(db, submission)
+
+
+@router.get("/batches/{batch_id}")
+def get_batch(db: DB, actor: CurrentActor, batch_id: int) -> dict[str, Any]:
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "no such batch")
+    return batches.view(db, batch, views.usernames(db).get(batch.user_id or 0))
 
 
 @router.get("/analyses")

@@ -6,7 +6,7 @@ import pytest
 from phishhawk.server import worker
 
 from .serverkit import login
-from conftest import sample
+from conftest import build_eml, sample
 
 # (method, path, (anonymous, analyst, admin, read token, submit token))
 MATRIX = [
@@ -14,6 +14,7 @@ MATRIX = [
     ("GET", "/api/v1/analyses", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/analyses/{analysis}", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/submissions/{submission}", (401, 200, 200, 200, 200)),
+    ("GET", "/api/v1/batches/{batch}", (401, 200, 200, 200, 200)),
     ("POST", "/api/v1/analyses/{analysis}/reanalyze", (401, 202, 202, 403, 202)),
     ("GET", "/api/v1/messages/{message}/raw", (401, 403, 200, 403, 403)),
     ("DELETE", "/api/v1/messages/{message}", (401, 403, 200, 403, 403)),
@@ -28,6 +29,7 @@ MATRIX = [
     ("GET", "/settings", (303, 403, 200, 403, 403)),
     ("GET", "/users", (303, 403, 200, 403, 403)),
     ("GET", "/queue", (303, 200, 200, 200, 200)),
+    ("GET", "/batches/{batch}", (303, 200, 200, 200, 200)),
 ]
 BODIES = {("PATCH", "/api/v1/settings"): {"retention_days": 20},
           ("POST", "/api/v1/users"): {"username": "carol", "password": "another long password", "role": "analyst"}}
@@ -46,7 +48,10 @@ def world(app, services, admin):
     tokens = {scope: admin.post("/api/v1/tokens", json={"name": scope, "scope": scope,
                                                         "user_id": users["admin"]}).json()["token"]
               for scope in ("read", "submit")}
-    return {"analysis": analysis, "message": message, "submission": submitted["id"], "tokens": tokens}
+    two = [("files", ("m%d.eml" % i, build_eml(subject="Batch %d" % i), "message/rfc822")) for i in range(2)]
+    batch = admin.post("/api/v1/submissions", files=two, data={"offline": "true"}).json()["batch_id"]
+    return {"analysis": analysis, "message": message, "submission": submitted["id"], "tokens": tokens,
+            "batch": batch}
 
 
 @pytest.mark.parametrize("method, path, expected", MATRIX)

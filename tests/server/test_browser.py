@@ -46,7 +46,7 @@ def test_an_analyst_works_a_message_with_the_keyboard(browser, tmp_path):
         page.keyboard.type(PASSWORD)
         page.keyboard.press("Enter")
         page.wait_for_url(server.base + "/")
-        page.set_input_files("#file", sample("sample_phish.eml"))  # the file picker is the system's own
+        page.set_input_files("#files", sample("sample_phish.eml"))  # the file picker is the system's own
         _tab_to(page, "raw")
         page.keyboard.press("Tab")  # the offline box
         page.keyboard.press("Space")

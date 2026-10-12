@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Batch {{ b.id }} · PhishHawk{% endblock %}
+{% block head %}{% if b.status in ('running', 'finalizing') %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block main %}
+<h1>Batch {{ b.id }}</h1>
+<p role="status">{{ b.total }} messages: {{ b.counts.done }} analysed, {{ b.counts.failed }} failed, {{ b.counts.queued + b.counts.running }} waiting{% if b.offline %}, offline{% endif %}.{% if b.status in ('running', 'finalizing') %} This page refreshes until the batch is done.{% endif %}</p>
+<table class="list">
+  <caption class="sr-only">The batch's messages, in the order they were uploaded</caption>
+  <thead><tr><th scope="col">#</th><th scope="col">Status</th><th scope="col">Verdict</th><th scope="col">Score</th><th scope="col">Sender domain</th><th scope="col"><span class="sr-only">Analysis</span></th></tr></thead>
+  <tbody>
+  {% for m in b.messages %}
+  <tr>
+    <td data-label="#">{{ m.position }}</td>
+    <td data-label="Status">{% if m.status == 'failed' %}failed: {{ m.error|printable }}{% else %}{{ m.status }}{% endif %}</td>
+    <td data-label="Verdict">{% if m.verdict %}{% with verdict=m.verdict %}{% include "_verdict.html" %}{% endwith %}{% endif %}</td>
+    <td data-label="Score">{{ m.score if m.score is not none else '' }}</td>
+    <td data-label="Sender domain">{{ m.sender_domain|printable }}</td>
+    <td>{% if m.analysis_id %}<a href="/analyses/{{ m.analysis_id }}">Open<span class="sr-only"> message {{ m.position }}</span></a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

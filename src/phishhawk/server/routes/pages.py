@@ -9,14 +9,13 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from .. import appsettings, auth, intake, views
+from .. import appsettings, auth, views
 from ..app import html_response
 from ..deps import COOKIE, DB, Admin, CurrentActor, optional_actor, services
 from ..models import Analysis, ApiToken, AuditRecord, Submission, User
 from . import api
 
 router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
-MB = 1024 * 1024
 VERDICTS = ("NO STRONG INDICATORS", "SUSPICIOUS", "LIKELY PHISHING", "MALICIOUS")
 
 
@@ -60,19 +59,23 @@ def home(request: Request, db: DB, actor: CurrentActor) -> Response:
 
 @router.post("/")
 async def submit(request: Request, db: DB, actor: CurrentActor,
-                 file: Annotated[UploadFile | None, File()] = None, raw: Annotated[str, Form()] = "",
+                 files: Annotated[list[UploadFile] | None, File()] = None, raw: Annotated[str, Form()] = "",
                  offline: Annotated[bool, Form()] = False) -> Response:
-    s = services(request)
-    limit = appsettings.limit(db, s.settings, "max_upload_mb") * MB
-    data = await file.read(limit + 1) if file is not None and file.filename else raw.encode()
     try:
-        submission = intake.accept(db, s.store, data, source="upload" if file and file.filename else "paste",
-                                   user_id=actor.user_id, actor=actor.label, offline=offline, max_bytes=limit)
-    except intake.IntakeError as exc:
-        recent = views.listing(db, s.store)[:10]
-        return html_response(request, "home.html", {"actor": actor, "recent": recent, "error": str(exc)},
-                             exc.status)
-    return _see_other("/submissions/%d" % submission.id)
+        outcome = api.accept_upload(request, db, actor, await api.read_uploads(request, db, list(files or [])),
+                                    raw, offline)
+    except HTTPException as exc:
+        recent = views.listing(db, services(request).store)[:10]
+        return html_response(request, "home.html", {"actor": actor, "recent": recent, "error": exc.detail},
+                             exc.status_code)
+    if "submission_ids" in outcome:
+        return _see_other("/batches/%d" % outcome["batch_id"])
+    return _see_other("/submissions/%d" % outcome["id"])
+
+
+@router.get("/batches/{batch_id}")
+def batch_page(request: Request, db: DB, actor: CurrentActor, batch_id: int) -> Response:
+    return html_response(request, "batch.html", {"actor": actor, "b": api.get_batch(db, actor, batch_id)})
 
 
 @router.get("/submissions/{submission_id}")

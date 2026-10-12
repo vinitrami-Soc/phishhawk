@@ -24,7 +24,7 @@ class IntakeError(ValueError):
 
 
 def kind_of(raw: bytes) -> str:
-    """'msg', 'eml', or '' for anything else (M2 adds .mbox and .zip)."""
+    """'msg', 'eml', or '' for anything else (an .mbox or a .zip is a batch: batches.py)."""
     if raw.startswith(OLE_MAGIC):
         return "msg"
     head = raw[:4096].lstrip(b"\r\n")
@@ -34,12 +34,15 @@ def kind_of(raw: bytes) -> str:
 
 
 def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: int | None, actor: str,
-           offline: bool, max_bytes: int) -> Submission:
+           offline: bool, max_bytes: int, batch_id: int | None = None, position: int = 0,
+           known_message: bool = False) -> Submission:
+    """known_message: batches.split() found it as a message (an mbox says where each one starts), so its type is
+    not checked again."""
     if not raw:
         raise IntakeError(400, "the message is empty")
     if len(raw) > max_bytes:
         raise IntakeError(413, "the message is larger than %d MB" % (max_bytes // (1024 * 1024)))
-    if not kind_of(raw):
+    if not known_message and not kind_of(raw):
         raise IntakeError(415, "this is not an .eml or .msg message")
     sha256 = hashlib.sha256(raw).hexdigest()
     message = db.scalars(select(Message).where(Message.sha256 == sha256)).first()
@@ -49,10 +52,12 @@ def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: i
         db.flush()
     elif message.raw_blob is None:  # submitted again after its tier 1 was deleted
         message.raw_blob, message.tier1_deleted_at, message.deletion_reason = store.put(raw), None, ""
-    submission = Submission(message_id=message.id, user_id=user_id, source=source, offline=offline)
+    submission = Submission(message_id=message.id, user_id=user_id, source=source, offline=offline,
+                            batch_id=batch_id, position=position)
     db.add(submission)
     db.flush()
     jobs.enqueue(db, "analyze", {"submission_id": submission.id})
+    details = {"sha256": sha256, "source": source, "offline": offline}
     audit.record(db, actor, "submit", "submission", submission.id,
-                 {"sha256": sha256, "source": source, "offline": offline})
+                 details if batch_id is None else dict(details, batch=batch_id))
     return submission
