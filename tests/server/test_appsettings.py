@@ -1,9 +1,16 @@
 """Admin settings: providers, sealed keys, limits that override the
 environment, and the trait key that never changes."""
 
+import threading
+import time
+
+import pytest
+
 from phishhawk.server import appsettings
 from phishhawk.server.db import transaction
 from phishhawk.server.models import Setting
+
+from .serverkit import TEST_DATABASE
 
 
 def test_a_fresh_install_is_offline(db, box, settings):
@@ -43,3 +50,29 @@ def test_the_trait_key_is_made_once_and_kept(db, box):
         first = appsettings.trait_key(s, box)
     with transaction(db) as s:
         assert appsettings.trait_key(s, box) == first and len(first) == 32
+
+
+@pytest.mark.skipif(not TEST_DATABASE, reason="two writers at once need Postgres")
+def test_two_workers_making_the_trait_key_at_once_end_up_with_the_same_one(db, box):
+    first, second = db(), db()
+    found = {}
+
+    def other_worker():
+        try:
+            found["key"] = appsettings.trait_key(second, box)
+            second.commit()
+        except Exception as exc:  # reported below, not lost in the thread
+            found["error"] = exc
+
+    try:
+        mine = appsettings.trait_key(first, box)
+        first.flush()  # stored but not committed: the other worker cannot see it yet
+        thread = threading.Thread(target=other_worker)
+        thread.start()
+        time.sleep(1)  # it finds no key, makes its own and waits on the row this one holds
+        first.commit()
+        thread.join(30)
+        assert found == {"key": mine}
+    finally:
+        first.close()
+        second.close()
