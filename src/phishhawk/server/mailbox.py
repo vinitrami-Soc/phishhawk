@@ -7,12 +7,16 @@ after one POST for a token."""
 
 from __future__ import annotations
 
+import base64
+import binascii
 import contextlib
 import datetime as dt
 import hashlib
 import hmac
 import imaplib
+import json
 import re
+import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from email.parser import BytesHeaderParser
@@ -37,6 +41,9 @@ MAX_PAGES = 200  # of a delta query or a history: a poll that would need more st
 MB = 1024 * 1024
 GRAPH = mailapi.GRAPH
 GRAPH_LOGIN = "https://login.microsoftonline.com"
+GMAIL = mailapi.GMAIL
+GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+GMAIL_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
 
 
 class PollError(Exception):
@@ -272,7 +279,116 @@ def _graph_folder(http: Http, base: str, folder: str) -> str:
     raise PollError("Graph: no folder called %r at the top level or in the Inbox" % folder)
 
 
-SOURCES: dict[str, type[Source]] = {"imap": ImapSource, "graph": GraphSource}
+# ------------------------------------------------------------------- Gmail --
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def gmail_assertion(key: dict[str, str], address: str, now: int) -> str:
+    """A JWT, signed with the service account's key, asking for gmail.readonly only, as the report mailbox."""
+    from cryptography.hazmat.primitives import hashes  # noqa: PLC0415 - the server extra
+    from cryptography.hazmat.primitives.asymmetric import padding, rsa  # noqa: PLC0415
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key  # noqa: PLC0415
+
+    private = load_pem_private_key(key["private_key"].encode("ascii"), password=None)
+    if not isinstance(private, rsa.RSAPrivateKey):
+        raise PollError("Gmail: the service account's key is not an RSA key")
+    header = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode("ascii"))
+    claims = _b64url(json.dumps({"iss": key["client_email"], "sub": address, "scope": GMAIL_READONLY,
+                                 "aud": GOOGLE_TOKEN, "iat": now, "exp": now + 3600},
+                                separators=(",", ":")).encode("utf-8"))
+    signature = private.sign(("%s.%s" % (header, claims)).encode("ascii"), padding.PKCS1v15(), hashes.SHA256())
+    return "%s.%s.%s" % (header, claims, _b64url(signature))
+
+
+SYSTEM_LABELS = {"INBOX", "SPAM", "TRASH", "UNREAD", "STARRED", "IMPORTANT", "SENT", "DRAFT"}
+
+
+class GmailSource(Source):
+    """The report mailbox's label, followed through its history; the history ID is the cursor."""
+
+    def items(self, seen: Callable[[str], bool]) -> Generator[Item, None, None]:
+        address = self.config["address"]
+        try:
+            key = json.loads(self.secret)
+            assertion = gmail_assertion(key, address, int(time.time()))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise PollError("Gmail: the service account's key cannot be used: enter it again") from exc
+        token = _token(self, "Gmail", GOOGLE_TOKEN, {"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                                                     "assertion": assertion},
+                       "check the key, and that the service account has domain-wide delegation for the "
+                       "gmail.readonly scope")
+        http = Http(self, "Gmail", GMAIL, token, "domain-wide delegation for the gmail.readonly scope")
+        base = "%s/users/%s" % (GMAIL, quote(address, safe="@"))
+        label = str(self.cursor.get("label") or "") or self._label(http, base)
+        history = str(self.cursor.get("history") or "")
+        added: list[str] = []
+        resync = not history.isdigit()
+        if not resync:
+            try:
+                added, history = self._history(http, base, label, history)
+            except NotThere:  # a history ID too old to follow: start again; what was seen stays seen
+                resync = True
+        if resync:
+            # the history ID before the listing, so nothing that arrives in between is missed
+            history = str(http.json(base + "/profile").get("historyId") or "")
+            listed = http.json(base + "/messages", {"labelIds": label, "maxResults": FIRST_POLL}).get("messages")
+            added = list(reversed(mailapi._ids(listed)))  # Gmail lists the newest first
+        for message_id in added:
+            if not seen(message_id):
+                yield self._message(http, base, message_id)
+        if history.isdigit():
+            self.final = {"history": history, "label": label}
+
+    def _label(self, http: Http, base: str) -> str:
+        wanted = self.config["label"]
+        if wanted.upper() in SYSTEM_LABELS:
+            return wanted.upper()
+        for found in http.json(base + "/labels").get("labels") or []:
+            name = str(found.get("name", "")) if isinstance(found, dict) else ""
+            if name.lower() == wanted.lower() and found.get("id"):
+                return str(found["id"])
+        raise PollError("Gmail: no label called %r" % wanted)
+
+    def _history(self, http: Http, base: str, label: str, start: str) -> tuple[list[str], str]:
+        """Messages added under the label since the history ID, oldest first, and the newest history ID."""
+        params: dict[str, Any] = {"startHistoryId": start, "historyTypes": "messageAdded", "labelId": label,
+                                  "maxResults": 500}
+        added: list[str] = []
+        for _ in range(MAX_PAGES):
+            page = http.json(base + "/history", params)
+            for record in page.get("history") or []:
+                for entry in (record.get("messagesAdded") or []) if isinstance(record, dict) else []:
+                    message = entry.get("message") if isinstance(entry, dict) else None
+                    if isinstance(message, dict) and message.get("id") and str(message["id"]) not in added:
+                        added.append(str(message["id"]))
+            if not page.get("nextPageToken"):
+                latest = str(page.get("historyId") or start)
+                return added, latest if latest.isdigit() else start
+            params = dict(params, pageToken=str(page["nextPageToken"]))
+        raise PollError("Gmail: more history than one poll pages through (%d pages)" % MAX_PAGES)
+
+    def _message(self, http: Http, base: str, message_id: str) -> Item:
+        url = "%s/messages/%s" % (base, quote(message_id, safe=""))
+        try:
+            size = http.json(url, {"format": "minimal"}).get("sizeEstimate")
+            if isinstance(size, int) and size > self.max_bytes:  # checked before anything is downloaded
+                return Item(message_id, None, "larger than %d MB" % max(1, self.max_bytes // MB))
+            raw = http.json(url, {"format": "raw"}).get("raw")
+        except NotThere:
+            return Item(message_id, None, "deleted before it was read")
+        if not isinstance(raw, str):
+            return Item(message_id, None, "Gmail returned no message")
+        try:
+            data = base64.b64decode(raw + "=" * (-len(raw) % 4), altchars=b"-_", validate=True)
+        except (binascii.Error, ValueError):
+            return Item(message_id, None, "Gmail returned a message that does not decode")
+        return Item(message_id, data) if len(data) <= self.max_bytes else Item(
+            message_id, None, "larger than %d MB" % max(1, self.max_bytes // MB))
+
+
+SOURCES: dict[str, type[Source]] = {"imap": ImapSource, "graph": GraphSource, "gmail": GmailSource}
 
 
 # -------------------------------------------------------------------- poll --
@@ -286,6 +402,15 @@ def sanitise(reason: str, secrets: list[str]) -> str:
     for part in sorted({p for p in parts if len(p) >= 6}, key=len, reverse=True):
         reason = reason.replace(part, "***")
     return reason[:REASON_LIMIT]
+
+
+def _key_parts(secret: str) -> list[str]:
+    """A service account key's private key, so no line of it can reach a reason."""
+    try:
+        key = json.loads(secret)
+    except ValueError:
+        return []
+    return [str(key.get("private_key", ""))] if isinstance(key, dict) else []
 
 
 def _message_id_hmac(raw: bytes, key: bytes) -> str:
@@ -396,7 +521,7 @@ def poll(services: Services, mailbox_id: int, heartbeat: Callable[[], None] | No
         if mailbox is None:
             return counts
         if error:
-            _failed(db, mailbox, sanitise(error, [secret, *source.tokens]), counts)
+            _failed(db, mailbox, sanitise(error, [secret, *_key_parts(secret), *source.tokens]), counts)
             return counts
         now = utcnow()
         if complete and source.final is not None and mailbox.config == config:

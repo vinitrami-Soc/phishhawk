@@ -161,3 +161,110 @@ class FakeGraph(FakeSession):
                 self.next_link_host, path, first + self.page_size)})
         link = "%s%s?$deltatoken=%d" % (GRAPH, path, len(changes))
         return Response(200, {"value": items, "@odata.deltaLink": link})
+
+
+GMAIL = "https://gmail.googleapis.com/gmail/v1"
+GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"
+READONLY = "https://www.googleapis.com/auth/gmail.readonly"
+
+
+def _unb64(text: str) -> bytes:
+    import base64
+
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+class FakeGmail(FakeSession):
+    """One Google Workspace mailbox reached through a service account with domain-wide delegation: the token comes
+    for a JWT signed with the account's key, the mailbox has labels, a history, and each message's raw MIME."""
+
+    def __init__(self, client_email: str, public_key, address: str) -> None:  # noqa: ANN001
+        super().__init__(GMAIL, GOOGLE_TOKEN)
+        self.client_email, self.public_key, self.address = client_email, public_key, address
+        self.token = secrets.token_urlsafe(24)
+        self.messages: list[dict] = []  # {"id", "history", "labels", "raw"}, oldest first
+        self.history_id = 1000
+        self.oldest_history = 0  # a startHistoryId before this is too old (404)
+        self.labels = {"INBOX": "INBOX", "Phish reports": "Label_7"}
+        self.page_size = 100
+        self.assertions: list[tuple[dict, dict]] = []  # (header, claims) of every JWT it was sent
+
+    def add(self, raw: bytes, label: str = "INBOX") -> str:
+        self.history_id += 3
+        message_id = secrets.token_hex(8)
+        self.messages.append({"id": message_id, "history": self.history_id, "labels": [self.labels[label]],
+                              "raw": raw})
+        return message_id
+
+    def downloads(self) -> list[str]:
+        return [url.rsplit("/", 1)[1] for method, url, params, *_ in self.calls
+                if method == "GET" and "/messages/" in url and params.get("format") == "raw"]
+
+    def _verify(self, assertion: str) -> dict | None:
+        import json
+
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+
+        try:
+            header_text, claims_text, signature = assertion.split(".")
+            header, claims = json.loads(_unb64(header_text)), json.loads(_unb64(claims_text))
+            self.public_key.verify(_unb64(signature), ("%s.%s" % (header_text, claims_text)).encode("ascii"),
+                                   padding.PKCS1v15(), hashes.SHA256())
+        except (ValueError, InvalidSignature):
+            return None
+        self.assertions.append((header, claims))
+        return claims
+
+    def answer(self, method: str, url: str, params: dict, headers: dict, form: dict) -> Response:
+        if method == "POST":
+            claims = self._verify(form.get("assertion", ""))
+            if form.get("grant_type") != "urn:ietf:params:oauth:grant-type:jwt-bearer" or claims is None:
+                return Response(400, {"error": "invalid_grant", "error_description": "Invalid JWT Signature."})
+            if claims.get("iss") != self.client_email or claims.get("aud") != GOOGLE_TOKEN:
+                return Response(400, {"error": "invalid_grant", "error_description": "Invalid issuer or audience"})
+            if claims.get("scope") != READONLY or claims.get("sub") != self.address:
+                return Response(401, {"error": "unauthorized_client", "error_description": "Not delegated"})
+            return Response(200, {"access_token": self.token, "expires_in": 3599, "token_type": "Bearer"})
+        if headers.get("Authorization") != "Bearer " + self.token:
+            return Response(401, {"error": {"code": 401, "status": "UNAUTHENTICATED"}})
+        base = "%s/users/%s" % (GMAIL, quote(self.address, safe="@"))
+        if not url.startswith(base + "/"):
+            return Response(404, {"error": {"code": 404, "status": "NOT_FOUND"}})
+        rest = url[len(base):]
+        if rest == "/profile":
+            return Response(200, {"emailAddress": self.address, "historyId": str(self.history_id)})
+        if rest == "/labels":
+            return Response(200, {"labels": [{"id": i, "name": n, "type": "system" if i == n else "user"}
+                                             for n, i in self.labels.items()]})
+        if rest == "/messages":
+            listed = [m for m in reversed(self.messages) if params.get("labelIds") in m["labels"]]
+            return Response(200, {"messages": [{"id": m["id"], "threadId": m["id"]}
+                                               for m in listed[:int(params.get("maxResults", 100))]],
+                                  "resultSizeEstimate": len(listed)})
+        if rest == "/history":
+            start = int(params["startHistoryId"])
+            if start < self.oldest_history:
+                return Response(404, {"error": {"code": 404, "status": "NOT_FOUND"}})
+            after = [m for m in self.messages if m["history"] > start and params.get("labelId") in m["labels"]]
+            first = int(params.get("pageToken") or 0)
+            page = after[first:first + self.page_size]
+            body = {"history": [{"id": str(m["history"]), "messagesAdded": [{"message": {
+                "id": m["id"], "threadId": m["id"], "labelIds": m["labels"]}}]} for m in page],
+                "historyId": str(self.history_id)}
+            if first + self.page_size < len(after):
+                body["nextPageToken"] = str(first + self.page_size)
+            return Response(200, body)
+        if rest.startswith("/messages/"):
+            import base64
+
+            found = next((m for m in self.messages if m["id"] == rest.split("/")[2]), None)
+            if found is None:
+                return Response(404, {"error": {"code": 404, "status": "NOT_FOUND"}})
+            if params.get("format") == "minimal":
+                return Response(200, {"id": found["id"], "sizeEstimate": len(found["raw"])})
+            if params.get("format") == "raw":
+                return Response(200, {"id": found["id"],
+                                      "raw": base64.urlsafe_b64encode(found["raw"]).decode("ascii")})
+        return Response(404, {"error": {"code": 404, "status": "NOT_FOUND"}})
