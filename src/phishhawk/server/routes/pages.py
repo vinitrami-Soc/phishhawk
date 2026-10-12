@@ -19,7 +19,7 @@ from . import api
 
 router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
 VERDICTS = ("NO STRONG INDICATORS", "SUSPICIOUS", "LIKELY PHISHING", "MALICIOUS")
-SOURCES = ("upload", "paste", "batch")
+SOURCES = ("upload", "paste", "batch", "mailbox")
 
 
 def _see_other(url: str) -> RedirectResponse:
@@ -139,7 +139,7 @@ def analysis_page(request: Request, db: DB, actor: CurrentActor, analysis_id: in
     view = views.summary(services(request).store, analysis, message, submission)
     report = next((f for f in view["files"] if f["kind"] == "html"), None)
     can_delete = actor.is_admin or views.is_owner(db, message.id, actor.user_id)
-    submitter = views.usernames(db).get(submission.user_id or 0, "")
+    submitter = views.submitter_of(db, submission) or ""
     return html_response(request, "analysis.html", {"actor": actor, "a": view, "report": report,
                                                     "can_delete": can_delete, "submitter": submitter})
 

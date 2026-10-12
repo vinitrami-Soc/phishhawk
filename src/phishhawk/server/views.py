@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from .models import Analysis, Indicator, Message, Submission, User
+from .models import Analysis, Indicator, Mailbox, Message, Submission, User
 from .store import BlobStore
 
 PAGE = 50
@@ -78,8 +78,8 @@ def listing(db: Session, store: BlobStore, q: str = "", verdict: str = "", offse
                                 Analysis.id.in_(select(Indicator.analysis_id)
                                                 .where(Indicator.value.contains(q, autoescape=True)))))
     rows = db.execute(query.offset(max(0, offset)).limit(PAGE)).all()
-    names = usernames(db)
-    return [summary(store, a, m, s, submitter=names.get(s.user_id or 0)) for a, m, s in rows]
+    names, boxes = usernames(db), mailbox_names(db)
+    return [summary(store, a, m, s, submitter=submitter(s, names, boxes)) for a, m, s in rows]
 
 
 def is_owner(db: Session, message_id: int, user_id: int) -> bool:
@@ -89,3 +89,18 @@ def is_owner(db: Session, message_id: int, user_id: int) -> bool:
 
 def usernames(db: Session) -> dict[int, str]:
     return {u.id: u.username for u in db.scalars(select(User))}
+
+
+def mailbox_names(db: Session) -> dict[int, str]:
+    return {m.id: m.name for m in db.scalars(select(Mailbox))}
+
+
+def submitter(submission: Submission, names: dict[int, str], boxes: dict[int, str]) -> str | None:
+    """Who submitted it: a user, or the mailbox it was imported from."""
+    if submission.user_id is not None:
+        return names.get(submission.user_id)
+    return boxes.get(submission.mailbox_id or 0)
+
+
+def submitter_of(db: Session, submission: Submission) -> str | None:
+    return submitter(submission, usernames(db), mailbox_names(db))

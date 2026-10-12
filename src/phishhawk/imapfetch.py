@@ -41,13 +41,13 @@ class ImapSource:
     timeout: float = 30
 
 
-def _quote(folder: str) -> str:
+def quote_folder(folder: str) -> str:
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in folder):  # a CR or LF would end the command early
         raise ImapError("folder name %r has control characters" % folder)
     return '"%s"' % folder.replace("\\", "\\\\").replace('"', '\\"')
 
 
-def _connect(source: ImapSource) -> imaplib.IMAP4:
+def connect(source: ImapSource) -> imaplib.IMAP4:
     context = ssl.create_default_context()
     try:
         if source.starttls:
@@ -64,12 +64,12 @@ def _connect(source: ImapSource) -> imaplib.IMAP4:
         else:
             connection.login(source.user, source.password)
     except imaplib.IMAP4.error as exc:
-        _close(connection)
+        close(connection)
         raise ImapError("login to %s refused for %s" % (source.host, source.user)) from exc
     return connection
 
 
-def _close(connection: imaplib.IMAP4) -> None:
+def close(connection: imaplib.IMAP4) -> None:
     with contextlib.suppress(Exception):  # the server may already have hung up
         connection.logout()
 
@@ -86,10 +86,33 @@ def _criteria(source: ImapSource, after_uid: int = 0) -> list[str]:
 _SIZE_RE = re.compile(rb"RFC822\.SIZE (\d+)")
 
 
+def uidvalidity(connection: imaplib.IMAP4) -> int:
+    """The open folder's UIDVALIDITY, from the server's answer to EXAMINE; 0 if it sent none."""
+    _, data = connection.response("UIDVALIDITY")
+    value = data[-1] if data else None
+    return int(value) if isinstance(value, bytes) and value.isdigit() else 0
+
+
+def fetch_uid(connection: imaplib.IMAP4, uid: int, max_bytes: int) -> bytes | Exception:
+    """One message, or why it was not fetched: its size first, then BODY.PEEK[], so it is not marked read."""
+    try:
+        status, data = connection.uid("FETCH", str(uid), "(RFC822.SIZE)")
+        size = _SIZE_RE.search(data[0] if data and isinstance(data[0], bytes) else b"")
+        if size and int(size.group(1)) > max_bytes:
+            return ValueError("larger than %d MB" % (max_bytes // (1024 * 1024)))
+        status, data = connection.uid("FETCH", str(uid), "(BODY.PEEK[])")
+        message = next((part[1] for part in data or [] if isinstance(part, tuple) and len(part) > 1), None)
+        if status != "OK" or not isinstance(message, bytes):
+            return ValueError("the server returned no message")
+        return message[: max_bytes + 1]
+    except (imaplib.IMAP4.error, OSError) as exc:
+        return exc
+
+
 def fetch(source: ImapSource, max_bytes: int, after_uid: int = 0) -> Iterator[tuple[str, int, bytes | Exception]]:
     """(label, uid, raw message or why it was skipped), newest last."""
-    folder = _quote(source.folder)  # checked before anything is sent
-    connection = _connect(source)
+    folder = quote_folder(source.folder)  # checked before anything is sent
+    connection = connect(source)
     try:
         try:
             status, _ = connection.select(folder, readonly=True)
@@ -104,19 +127,6 @@ def fetch(source: ImapSource, max_bytes: int, after_uid: int = 0) -> Iterator[tu
         uids = [u for u in uids if u > after_uid][-source.limit:] if source.limit else uids
         for uid in uids:
             label = "imap://%s/%s;UID=%d" % (source.host, source.folder, uid)
-            try:
-                status, data = connection.uid("FETCH", str(uid), "(RFC822.SIZE)")
-                size = _SIZE_RE.search(data[0] if data and isinstance(data[0], bytes) else b"")
-                if size and int(size.group(1)) > max_bytes:
-                    yield label, uid, ValueError("larger than %d MB" % (max_bytes // (1024 * 1024)))
-                    continue
-                status, data = connection.uid("FETCH", str(uid), "(BODY.PEEK[])")
-                message = next((part[1] for part in data or [] if isinstance(part, tuple) and len(part) > 1), None)
-                if status != "OK" or not isinstance(message, bytes):
-                    yield label, uid, ValueError("the server returned no message")
-                    continue
-                yield label, uid, message[: max_bytes + 1]
-            except (imaplib.IMAP4.error, OSError) as exc:
-                yield label, uid, exc
+            yield label, uid, fetch_uid(connection, uid, max_bytes)
     finally:
-        _close(connection)
+        close(connection)
