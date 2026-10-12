@@ -134,6 +134,16 @@ def get_batch(db: DB, actor: CurrentActor, batch_id: int) -> dict[str, Any]:
     return batches.view(db, batch, views.usernames(db).get(batch.user_id or 0))
 
 
+@router.get("/batches/{batch_id}/files/{name}")
+def get_batch_file(request: Request, db: DB, actor: CurrentActor, batch_id: int, name: str,
+                   download: bool = False) -> Response:
+    batch = db.get(Batch, batch_id)
+    if batch is None:
+        raise HTTPException(404, "no such batch")
+    audit.record(db, actor.label, "download", "batch", batch_id, {"file": name})
+    return serve_file(services(request).store, batch.files, name, download)
+
+
 @router.get("/analyses")
 def list_analyses(request: Request, db: DB, actor: CurrentActor, q: str = "", verdict: str = "",
                   offset: Annotated[int, Query(ge=0)] = 0) -> list[dict[str, Any]]:
@@ -160,7 +170,7 @@ def get_file(request: Request, db: DB, actor: CurrentActor, analysis_id: int, na
              download: bool = False) -> Response:
     analysis, _, _ = _found(db, analysis_id)
     audit.record(db, actor.label, "download", "analysis", analysis_id, {"file": name})
-    return serve_file(services(request).store, analysis, name, download)
+    return serve_file(services(request).store, analysis.files, name, download)
 
 
 @router.post("/analyses/{analysis_id}/reanalyze", status_code=202)

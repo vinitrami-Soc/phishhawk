@@ -15,6 +15,7 @@ MATRIX = [
     ("GET", "/api/v1/analyses/{analysis}", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/submissions/{submission}", (401, 200, 200, 200, 200)),
     ("GET", "/api/v1/batches/{batch}", (401, 200, 200, 200, 200)),
+    ("GET", "/api/v1/batches/{batch}/files/{batch_file}", (401, 200, 200, 200, 200)),
     ("POST", "/api/v1/analyses/{analysis}/reanalyze", (401, 202, 202, 403, 202)),
     ("GET", "/api/v1/messages/{message}/raw", (401, 403, 200, 403, 403)),
     ("DELETE", "/api/v1/messages/{message}", (401, 403, 200, 403, 403)),
@@ -50,8 +51,11 @@ def world(app, services, admin):
               for scope in ("read", "submit")}
     two = [("files", ("m%d.eml" % i, build_eml(subject="Batch %d" % i), "message/rfc822")) for i in range(2)]
     batch = admin.post("/api/v1/submissions", files=two, data={"offline": "true"}).json()["batch_id"]
+    while worker.run_one(services):  # its messages, then its combined exports
+        pass
+    batch_file = admin.get("/api/v1/batches/%d" % batch).json()["files"][0]["name"]
     return {"analysis": analysis, "message": message, "submission": submitted["id"], "tokens": tokens,
-            "batch": batch}
+            "batch": batch, "batch_file": batch_file}
 
 
 @pytest.mark.parametrize("method, path, expected", MATRIX)

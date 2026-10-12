@@ -2,12 +2,14 @@
 message, split in memory within limits; names inside an archive are never used (spec 6.2)."""
 
 import io
+import json
 import mailbox
 import zipfile
 
 import pytest
 
 from phishhawk.server import batches, worker
+from phishhawk.server.security import REPORT_CSP
 
 from conftest import build_eml, sample
 
@@ -162,3 +164,104 @@ def test_every_entry_of_an_mbox_is_a_message_as_the_cli_reads_it(alice):
     odd = b"this entry has no header lines at all\n"
     created = _post(alice, ("box.mbox", _mbox([_mails(1)[0], odd]))).json()
     assert created["total"] == 2
+
+
+def _run_all(services):
+    while worker.run_one(services):
+        pass
+
+
+def _batch(client, batch_id):
+    return client.get("/api/v1/batches/%d" % batch_id).json()
+
+
+def test_when_every_message_is_done_the_batch_gets_combined_exports(alice, services):
+    created = _post(alice, *[("m%d.eml" % i, m) for i, m in enumerate(_mails(2) + [_raw()])]).json()
+    _run_all(services)
+    batch = _batch(alice, created["batch_id"])
+    assert batch["status"] == "done" and batch["finished_at"]
+    assert [f["kind"] for f in batch["files"]] == ["json", "stix", "misp", "md", "csv", "html", "manifest"]
+    names = {f["kind"]: f["name"] for f in batch["files"]}
+    url = "/api/v1/batches/%d/files/" % created["batch_id"]
+    assert len(json.loads(alice.get(url + names["manifest"]).content)["messages"]) == 3
+    assert len(json.loads(alice.get(url + names["json"]).content)["reports"]) == 3
+    report = alice.get(url + names["html"])
+    assert report.status_code == 200 and report.headers["content-security-policy"] == REPORT_CSP
+    csv = alice.get(url + names["csv"])
+    assert csv.headers["content-disposition"] == 'attachment; filename="%s"' % names["csv"]
+    assert alice.get(url + "nothing.html").status_code == 404
+    page = alice.get("/batches/%d" % created["batch_id"]).text
+    assert page.count('href="/batches/%d/files/' % created["batch_id"]) == 7 and "http-equiv" not in page
+
+
+def test_a_message_deleted_before_its_analysis_does_not_stop_the_batch(alice, services):
+    created = _post(alice, *[("m%d.eml" % i, m) for i, m in enumerate(_mails(3))]).json()
+    second = _batch(alice, created["batch_id"])["messages"][1]["message_id"]
+    assert alice.delete("/api/v1/messages/%d" % second).status_code == 200
+    _run_all(services)
+    batch = _batch(alice, created["batch_id"])
+    assert batch["status"] == "done" and batch["counts"] == {"queued": 0, "running": 0, "done": 2, "failed": 1}
+    manifest = next(f for f in batch["files"] if f["kind"] == "manifest")
+    listed = alice.get("/api/v1/batches/%d/files/%s" % (created["batch_id"], manifest["name"])).json()
+    assert len(listed["messages"]) == 2
+
+
+def test_deleting_a_message_deletes_the_combined_exports_that_hold_it(alice, services):
+    created = _post(alice, *[("m%d.eml" % i, m) for i, m in enumerate(_mails(2))]).json()
+    _run_all(services)
+    first = _batch(alice, created["batch_id"])["messages"][0]["message_id"]
+    alice.delete("/api/v1/messages/%d" % first)
+    batch = _batch(alice, created["batch_id"])
+    assert batch["files_deleted_at"] and not any(f["available"] for f in batch["files"])
+    name = batch["files"][0]["name"]
+    assert alice.get("/api/v1/batches/%d/files/%s" % (created["batch_id"], name)).status_code == 410
+
+
+def test_combined_exports_are_deleted_after_the_retention_period(alice, services):
+    from phishhawk.server import retention
+    from phishhawk.server.db import transaction
+    from phishhawk.server.models import Batch, Message
+
+    created = _post(alice, *[("m%d.eml" % i, m) for i, m in enumerate(_mails(2))]).json()
+    _run_all(services)
+    with transaction(services.sessions) as s:
+        batch = s.get(Batch, created["batch_id"])
+        batch.created_at = batch.created_at.replace(year=2000)
+        for message in s.query(Message):
+            message.hold = True  # the messages stay; the combined exports still go
+    with transaction(services.sessions) as s:
+        retention.sweep(s, services.store, days=30)
+    assert _batch(alice, created["batch_id"])["files_deleted_at"]
+
+
+def test_a_crash_while_analysing_fails_that_message_and_the_batch_still_finishes(alice, services, monkeypatch):
+    real, calls = worker.process_submission, []
+
+    def crashes_once(*args):
+        calls.append(args)
+        if len(calls) == 1:
+            raise RuntimeError("boom")
+        return real(*args)
+
+    monkeypatch.setattr(worker, "process_submission", crashes_once)
+    created = _post(alice, *[("m%d.eml" % i, m) for i, m in enumerate(_mails(2))]).json()
+    _run_all(services)
+    batch = _batch(alice, created["batch_id"])
+    assert batch["status"] == "done" and batch["messages"][0]["status"] == "failed"
+    assert batch["messages"][0]["error"] == "the analysis stopped: RuntimeError"
+
+
+def test_a_message_whose_worker_died_three_times_fails_and_the_batch_still_finishes(alice, services):
+    import datetime as dt
+
+    from phishhawk.server import jobs
+    from phishhawk.server.db import transaction
+
+    created = _post(alice, *[("m%d.eml" % i, m) for i, m in enumerate(_mails(2))]).json()
+    with transaction(services.sessions) as s:
+        job = jobs.claim(s)
+        job.attempts, job.heartbeat_at = jobs.MAX_ATTEMPTS, job.heartbeat_at - dt.timedelta(minutes=5)
+    worker.schedule(services)
+    _run_all(services)
+    batch = _batch(alice, created["batch_id"])
+    assert batch["status"] == "done" and batch["messages"][0]["status"] == "failed"

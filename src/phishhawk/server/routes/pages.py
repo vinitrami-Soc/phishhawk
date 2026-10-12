@@ -78,6 +78,12 @@ def batch_page(request: Request, db: DB, actor: CurrentActor, batch_id: int) -> 
     return html_response(request, "batch.html", {"actor": actor, "b": api.get_batch(db, actor, batch_id)})
 
 
+@router.get("/batches/{batch_id}/files/{name}")
+def batch_file(request: Request, db: DB, actor: CurrentActor, batch_id: int, name: str,
+               download: bool = False) -> Response:
+    return api.get_batch_file(request, db, actor, batch_id, name, download)
+
+
 @router.get("/submissions/{submission_id}")
 def submission_page(request: Request, db: DB, actor: CurrentActor, submission_id: int) -> Response:
     submission = db.get(Submission, submission_id)

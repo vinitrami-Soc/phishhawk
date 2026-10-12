@@ -8,14 +8,20 @@ from __future__ import annotations
 import io
 import zipfile
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import audit, intake
-from .models import Analysis, Batch, Message, Submission
+from ..analysis import render_saved
+from . import audit, intake, jobs
+from .db import transaction
+from .limits import ChildFailed, LimitExceeded, run_limited
+from .models import Analysis, Batch, Message, Submission, utcnow
 from .store import BlobStore
+
+if TYPE_CHECKING:
+    from .processing import Services
 
 MB = 1024 * 1024
 ZIP_MAGIC = (b"PK\x03\x04", b"PK\x05\x06")
@@ -175,4 +181,71 @@ def view(db: Session, batch: Batch, submitter: str | None) -> dict[str, Any]:
     return {"id": batch.id, "created_at": batch.created_at.isoformat(), "submitted_by": batch.user_id,
             "submitted_by_name": submitter, "offline": batch.offline, "total": batch.total, "status": batch.status,
             "error": batch.error, "counts": counts, "verdicts": verdicts, "messages": messages,
-            "finished_at": batch.finished_at.isoformat() if batch.finished_at else None}
+            "finished_at": batch.finished_at.isoformat() if batch.finished_at else None,
+            "files": [{k: f[k] for k in ("name", "kind", "type", "size", "sha256")}
+                      | {"available": bool(f["blob"])} for f in batch.files],
+            "files_deleted_at": batch.files_deleted_at.isoformat() if batch.files_deleted_at else None}
+
+
+def after_submission(db: Session, submission: Submission) -> None:
+    """When the last message of a batch is done or failed, its combined exports are queued."""
+    batch = db.get(Batch, submission.batch_id) if submission.batch_id else None
+    if batch is None or batch.status != "running":
+        return
+    waiting = db.scalar(select(func.count()).select_from(Submission).where(
+        Submission.batch_id == batch.id, Submission.status.in_(("queued", "running"))))
+    if not waiting:
+        batch.status = "finalizing"
+        jobs.enqueue(db, "batch_finalize", {"batch_id": batch.id})
+
+
+def failed(db: Session, batch_id: int, reason: str) -> None:
+    batch = db.get(Batch, batch_id)
+    if batch is not None and batch.status == "finalizing":
+        batch.status, batch.error, batch.finished_at = "failed", reason, utcnow()
+
+
+def child_render(states: list[bytes]) -> list[tuple[bytes, dict[str, Any]]]:
+    """Runs in the child process: every format for the saved analyses together."""
+    return [(f.content, f.entry()) for f in render_saved(states)]
+
+
+def finalize(services: Services, batch_id: int, heartbeat: Any = None) -> None:
+    """The batch's combined exports, rendered in a limited child process from the analyses saved for its messages
+    (those deleted meanwhile are left out), then sealed as tier 1."""
+    s = services
+    with transaction(s.sessions) as db:
+        batch = db.get(Batch, batch_id)
+        if batch is None or batch.status != "finalizing":
+            return
+        kept = db.execute(select(Analysis.id, Analysis.state_blob)
+                          .join(Submission, Analysis.submission_id == Submission.id)
+                          .where(Submission.batch_id == batch_id, Analysis.state_blob.is_not(None))
+                          .order_by(Submission.position)).all()
+        states = [s.store.get(blob) for _, blob in kept if blob]
+    stored: list[dict[str, Any]] = []
+    error = ""
+    if states:
+        try:
+            rendered = run_limited(child_render, (states,), s.settings.analysis_memory_mb,
+                                   s.settings.analysis_cpu_seconds + len(states), heartbeat)
+            stored = [dict(entry, blob=s.store.put(content)) for content, entry in rendered]
+        except (LimitExceeded, ChildFailed) as exc:
+            error = "the combined exports could not be made: %s" % exc
+    with transaction(s.sessions) as db:
+        batch = db.get(Batch, batch_id)
+        still = set(db.scalars(select(Analysis.id).where(Analysis.id.in_([i for i, _ in kept]),
+                                                         Analysis.state_blob.is_not(None))))
+        if batch is None or still != {i for i, _ in kept}:  # a message in them was deleted meanwhile
+            for entry in stored:
+                s.store.delete(entry["blob"])
+            stored = []
+            if batch is not None:
+                batch.files_deleted_at = utcnow()
+        if batch is None:
+            return
+        batch.files, batch.finished_at = stored, utcnow()
+        batch.status, batch.error = ("failed", error) if error else ("done", "" if states else
+                                                                      "no message in the batch was analysed")
+        audit.record(db, "system", "batch_finalize", "batch", batch_id,
+                     {"messages": len(states), "files": len(stored)})

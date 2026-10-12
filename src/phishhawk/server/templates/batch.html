@@ -3,7 +3,19 @@
 {% block head %}{% if b.status in ('running', 'finalizing') %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
 {% block main %}
 <h1>Batch {{ b.id }}</h1>
-<p role="status">{{ b.total }} messages: {{ b.counts.done }} analysed, {{ b.counts.failed }} failed, {{ b.counts.queued + b.counts.running }} waiting{% if b.offline %}, offline{% endif %}.{% if b.status in ('running', 'finalizing') %} This page refreshes until the batch is done.{% endif %}</p>
+<p role="status">{{ b.total }} messages: {{ b.counts.done }} analysed, {{ b.counts.failed }} failed, {{ b.counts.queued + b.counts.running }} waiting{% if b.offline %}, offline{% endif %}.{% if b.status == 'running' %} This page refreshes until the batch is done.{% elif b.status == 'finalizing' %} Making the combined reports.{% elif b.status == 'failed' %} {{ b.error }}{% endif %}</p>
+{% if b.files %}
+<section aria-labelledby="files-heading" class="card">
+  <h2 id="files-heading">Combined reports</h2>
+  {% if b.files_deleted_at %}
+  <p>Deleted {{ b.files_deleted_at[:16]|replace('T', ' ') }} UTC, after the retention period or with a message in them.</p>
+  {% else %}
+  <ul>
+    {% for f in b.files %}<li><a href="/batches/{{ b.id }}/files/{{ f.name }}{% if f.kind != 'html' %}?download=true{% endif %}">{{ f.type }}</a> ({{ f.size }} bytes)</li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
 <table class="list">
   <caption class="sr-only">The batch's messages, in the order they were uploaded</caption>
   <thead><tr><th scope="col">#</th><th scope="col">Status</th><th scope="col">Verdict</th><th scope="col">Score</th><th scope="col">Sender domain</th><th scope="col"><span class="sr-only">Analysis</span></th></tr></thead>
