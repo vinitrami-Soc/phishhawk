@@ -244,8 +244,8 @@ For a team, `phishhawk server` runs PhishHawk as a web app: log in, upload or
 paste a reported message, read the report and download every format, with
 encrypted storage, retention and an audit log. It needs the `server` extra
 (`pip install "phishhawk[server]"`) or Docker Compose (`docker compose up -d`).
-Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md). To put your own frontend
-on its API, for example one built in Google AI Studio: [docs/FRONTEND.md](docs/FRONTEND.md).
+Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md). The browser app, built in
+Google AI Studio, is in [frontend/](frontend/) and comes with the Docker image: [docs/FRONTEND.md](docs/FRONTEND.md).
 
 ### Check the install
 

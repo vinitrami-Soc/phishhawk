@@ -140,6 +140,10 @@ jobs:
           python -m pip install requests
           python tools/server_smoke.py http://127.0.0.1:8000 --user smoke
           docker compose exec -T phishhawk phishhawk server audit verify
+      - name: The frontend is built in and opens at the server's address
+        run: |
+          curl -fsS http://127.0.0.1:8000/app/ | grep -q 'id="root"'
+          test "$(curl -s -o /dev/null -w '%{redirect_url}' http://127.0.0.1:8000/)" = "http://127.0.0.1:8000/app/"
       - name: Stop cleanly
         run: |
           docker compose stop
@@ -147,6 +151,46 @@ jobs:
       - name: Logs
         if: failure()
         run: docker compose logs
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install from the lockfile, without install scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: The build brief's rules, the locked files and the unit tests
+        run: npm test
+      - name: Types
+        run: npx tsc --noEmit
+      - name: Build
+        run: npm run build
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: The server and a browser
+        working-directory: .
+        run: |
+          python -m pip install -e ".[dev,server]" playwright
+          python -m playwright install --with-deps chromium
+      - name: The built frontend on a real server, in a real browser, at seven widths
+        working-directory: .
+        env:
+          PHISHHAWK_FRONTEND_BUILD: frontend/dist
+        run: |
+          set -o pipefail
+          python -m pytest tests/server/test_frontend_browser.py -p no:cacheprovider -rs | tee "$RUNNER_TEMP/frontend.txt"
+          grep -q "1 passed" "$RUNNER_TEMP/frontend.txt"  # a skipped test is not a pass
 
   installer:
     runs-on: ubuntu-latest

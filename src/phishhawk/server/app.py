@@ -101,6 +101,13 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
 
     from .routes import api, pages
 
+    if services.settings.frontend_dir:
+        @app.get("/", include_in_schema=False)
+        def open_frontend() -> RedirectResponse:
+            """With a frontend of its own, the server's address opens it; the built-in pages stay at /login,
+            /queue and the rest, as the backup and admin interface."""
+            return RedirectResponse("/app/", status_code=307)
+
     app.include_router(api.router)
     app.include_router(pages.router)
     # files only: they hold no secret, so compressing them cannot leak one (BREACH); API answers stay as they are

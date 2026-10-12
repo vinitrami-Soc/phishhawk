@@ -1,0 +1,6 @@
+{
+  "name": "PhishHawk",
+  "description": "Internal security console for phishing email triage, forensic analysis, and MITRE ATT&CK mapping.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

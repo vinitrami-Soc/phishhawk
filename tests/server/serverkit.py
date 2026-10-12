@@ -41,14 +41,16 @@ def _free_port():
 
 
 @contextlib.contextmanager
-def running_server(tmp_path):
+def running_server(tmp_path, **settings):
     """phishhawk server run as a real process on a free port, with an admin
-    "root"; stopped with SIGTERM afterwards if the test has not stopped it."""
+    "root"; stopped with SIGTERM afterwards if the test has not stopped it.
+    Keyword arguments are more PHISHHAWK_* variables."""
     from phishhawk.server.crypto import new_key
 
     port = _free_port()
     env = dict(os.environ, PHISHHAWK_DATA_DIR=str(tmp_path), PHISHHAWK_PORT=str(port),
-               PHISHHAWK_SECRET_KEY=new_key(), PHISHHAWK_ENCRYPTION_KEY=new_key(), PHISHHAWK_COOKIE_SECURE="false")
+               PHISHHAWK_SECRET_KEY=new_key(), PHISHHAWK_ENCRYPTION_KEY=new_key(), PHISHHAWK_COOKIE_SECURE="false",
+               **settings)
     log = tmp_path / "server.log"
     with open(log, "wb") as output:  # a file, not a pipe: a stray worker would hold a pipe open
         process = subprocess.Popen(COMMAND + ["run"], env=env, stdout=output, stderr=subprocess.STDOUT)

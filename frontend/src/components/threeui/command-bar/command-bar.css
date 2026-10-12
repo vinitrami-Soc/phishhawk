@@ -1,0 +1,171 @@
+/* Command bar: ThreeUI <AnimatedTopDock variant="modern" /> (MIT,
+   @designcodeio/threeui 1.2.0). The first part is the package's own CSS for
+   the modern bar, copied verbatim from lib-dist/style.css (the demo-only
+   aurora, headline and caption rules left out). The second part adapts it to
+   PhishHawk: a sticky app header instead of a demo frame, router links with
+   aria-current instead of aria-pressed buttons, the PhishHawk mark, a user
+   chip and a "More" menu for narrow screens. The modern variant draws no
+   WebGL: it is DOM, CSS and the spring physics in topDockController.js. */
+
+/* ---- ThreeUI, verbatim ---- */
+.animated-top-dock-component.atd-modern,.animated-top-dock-component.atd-retro,.animated-top-dock-component.atd-glass{--atd-top: clamp(16px, 2.6cqw, 46px);--atd-bar-width: min(1460px, calc(100% - clamp(24px, 4.2cqw, 96px)) );--atd-bar-height: clamp(48px, 3.4cqw, 68px);--atd-bar-pad: clamp(5px, .42cqw, 9px);--atd-bar-lead: clamp(14px, 1.15cqw, 25px);--atd-item-height: clamp(30px, 2.2cqw, 44px);--atd-item-pad: clamp(10px, .86cqw, 18px);--atd-label: clamp(12px, .78cqw, 17px);--atd-icon: clamp(13px, .92cqw, 19px);--atd-gap: clamp(5px, .44cqw, 9px);--atd-brand: clamp(13px, .94cqw, 20px);--atd-mark: clamp(22px, 1.55cqw, 33px);--atd-action-height: clamp(34px, 2.5cqw, 50px);display:block;overflow:hidden}
+.atd-modern__bar,.atd-retro__bar{position:absolute;top:var(--atd-top);left:50%;z-index:10;display:flex;align-items:center;justify-content:space-between;width:var(--atd-bar-width);height:var(--atd-bar-height);transform:translate(-50%)}
+.atd-modern__bar{width:max-content;max-width:var(--atd-bar-width);padding:var(--atd-bar-pad) var(--atd-bar-pad) var(--atd-bar-pad) var(--atd-bar-lead)}
+.atd-modern__dock{display:flex;flex:none;gap:clamp(2px,.2cqw,5px);align-items:flex-start;justify-content:center;height:var(--atd-item-height)}
+.atd-modern__item,.atd-retro__item,.atd-glass__item{display:inline-flex;flex:none;gap:var(--atd-gap);align-items:center;justify-content:center;height:var(--atd-item-height);padding:0 var(--atd-item-pad);outline:none;white-space:nowrap;transform-origin:50% 0;will-change:width,height,transform;cursor:pointer}
+.atd-modern__brand,.atd-glass__brand,.atd-retro__brand{display:inline-flex;flex:none;gap:clamp(7px,.6cqw,13px);align-items:center;text-decoration:none}
+.atd-modern__mark,.atd-glass__mark{display:block;width:var(--atd-mark);height:var(--atd-mark);overflow:hidden}
+.atd-modern__mark svg,.atd-glass__mark svg{display:block;width:100%;height:100%}
+.atd-modern__word,.atd-glass__word{font-size:var(--atd-brand);font-weight:600;letter-spacing:-.018em}
+.atd-modern__actions{display:inline-flex;flex:none;gap:clamp(4px,.34cqw,8px);align-items:center}
+.atd-modern__ghost{height:var(--atd-action-height);padding:0 clamp(12px,.95cqw,20px);border:0;border-radius:999px;background:transparent;font:500 var(--atd-label) / 1 inherit;transition:color .16s,background .16s;cursor:pointer}
+.atd-modern__cta,.atd-glass__cta{height:var(--atd-action-height);border-radius:999px;font:600 var(--atd-label) / 1 inherit;letter-spacing:-.01em;white-space:nowrap;transition:transform .18s cubic-bezier(.22,1,.36,1),box-shadow .18s;cursor:pointer}
+.animated-top-dock-component.atd-modern{--atd-bar-width: min(1240px, calc(100% - clamp(24px, 5cqw, 120px)) );background:#07080c}
+.atd-modern__bar{gap:clamp(14px,2.4cqw,40px);border:1px solid rgba(255,255,255,.045);border-radius:999px;background:linear-gradient(180deg,#191b24db,#0c0d12d1);box-shadow:0 22px 52px -24px #000000eb,inset 0 1px #ffffff0b;backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
+.atd-modern__brand{color:#f2f3f7}
+.atd-modern__mark{border-radius:50%;box-shadow:0 2px 8px #0000006b}
+.atd-modern__item{border:1px solid transparent;border-radius:999px;color:#9b9fae;background:transparent;font:500 var(--atd-label) / 1 inherit;letter-spacing:-.005em;transition:color .16s,border-color .18s,background .18s,box-shadow .18s,backdrop-filter .18s}
+.atd-modern__item[data-dock-near=true],.atd-modern__item:hover,.atd-modern__item:focus-visible{color:#f4f5f9;border-color:#ffffff0e;background:#ffffff0e;box-shadow:0 8px 20px -14px #000000e6,inset 0 1px #ffffff0d;backdrop-filter:blur(18px) saturate(170%);-webkit-backdrop-filter:blur(18px) saturate(170%)}
+.atd-modern__item[aria-pressed=true]{color:#0a0b10;border-color:transparent;background:linear-gradient(180deg,#fff,#dfe3ef);box-shadow:0 10px 24px -12px #7896ffbf,inset 0 -1px #00000024}
+.atd-modern__icon,.atd-glass__icon{display:inline-flex;flex:none;align-items:center;justify-content:center;width:var(--atd-icon);height:var(--atd-icon);opacity:.72;transition:opacity .16s}
+.atd-modern__icon svg,.atd-glass__icon svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}
+.atd-modern__item[data-dock-near=true] .atd-modern__icon,.atd-modern__item[aria-pressed=true] .atd-modern__icon,.atd-glass__item[data-dock-near=true] .atd-glass__icon,.atd-glass__item[aria-pressed=true] .atd-glass__icon{opacity:1}
+.atd-modern__ghost{color:#a7abba}
+.atd-modern__ghost:hover{color:#f0f1f6;background:#ffffff0f}
+.atd-modern__cta{display:inline-flex;gap:var(--atd-gap);align-items:center;padding:0 var(--atd-bar-pad) 0 clamp(14px,1.1cqw,24px);border:0;color:#0a0b10;background:linear-gradient(180deg,#fff,#d8ddec);box-shadow:0 10px 26px -14px #96affff2,inset 0 -1px #00000029}
+.atd-modern__cta svg{box-sizing:border-box;width:calc(var(--atd-action-height) - clamp(12px,.9cqw,20px));height:calc(var(--atd-action-height) - clamp(12px,.9cqw,20px));padding:clamp(4px,.3cqw,7px);border-radius:999px;background:#0a0b101a;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.atd-modern__cta:hover{box-shadow:0 16px 32px -14px #96afff,inset 0 -1px #00000029;transform:translateY(-1px)}
+@container (max-width: 900px){.atd-modern__ghost{display:none}.atd-modern__item span:last-child,.atd-retro__item span:last-child{display:none}.atd-modern__cta span{display:none}.atd-modern__cta{padding:0 var(--atd-bar-pad)}}
+@media(max-width:600px){.atd-modern__word{display:none}.atd-modern__item{height:28px!important;transform:none!important}}
+@media(prefers-reduced-motion:reduce){.atd-modern__item,.atd-retro__item,.atd-glass__item{transform:none!important}}
+
+/* ---- PhishHawk adapter ---- */
+.ph-commandbar.animated-top-dock-component.atd-modern {
+  --ph-dock-glow: rgba(110, 231, 249, 0.55);
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: block;
+  width: 100%;
+  height: calc(var(--atd-top) + var(--atd-bar-height) + 8px);
+  overflow: visible;
+  container-type: inline-size;
+  background: transparent;
+  color: #ecece8;
+  font-family: inherit;
+  pointer-events: none;
+}
+.ph-commandbar .atd-modern__bar {
+  pointer-events: auto;
+}
+.ph-commandbar .atd-modern__item,
+.ph-commandbar .atd-modern__brand {
+  text-decoration: none;
+}
+.ph-commandbar .atd-modern__item[aria-current='page'] {
+  color: #0a0b10;
+  border-color: transparent;
+  background: linear-gradient(180deg, #fff, #dfe3ef);
+  box-shadow:
+    0 10px 24px -12px var(--ph-dock-glow),
+    inset 0 -1px #00000024;
+}
+.ph-commandbar .atd-modern__item[aria-current='page'] .atd-modern__icon {
+  opacity: 1;
+}
+.ph-commandbar .atd-modern__mark {
+  background: #0b0c0e;
+}
+.ph-commandbar .atd-modern__mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.ph-commandbar .atd-modern__item:focus-visible,
+.ph-commandbar .atd-modern__brand:focus-visible,
+.ph-commandbar .atd-modern__cta:focus-visible,
+.ph-commandbar .ph-commandbar__more:focus-visible {
+  outline: 2px solid rgba(110, 231, 249, 0.9);
+  outline-offset: 2px;
+}
+.ph-commandbar__user {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  height: var(--atd-action-height);
+  padding: 0 clamp(8px, 0.7cqw, 14px);
+  color: #c9ccd6;
+  font: 500 var(--atd-label) / 1 inherit;
+  white-space: nowrap;
+}
+.ph-commandbar__role {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #e7e9f0;
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+}
+.ph-commandbar__more-wrap {
+  position: relative;
+}
+.ph-commandbar__more {
+  display: none;
+}
+.ph-commandbar__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 11;
+  display: grid;
+  gap: 2px;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: linear-gradient(180deg, #191b24f2, #0c0d12f2);
+  box-shadow: 0 22px 52px -24px #000000eb, inset 0 1px #ffffff0b;
+}
+.ph-commandbar__menu a {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 12px;
+  color: #c9ccd6;
+  font: 500 14px / 1 inherit;
+  text-decoration: none;
+}
+.ph-commandbar__menu a:hover,
+.ph-commandbar__menu a:focus-visible,
+.ph-commandbar__menu a[aria-current='page'] {
+  color: #f4f5f9;
+  background: #ffffff12;
+  outline: none;
+}
+.ph-commandbar__menu svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+@container (max-width: 900px) {
+  .ph-commandbar__user {
+    display: none;
+  }
+}
+@container (max-width: 640px) {
+  .ph-commandbar .atd-modern__item[data-overflow='true'] {
+    display: none;
+  }
+  .ph-commandbar .ph-commandbar__more {
+    display: inline-flex;
+    align-items: center;
+  }
+  .ph-commandbar .atd-modern__bar {
+    gap: 10px;
+  }
+}

@@ -34,8 +34,9 @@ docker compose up -d --wait
 docker compose exec phishhawk phishhawk server create-admin admin
 ```
 
-Open <http://127.0.0.1:8000> and log in. Compose publishes the port on this
-machine only. To reach it from other machines, put a reverse proxy with TLS
+Open <http://127.0.0.1:8000> and log in: it opens the web app at `/app/`. The
+built-in pages, the backup and admin interface, stay at `/login`, `/queue` and
+the rest. Compose publishes the port on this machine only. To reach it from other machines, put a reverse proxy with TLS
 (Caddy or nginx) in front of it; do not publish port 8000 on a network.
 
 ## HTTPS through a reverse proxy
@@ -117,7 +118,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_ANALYSIS_MEMORY_MB`, `PHISHHAWK_ANALYSIS_CPU_SECONDS` | `2048`, `120` | Limits for the process that analyses one message. A message that exceeds them fails; the server does not. |
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
 | `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
-| `PHISHHAWK_FRONTEND_DIR` | empty | The build of your own frontend, served at `/app/`; see [FRONTEND.md](FRONTEND.md). |
+| `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
 
 An admin can change the retention period and the upload limit on the Settings
 page; the value set there wins over the variable.

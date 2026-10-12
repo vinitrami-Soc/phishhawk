@@ -1,0 +1,361 @@
+/* PhishHawk design tokens, light and dark. The theme is <html data-theme>;
+   src/app/theme.ts sets it before the first render. Every colour in the app
+   comes from here: components use the utilities below (bg-canvas, bg-surface,
+   text-ink, text-ink-muted, border-line, text-accent ...), never raw hex.
+   All text colours pass WCAG AA on canvas, surface and raised in both themes. */
+
+/* Tailwind's dark: variant follows the toggle, not only the system setting */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+@theme inline {
+  --color-canvas: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--text);
+  --color-ink-dim: var(--text-dim);
+  --color-ink-muted: var(--text-muted);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-brand: var(--brand);
+  --color-hover: var(--hover);
+  --color-v-malicious: var(--verdict-malicious);
+  --color-v-phishing: var(--verdict-phishing);
+  --color-v-suspicious: var(--verdict-suspicious);
+  --color-v-neutral: var(--verdict-neutral);
+  --color-s-high: var(--severity-high);
+  --color-s-medium: var(--severity-medium);
+  --color-s-low: var(--severity-low);
+  --color-ok: var(--ok);
+}
+
+/* Dark: true OLED black */
+:root,
+[data-theme='dark'] {
+  --bg: #000000;
+  --surface: #0a0a0b;
+  --raised: #151517;
+  --sunken: #050505;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --hover: rgba(255, 255, 255, 0.06);
+  --text: #f4f4f5;
+  --text-dim: #a8a8b0;
+  --text-muted: #8a8a94;
+  --accent: #67e8f9;
+  --on-accent: #001317;
+  --brand: #f97316;
+  --verdict-malicious: #f87171;
+  --verdict-phishing: #fb923c;
+  --verdict-suspicious: #facc15;
+  --verdict-neutral: #a1a1aa;
+  --severity-high: #f87171;
+  --severity-medium: #fbbf24;
+  --severity-low: #93c5fd;
+  --ok: #4ade80;
+  --shell-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --float-shadow: 0 24px 60px -28px rgba(0, 0, 0, 0.95);
+  --glow-strength: 0.35;
+  --bar-bg: linear-gradient(180deg, rgba(30, 30, 33, 0.86), rgba(10, 10, 11, 0.84));
+  --bar-shadow: 0 22px 52px -24px rgba(0, 0, 0, 0.95), inset 0 1px rgba(255, 255, 255, 0.05);
+  --pill-active-bg: linear-gradient(180deg, #ffffff, #e4e4e7);
+  --pill-active-ink: #09090b;
+  color-scheme: dark;
+}
+
+/* Light: clean white */
+[data-theme='light'] {
+  --bg: #ffffff;
+  --surface: #f5f5f6;
+  --raised: #ffffff;
+  --sunken: #ececee;
+  --line: rgba(9, 9, 11, 0.08);
+  --line-strong: rgba(9, 9, 11, 0.14);
+  --hover: rgba(9, 9, 11, 0.05);
+  --text: #0b0b0c;
+  --text-dim: #3f3f46;
+  --text-muted: #5f5f68;
+  --accent: #0e7490;
+  --on-accent: #ffffff;
+  --brand: #ea580c;
+  --verdict-malicious: #b91c1c;
+  --verdict-phishing: #c2410c;
+  --verdict-suspicious: #a16207;
+  --verdict-neutral: #52525b;
+  --severity-high: #b91c1c;
+  --severity-medium: #a16207;
+  --severity-low: #1d4ed8;
+  --ok: #15803d;
+  --shell-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --float-shadow: 0 24px 60px -30px rgba(15, 15, 20, 0.25);
+  --glow-strength: 0.18;
+  --bar-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(246, 246, 247, 0.86));
+  --bar-shadow: 0 18px 44px -24px rgba(15, 15, 20, 0.28), inset 0 1px rgba(255, 255, 255, 0.95);
+  --pill-active-bg: linear-gradient(180deg, #18181b, #09090b);
+  --pill-active-ink: #ffffff;
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Before the script sets data-theme, follow the system so the first paint
+   matches the most likely theme. */
+html:not([data-theme]) {
+  color-scheme: light dark;
+}
+html:not([data-theme]),
+html:not([data-theme]) body {
+  background: Canvas;
+  color: CanvasText;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The theme switch: the new theme grows in as a circle from the toggle
+   (src/app/theme.ts animates the clip-path). No cross-fade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* ---- The command bar follows the theme ----
+   The kit's bar is dark glass; these take its colours from the tokens. The
+   [data-theme] prefix outranks the kit's own selectors without editing them. */
+[data-theme] .ph-commandbar.animated-top-dock-component.atd-modern {
+  color: var(--text);
+}
+[data-theme] .ph-commandbar .atd-modern__bar {
+  border-color: var(--line-strong);
+  background: var(--bar-bg);
+  box-shadow: var(--bar-shadow);
+}
+[data-theme] .ph-commandbar .atd-modern__brand {
+  color: var(--text);
+}
+[data-theme] .ph-commandbar .atd-modern__mark {
+  background: transparent;
+  box-shadow: none;
+}
+[data-theme] .ph-commandbar .atd-modern__item {
+  color: var(--text-dim);
+}
+[data-theme] .ph-commandbar .atd-modern__item[data-dock-near='true'],
+[data-theme] .ph-commandbar .atd-modern__item:hover {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--hover);
+}
+[data-theme] .ph-commandbar .atd-modern__item[aria-current='page'] {
+  color: var(--pill-active-ink);
+  border-color: transparent;
+  background: var(--pill-active-bg);
+}
+[data-theme] .ph-commandbar .atd-modern__ghost {
+  color: var(--text-dim);
+}
+[data-theme] .ph-commandbar .atd-modern__ghost:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+[data-theme] .ph-commandbar .atd-modern__cta {
+  color: var(--pill-active-ink);
+  background: var(--pill-active-bg);
+}
+[data-theme] .ph-commandbar .atd-modern__cta svg {
+  background: color-mix(in srgb, var(--pill-active-ink) 14%, transparent);
+}
+[data-theme] .ph-commandbar__user {
+  color: var(--text-dim);
+}
+[data-theme] .ph-commandbar__role {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+[data-theme] .ph-commandbar__menu {
+  border-color: var(--line-strong);
+  background: var(--raised);
+  box-shadow: var(--float-shadow);
+}
+[data-theme] .ph-commandbar__menu a {
+  color: var(--text-dim);
+}
+[data-theme] .ph-commandbar__menu a:hover,
+[data-theme] .ph-commandbar__menu a:focus-visible,
+[data-theme] .ph-commandbar__menu a[aria-current='page'] {
+  color: var(--text);
+  background: var(--hover);
+}
+
+/* A soft light at the top of every page, fixed and still. */
+.ph-aura {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 560px;
+  pointer-events: none;
+  background: radial-gradient(48% 62% at 50% 0%, color-mix(in srgb, var(--accent) var(--aura-strength), transparent), transparent 72%);
+}
+:root,
+[data-theme='dark'] {
+  --aura-strength: 9%;
+}
+[data-theme='light'] {
+  --aura-strength: 8%;
+}
+
+/* ---- The command bar always holds its content ----
+   The kit caps the bar at 1460px while its labels keep growing with the window,
+   so on very wide and on mid-size windows the last button ran past the edge.
+   The bar now takes the width of its content (never wider than the window),
+   and the "name · role" chip steps aside where space is short. */
+[data-theme] .ph-commandbar .atd-modern__bar {
+  width: max-content;
+  max-width: calc(100% - 16px);
+  padding-right: clamp(10px, 1.2cqw, 14px);
+}
+@container (max-width: 1120px) {
+  [data-theme] .ph-commandbar__user {
+    display: none;
+  }
+}
+/* Just above 900px every label is still shown and the theme switch sits in
+   the bar too, so the spacing tightens until the labels go at 900px. */
+@container (min-width: 901px) and (max-width: 980px) {
+  [data-theme] .ph-commandbar .atd-modern__bar {
+    gap: 10px;
+  }
+  [data-theme] .ph-commandbar .atd-modern__item {
+    padding: 0 6px;
+  }
+}
+@container (max-width: 640px) {
+  [data-theme] .ph-commandbar .atd-modern__bar {
+    gap: 8px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  [data-theme] .ph-commandbar .atd-modern__dock {
+    gap: 2px;
+  }
+  [data-theme] .ph-commandbar .atd-modern__item {
+    padding: 0 8px;
+  }
+  [data-theme] .ph-commandbar .ph-commandbar__more {
+    padding: 0 10px;
+  }
+  [data-theme] .ph-commandbar .atd-modern__actions {
+    gap: 6px;
+  }
+}
+@container (max-width: 440px) {
+  [data-theme] .ph-commandbar .atd-modern__bar {
+    gap: 5px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  [data-theme] .ph-commandbar .atd-modern__item {
+    padding: 0 6px;
+  }
+  [data-theme] .ph-commandbar .ph-commandbar__more {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  [data-theme] .ph-commandbar .atd-modern__actions {
+    gap: 4px;
+  }
+}
+[data-theme] .ph-commandbar__toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 32px;
+  width: 58px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: none;
+  transition-property: transform;
+  transition-duration: 200ms;
+}
+[data-theme] .ph-commandbar__toggle:active {
+  transform: scale(0.96);
+}
+@container (max-width: 440px) {
+  [data-theme] .ph-commandbar__toggle {
+    height: 28px;
+    width: 52px;
+    padding: 2px;
+  }
+}
+
+/* ---- Phones: the "PhishHawk" word beside the logo is hidden by the kit, which
+   left the home link with no name. It stays for screen readers. ---- */
+@media (max-width: 600px) {
+  [data-theme] .ph-commandbar .atd-modern__word {
+    display: inline;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* ---- Printing: light colours on white paper, whatever the theme on screen
+   (the same values as [data-theme='light']; a test keeps them equal), and none
+   of the floating controls. ---- */
+@media print {
+  :root,
+  [data-theme] {
+    --bg: #ffffff;
+    --surface: #f5f5f6;
+    --raised: #ffffff;
+    --sunken: #ececee;
+    --line: rgba(9, 9, 11, 0.08);
+    --line-strong: rgba(9, 9, 11, 0.14);
+    --hover: rgba(9, 9, 11, 0.05);
+    --text: #0b0b0c;
+    --text-dim: #3f3f46;
+    --text-muted: #5f5f68;
+    --accent: #0e7490;
+    --on-accent: #ffffff;
+    --brand: #ea580c;
+    --verdict-malicious: #b91c1c;
+    --verdict-phishing: #c2410c;
+    --verdict-suspicious: #a16207;
+    --verdict-neutral: #52525b;
+    --severity-high: #b91c1c;
+    --severity-medium: #a16207;
+    --severity-low: #1d4ed8;
+    --ok: #15803d;
+    --shell-highlight: none;
+    --float-shadow: none;
+    --glow-strength: 0;
+    color-scheme: light;
+  }
+  .ph-commandbar,
+  .ph-aura {
+    display: none !important;
+  }
+  * {
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+}

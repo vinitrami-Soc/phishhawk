@@ -6,10 +6,33 @@ on the same origin as the API, so it needs no CORS and the session cookie
 stays `SameSite=Strict`. The built-in pages keep working beside it, as the
 backup and admin interface.
 
+PhishHawk's own frontend is in [frontend/](../frontend/), built in Google AI
+Studio to these rules. The Docker image builds it and serves it at `/app/`, and
+the server's address (`/`) opens it; the built-in pages stay at `/login`,
+`/queue` and the rest.
+
+- [This repository's frontend](#this-repositorys-frontend)
 - [The rules](#the-rules)
 - [The API in five calls](#the-api-in-five-calls)
 - [Build and deploy](#build-and-deploy)
 - [A starting prompt for Google AI Studio](#a-starting-prompt-for-google-ai-studio)
+
+## This repository's frontend
+
+```bash
+cd frontend
+npm ci --ignore-scripts && npm test && npx tsc --noEmit && npm run build
+PHISHHAWK_FRONTEND_DIR="$PWD/dist" phishhawk server run    # then open http://127.0.0.1:8000
+```
+
+`npm run dev` previews it with a mock API, with no server. CI runs its tests,
+builds it and drives the build in Chromium against a real server at seven
+widths from 320 to 1440 px (`tests/server/test_frontend_browser.py`).
+
+To bring in a change made in Google AI Studio, export the project as a ZIP and
+replace `frontend/` with it, keeping `public/brand/report-*.webp`, then run the
+commands above. The files listed in `src/__tests__/locked-files.json`, the tests
+among them, must come back unchanged; `npm test` fails otherwise.
 
 ## The rules
 
@@ -64,6 +87,8 @@ user's `role` allows; the server refuses the rest (403) whatever the frontend
 shows.
 
 ## Build and deploy
+
+The Docker image does this for `frontend/`. For a frontend of your own:
 
 1. Build static files with base path `/app/`. With Vite, set `base: '/app/'` in
    `vite.config.ts`, then run `npm run build`. The result is a `dist/` folder.
