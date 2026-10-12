@@ -23,6 +23,7 @@ test('the fingerprint ignores formatting and comments, not code', () => {
   assert.equal(fingerprint('x.json', '{"b": 1, "a": [1, 2]}'), fingerprint('x.json', '{\n  "a": [1,2],\n  "b": 1\n}'));
   assert.notEqual(fingerprint('x.json', '{"a": [2, 1]}'), fingerprint('x.json', '{"a": [1, 2]}'));
   assert.equal(fingerprint('x.ts', "const u = 'https://example.org/a';"), 'constu="https://example.org/a"');
+  assert.equal(fingerprint('x.md', '<!<!-- a -->-- b -->text'), 'text');
 });
 
 test('every locked file is present and unchanged', () => {
