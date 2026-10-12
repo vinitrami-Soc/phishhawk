@@ -1,0 +1,352 @@
+/* The product page's own motion and colour: a soft, blurred wash of the
+   accent and brand colours behind a few sections, the strip of formats that
+   drifts by, the scan line over the example analysis, the light that turns
+   around the example and the last call to action, and the logo's slow float.
+   Colours come from the theme tokens, so they follow light and dark.
+   Everything here stands still for people who ask for less motion. */
+
+/* a plain wash of colour: accent on one side, brand on the other, blurred */
+.ph-glow-bg {
+  background:
+    radial-gradient(42% 55% at 18% 18%, color-mix(in srgb, var(--accent) var(--wash-accent), transparent), transparent 72%),
+    radial-gradient(38% 50% at 84% 26%, color-mix(in srgb, var(--brand) var(--wash-brand), transparent), transparent 72%);
+  filter: blur(48px);
+}
+:root,
+[data-theme='dark'] {
+  --wash-accent: 13%;
+  --wash-brand: 11%;
+}
+[data-theme='light'] {
+  --wash-accent: 11%;
+  --wash-brand: 9%;
+}
+
+/* ---- light on the edges of the boxes ----
+   .ph-edge: a thin gradient on the border, accent at one corner and brand at
+   the other. .ph-glow: on hover, a light on the border that follows the
+   pointer (LandingScreen sets --mx and --my). Both stay on the border only. */
+.ph-edge,
+.ph-glow {
+  position: relative;
+  isolation: isolate;
+}
+.ph-edge::after,
+.ph-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  mask:
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
+  mask-composite: exclude;
+}
+.ph-edge::after {
+  background: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--fx-a) var(--edge-strength), transparent),
+    transparent 32%,
+    transparent 68%,
+    color-mix(in srgb, var(--fx-b) var(--edge-strength), transparent)
+  );
+}
+.ph-glow::before {
+  background: radial-gradient(
+    260px circle at var(--mx, 50%) var(--my, -300px),
+    var(--fx-a),
+    color-mix(in srgb, var(--fx-b) 70%, transparent) 38%,
+    transparent 72%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.ph-glow:hover::before {
+  opacity: 1;
+}
+/* the effects' two colours: cyan to orange on black; on white, black to
+   orange, which a light on a white page needs to be seen */
+:root,
+[data-theme='dark'] {
+  --fx-a: var(--accent);
+  --fx-b: var(--brand);
+  --fx-glow: var(--accent);
+  --spark-core: white;
+  --edge-strength: 55%;
+}
+[data-theme='light'] {
+  --fx-a: var(--text);
+  --fx-b: var(--brand);
+  --fx-glow: var(--brand);
+  --spark-core: var(--brand);
+  --edge-strength: 50%;
+}
+
+/* ---- how it works: a light runs from Submit to Report ----
+   One run takes 6s: across, it crosses the whole line in the first 3.6s, so it
+   reaches a step every 1.2s; down the side on phones, each line between two
+   steps has its own 1.2s run, started --delay after the first. Each step's box
+   lights up, in its own colour (--node), as the light reaches it. It starts
+   when the steps scroll into view (.is-live). */
+.ph-flow-line {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--fx-a) 45%, transparent), color-mix(in srgb, var(--fx-b) 45%, transparent));
+}
+.ph-flow-line--down {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--fx-a) 40%, transparent), color-mix(in srgb, var(--fx-b) 40%, transparent));
+}
+.ph-flow-spark {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 999px;
+}
+.ph-flow-line .ph-flow-spark {
+  top: -1px;
+  left: 0;
+  width: 110px;
+  height: 3px;
+  margin-left: -55px;
+  background: linear-gradient(90deg, transparent, var(--fx-a), var(--spark-core) 50%, var(--fx-b), transparent);
+  box-shadow: 0 0 16px 2px color-mix(in srgb, var(--fx-glow) 55%, transparent);
+}
+.ph-flow-line--down .ph-flow-spark {
+  top: 0;
+  left: -1px;
+  width: 3px;
+  height: 64px;
+  margin-top: -32px;
+  margin-left: 0;
+  background: linear-gradient(180deg, transparent, var(--fx-a), var(--spark-core) 50%, var(--fx-b), transparent);
+}
+.is-live .ph-flow-line .ph-flow-spark {
+  animation: ph-flow-across 6s linear 1.2s infinite;
+}
+.is-live .ph-flow-line--down .ph-flow-spark {
+  animation: ph-flow-down 6s linear infinite;
+  animation-delay: var(--delay);
+}
+.is-live .ph-flow-node {
+  animation: ph-flow-node 6s ease-out infinite;
+  animation-delay: calc(var(--delay) + 1.2s);
+}
+/* down the side there is no line to draw first: the first step lights at once */
+@media (max-width: 1023px) {
+  .is-live .ph-flow-node {
+    animation-delay: var(--delay);
+  }
+}
+@keyframes ph-flow-across {
+  0% {
+    left: 0;
+    opacity: 0;
+  }
+  4%,
+  56% {
+    opacity: 1;
+  }
+  60% {
+    left: 100%;
+    opacity: 0;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
+  }
+}
+@keyframes ph-flow-down {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  3%,
+  17% {
+    opacity: 1;
+  }
+  20% {
+    top: 100%;
+    opacity: 0;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+@keyframes ph-flow-node {
+  0% {
+    border-color: var(--line-strong);
+    box-shadow: var(--float-shadow);
+  }
+  4% {
+    border-color: color-mix(in srgb, var(--node) 85%, transparent);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--node) 16%, transparent),
+      0 0 36px -4px color-mix(in srgb, var(--node) 65%, transparent);
+  }
+  28%,
+  100% {
+    border-color: var(--line-strong);
+    box-shadow: var(--float-shadow);
+  }
+}
+
+/* ---- the strip of formats ---- */
+.ph-marquee {
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+.ph-marquee__track {
+  display: flex;
+  width: max-content;
+  animation: ph-marquee 56s linear infinite;
+}
+.ph-marquee:hover .ph-marquee__track {
+  animation-play-state: paused;
+}
+@keyframes ph-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ---- the scan line over the example analysis: two passes, then it rests ---- */
+.ph-scan {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 38%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--accent) 10%, transparent) 80%,
+    color-mix(in srgb, var(--accent) 40%, transparent)
+  );
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  opacity: 0;
+  animation: ph-scan 2.6s cubic-bezier(0.32, 0.72, 0, 1) 0.3s 2;
+}
+@keyframes ph-scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  15%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(270%);
+    opacity: 0;
+  }
+}
+
+/* ---- a thin light that turns around a card's edge ---- */
+@property --ph-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.ph-ring {
+  position: relative;
+  isolation: isolate;
+}
+.ph-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--ph-angle),
+    transparent 0 62%,
+    color-mix(in srgb, var(--fx-a) 90%, transparent) 78%,
+    color-mix(in srgb, var(--fx-b) 90%, transparent) 88%,
+    transparent 100%
+  );
+  mask:
+    linear-gradient(black 0 0) content-box,
+    linear-gradient(black 0 0);
+  mask-composite: exclude;
+  animation: ph-turn 7s linear infinite;
+}
+@keyframes ph-turn {
+  to {
+    --ph-angle: 360deg;
+  }
+}
+
+/* ---- the logo floats a little; its glow breathes with it ---- */
+.ph-float {
+  animation: ph-float 7s ease-in-out infinite;
+}
+@keyframes ph-float {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.ph-breathe {
+  animation: ph-breathe 7s ease-in-out infinite;
+}
+@keyframes ph-breathe {
+  50% {
+    opacity: 0.55;
+    transform: scale(1.08);
+  }
+}
+
+/* ---- a dot that pulses beside "live" words ---- */
+.ph-ping {
+  animation: ph-ping 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes ph-ping {
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-marquee__track,
+  .ph-ring::before,
+  .ph-float,
+  .ph-breathe,
+  .ph-ping {
+    animation: none;
+  }
+  .ph-scan,
+  .ph-flow-spark {
+    display: none;
+  }
+  .is-live .ph-flow-node {
+    animation: none;
+  }
+  /* the strip stands still: one copy, wrapped, nothing faded at the sides */
+  .ph-marquee {
+    mask-image: none;
+  }
+  .ph-marquee__track,
+  .ph-marquee__list {
+    width: auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 12px;
+  }
+  .ph-marquee__copy {
+    display: none;
+  }
+}
+
+@media print {
+  .ph-edge::after,
+  .ph-glow::before,
+  .ph-ring::before,
+  .ph-scan,
+  .ph-glow-bg {
+    display: none;
+  }
+}

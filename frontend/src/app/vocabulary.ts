@@ -24,6 +24,14 @@ export const VERDICT_GLOW: Record<Verdict, string> = {
 
 export const VERDICTS: Verdict[] = ['MALICIOUS', 'LIKELY PHISHING', 'SUSPICIOUS', 'NO STRONG INDICATORS'];
 
+/** What each verdict means, in the order of VERDICTS. Help and the product page both show this. */
+export const VERDICT_MEANING: [Verdict, string][] = [
+  ['MALICIOUS', 'VirusTotal reports a link or an attachment in the message as malicious. Only possible when an admin has turned VirusTotal on.'],
+  ['LIKELY PHISHING', 'Strong evidence: two or more high-severity signals, or one backed by evidence about another part of the message, such as a lookalike sender that also links to a raw IP address.'],
+  ['SUSPICIOUS', 'Some evidence, not enough for likely phishing: one high-severity signal on its own, or several smaller ones.'],
+  ['NO STRONG INDICATORS', 'Nothing strong was found. This does not prove the message is safe.'],
+];
+
 export function verdictTone(verdict: string): Tone {
   return VERDICT_TONE[verdict as Verdict] ?? NEUTRAL_TONE;
 }

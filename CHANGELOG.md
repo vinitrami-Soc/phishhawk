@@ -9,6 +9,15 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **A product page in the web app.** Signed out, `/app/` now explains
+  PhishHawk before asking anyone to sign in: an example analysis that runs as
+  you watch, how it works, what it checks in each part of a message (with
+  findings in the engine's own words), what every analysis gives back, the
+  held-out results, the four verdicts, the ways to use it, how it handles
+  sensitive mail, and common questions. Sign in is at the top; signing out
+  comes back to it, and signed in it stays at `/app/about`. Help and Privacy
+  share its top bar and its footer. It follows the light and dark themes and
+  stands still for people who ask for less motion.
 - **Mailbox import in the web app.** An admin connects a report mailbox over
   IMAP, through Microsoft Graph or through the Gmail API, read-only (EXAMINE
   and BODY.PEEK; GET requests after one token request). The worker polls it
@@ -169,6 +178,9 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- Help said one message at a time; it now lists batches (.mbox, .zip, several
+  files) and their limits.
+- On a 320 px phone the sign-in card reached past the right edge.
 - An uploaded message larger than 1 MB was written to a temporary file in
   clear while the request was read; uploads now stay in memory, and a body
   larger than the limit is refused before it is read.
