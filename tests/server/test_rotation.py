@@ -83,3 +83,25 @@ def test_rotation_moves_a_batchs_combined_exports_too(services):
     with transaction(services.sessions) as s:
         assert rotation.rotate(s, services.store, new_box, actor="cli")["blobs"] == 1
     assert BlobStore(services.store.root, new_box).get(blob) == b"combined report"
+
+
+def test_rotation_moves_mailbox_secrets_too(services):
+    import secrets
+
+    from phishhawk.server import mailboxes
+    from phishhawk.server.models import Mailbox
+
+    password = secrets.token_hex(8)
+    with transaction(services.sessions) as s:
+        made = mailboxes.create(s, services.box, {"name": "Reports", "kind": "imap", "secret": password,
+                                                  "config": {"host": "imap.example-corp.co.uk", "user": "soc"}})
+        mailbox_id = made.id
+    new_box = Box.from_b64(new_key())
+    with transaction(services.sessions) as s:
+        assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 0, "secrets": 1}
+    with transaction(services.sessions) as s:
+        mailbox = s.get(Mailbox, mailbox_id)
+        assert mailboxes.secret_of(new_box, mailbox) == password
+        with pytest.raises(DecryptError):
+            mailboxes.secret_of(services.box, mailbox)
+        assert rotation.rotate(s, services.store, new_box, actor="cli") == {"blobs": 0, "secrets": 0}

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .models import Job, utcnow
 
-KINDS = ("analyze", "batch_finalize", "campaign_rebuild", "retention_sweep")  # M3 adds mailbox_poll
+KINDS = ("analyze", "batch_finalize", "campaign_rebuild", "mailbox_poll", "retention_sweep")
 MAX_ATTEMPTS = 3
 
 
