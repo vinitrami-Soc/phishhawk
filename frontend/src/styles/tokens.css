@@ -282,8 +282,9 @@ html:not([data-theme]) body {
   position: relative;
   display: inline-flex;
   align-items: center;
+  align-self: center;
   flex: none;
-  height: 32px;
+  height: var(--atd-action-height);
   width: 58px;
   padding: 3px;
   border-radius: 999px;
@@ -296,11 +297,20 @@ html:not([data-theme]) body {
 [data-theme] .ph-commandbar__toggle:active {
   transform: scale(0.96);
 }
+@media (max-width: 600px) {
+  [data-theme] .ph-commandbar__toggle {
+    height: var(--atd-action-height);
+    width: 54px;
+    padding: 2.5px;
+    align-self: center;
+  }
+}
 @container (max-width: 440px) {
   [data-theme] .ph-commandbar__toggle {
-    height: 28px;
+    height: var(--atd-action-height);
     width: 52px;
-    padding: 2px;
+    padding: 2.5px;
+    align-self: center;
   }
 }
 
