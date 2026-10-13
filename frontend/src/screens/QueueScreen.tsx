@@ -186,7 +186,7 @@ export default function QueueScreen({ session }: { session: Session }) {
       ) : (
         <>
           {/* desktop table */}
-          <Card className="hidden overflow-hidden md:block">
+          <Card className="hidden overflow-hidden lg:block">
             <table className="w-full table-fixed text-left text-[13px]">
               <caption className="sr-only">Analyses</caption>
               <thead className="border-b border-line bg-sunken/60 text-xs text-ink-muted">
@@ -221,8 +221,8 @@ export default function QueueScreen({ session }: { session: Session }) {
             </table>
           </Card>
 
-          {/* phones: cards */}
-          <div className="grid gap-3 md:hidden">
+          {/* phones and tablets: cards */}
+          <div className="grid gap-3 lg:hidden">
             {state.rows.map((row) => (
               <Link key={row.id} href={`/app/analyses/${row.id}`} className="grid gap-2 rounded-[20px] border border-line bg-surface p-4 transition-colors hover:bg-hover">
                 <div className="flex items-center justify-between gap-3">

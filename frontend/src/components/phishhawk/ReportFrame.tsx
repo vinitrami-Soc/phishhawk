@@ -23,7 +23,7 @@ export function ReportFrame({ analysisId, files }: { analysisId: number; files: 
           className="h-full w-full border-0"
         />
       </div>
-      <a className="w-max text-sm text-[var(--accent)] underline-offset-4 hover:underline" href={src} target="_blank" rel="noopener noreferrer">
+      <a className="inline-flex min-h-8 w-max items-center text-sm text-[var(--accent)] underline-offset-4 hover:underline" href={src} target="_blank" rel="noopener noreferrer">
         Open the report in a new tab
       </a>
     </div>

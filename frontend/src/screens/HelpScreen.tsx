@@ -11,14 +11,16 @@ import { Card, PageHeader, VerdictBadge } from '@/components/ui/ui';
 export default function HelpScreen() {
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-6">
-      <ScrollProgress className="fixed z-50 h-0.5 bg-accent print:hidden" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden">
+        <ScrollProgress className="absolute h-0.5 bg-accent" />
+      </div>
       <PageHeader eyebrow="Help" title="Help" description="Answers to common questions about PhishHawk. For anything else, ask your PhishHawk admin." />
 
       <Card className="overflow-hidden">
         <Question question="What do the verdicts mean?">
           <ul className="grid gap-3">
             {VERDICT_MEANING.map(([verdict, meaning]) => (
-              <li key={verdict} className="grid gap-1.5 sm:grid-cols-[190px_1fr] sm:items-start sm:gap-4">
+              <li key={verdict} className="grid gap-1.5 sm:grid-cols-[210px_1fr] sm:items-start sm:gap-4">
                 <span>
                   <VerdictBadge verdict={verdict} />
                 </span>

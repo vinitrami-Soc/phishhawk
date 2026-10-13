@@ -53,7 +53,7 @@ function RecentAnalyses() {
 
   return (
     <section className="grid gap-4">
-      <SectionTitle aside={<Link href="/app/analyses" className="text-accent hover:underline">Open the queue</Link>}>Recent analyses</SectionTitle>
+      <SectionTitle aside={<Link href="/app/analyses" className="inline-flex min-h-6 items-center text-accent hover:underline">Open the queue</Link>}>Recent analyses</SectionTitle>
       {error ? (
         <ErrorState detail={error} onRetry={() => setAttempt((a) => a + 1)} />
       ) : rows === null ? (
@@ -74,7 +74,7 @@ function RecentAnalyses() {
               <Link key={row.id} href={`/app/analyses/${row.id}`} className="block px-5 py-4 transition-colors hover:bg-hover">
                 {/* phones: three lines */}
                 <div className="grid gap-1.5 md:hidden">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
                     <VerdictBadge verdict={row.verdict} />
                     <span className="flex items-center gap-3 text-xs text-ink-muted">
                       <span className="font-mono text-sm tabular-nums text-ink">{row.score}</span>
@@ -88,7 +88,7 @@ function RecentAnalyses() {
                 <div className="hidden grid-cols-[200px_minmax(0,1fr)_48px_112px] items-center gap-5 md:grid">
                   <VerdictBadge verdict={row.verdict} className="justify-self-start" />
                   <div className="min-w-0">
-                    <div className="truncate">{subject}</div>
+                    <div className="min-w-0 [&>p]:truncate">{subject}</div>
                     <p className="truncate font-mono text-xs text-ink-muted">{showIndicator('email', row.sender)}</p>
                   </div>
                   <span className="text-right font-mono text-sm tabular-nums text-ink">{row.score}</span>

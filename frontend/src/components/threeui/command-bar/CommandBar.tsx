@@ -9,7 +9,12 @@
    routes, the user chip and "Sign out".
 
    Routing stays the app's: items are real <a href> links and onNavigate is
-   called on a plain left click so a client router can take over. */
+   called on a plain left click so a client router can take over.
+
+   Past the first primaryCount items, the pages are in "More", at every width:
+   nine pages, the user and "Sign out" are wider than the bar on most screens.
+   More also says who is signed in and with which role, which the bar has no
+   room for on phones and tablets. */
 
 import { useEffect, useId, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react';
 import useClickOutside from '../../../hooks/useClickOutside';
@@ -35,7 +40,7 @@ export type CommandBarProps = {
   onNavigate?: (href: string) => void;
   onSignOut?: () => void;
   signOutLabel?: string;
-  /** How many items stay in the bar on narrow screens; the rest go into "More". */
+  /** How many items stay in the bar; the rest go into "More". */
   primaryCount?: number;
 };
 
@@ -126,7 +131,7 @@ export function CommandBar({
           ))}
         </nav>
         <div className="atd-modern__actions">
-          {overflow.length > 0 && (
+          {(overflow.length > 0 || user) && (
             <div ref={moreRef} className="ph-commandbar__more-wrap">
               <button
                 type="button"
@@ -139,6 +144,12 @@ export function CommandBar({
               </button>
               {menuOpen && (
                 <div id={menuId} className="ph-commandbar__menu">
+                  {user && (
+                    <p className="ph-commandbar__menu-user">
+                      Signed in as <strong>{user.name}</strong>
+                      <span className="ph-commandbar__role">{user.role}</span>
+                    </p>
+                  )}
                   {overflow.map((item) => (
                     <a
                       key={item.href}

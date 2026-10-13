@@ -69,7 +69,9 @@ function Brand({ onLanding }: { onLanding: boolean }) {
   const inner = (
     <>
       <img src={asset('brand/phishhawk-mark.svg')} alt="" className="h-9 w-9 rounded-[10px] shadow-[0_6px_18px_-8px_var(--brand)]" />
-      <TextRoll className="text-[15px] font-semibold tracking-[-0.01em] text-ink">PhishHawk</TextRoll>
+      <span className="hidden min-[360px]:inline">
+        <TextRoll className="text-[15px] font-semibold tracking-[-0.01em] text-ink">PhishHawk</TextRoll>
+      </span>
     </>
   );
   const className = 'flex shrink-0 items-center gap-2.5 rounded-full py-1 pl-1 pr-2';

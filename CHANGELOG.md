@@ -178,6 +178,17 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- **Phones, tablets and desktops, checked screen by screen.** On screens from
+  1024 to 1440 px an admin's top bar ran past the right edge, cutting off
+  Mailboxes, Sign out and the theme switch. The admin pages are now in More at
+  every width, and More says who is signed in and with which role, which the
+  bar has no room for on phones. On tablets the Queue and Audit tables cut
+  their headings; below 1024 px they show as cards. Each report mailbox is in
+  its own card, and names and addresses wrap between words. Links and buttons
+  on phones are at least 24 px (the logo, footer links, ATT&CK chips, the
+  remove buttons in Settings). A recent analysis on a 320 px phone wraps
+  instead of running out of its card, Help's verdict column fits its longest
+  badge, and the reading-progress line stays inside the window.
 - Help said one message at a time; it now lists batches (.mbox, .zip, several
   files) and their limits.
 - On a 320 px phone the sign-in card reached past the right edge.

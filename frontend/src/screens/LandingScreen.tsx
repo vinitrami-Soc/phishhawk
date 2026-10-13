@@ -1288,7 +1288,9 @@ export default function LandingScreen({ signedIn }: { signedIn: boolean }) {
         box.style.setProperty('--my', `${event.clientY - rect.top}px`);
       }}
     >
-      <ScrollProgress className="fixed z-50 h-0.5 bg-[linear-gradient(90deg,var(--accent),var(--brand))] print:hidden" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden">
+        <ScrollProgress className="absolute h-0.5 bg-[linear-gradient(90deg,var(--accent),var(--brand))]" />
+      </div>
       <Hero signedIn={signedIn} />
       <Strip />
       <Why />
