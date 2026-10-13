@@ -4,8 +4,9 @@ visitor sees first and sign in from it, analyse a bundled
 sample offline, read the verdict, the sandboxed report and the files; upload
 two messages as a batch and follow them to their combined reports and their
 campaign; connect a mailbox (a test IMAP server) and find its reports in the
-queue; then check phone, tablet and desktop widths for anything past the
-right edge. No console errors, so nothing broke the CSP. Skipped unless
+queue; create an organization's account from the product page and join it from
+a second browser with its invitation link; then check phone, tablet and
+desktop widths for anything past the right edge. No console errors, so nothing broke the CSP. Skipped unless
 PHISHHAWK_FRONTEND_BUILD names the build (CI's frontend job makes it);
 PHISHHAWK_CHROMIUM may name the browser's executable."""
 
@@ -299,3 +300,99 @@ def test_an_admin_connects_a_mailbox_and_its_reports_reach_the_queue(browser, tm
         assert errors == []
     imap.close()
     assert imap.violations == []
+
+
+def _account(page, username):
+    """Fills the fields every new account has."""
+    page.get_by_label("Username", exact=True).fill(username)
+    page.get_by_label("Password", exact=True).fill(PASSWORD)
+    page.get_by_label("First name", exact=True).fill(username.capitalize())
+    page.get_by_label("Last name", exact=True).fill("Example")
+    page.get_by_label("Location", exact=True).fill("Pune")
+
+
+# What the theme toggle, fixed at the bottom left, covers once the page is scrolled to its end.
+UNDER_TOGGLE = """() => {
+  window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+  const t = document.querySelector('[aria-label="Dark theme"]').getBoundingClientRect();
+  return [...document.querySelectorAll('main a, main p, main button, main input, main label')].filter((e) => {
+    const r = e.getBoundingClientRect();
+    return r.width && r.left < t.right && r.right > t.left && r.top < t.bottom && r.bottom > t.top;
+  }).map((e) => e.tagName + ' ' + e.textContent.trim().slice(0, 40));
+}"""
+
+# How far below its section's title each Save button sits, in pixels.
+SAVE_BELOW_TITLE = """() => [...document.querySelectorAll('main button')]
+  .filter((b) => b.textContent.trim() === 'Save')
+  .map((b) => [b.getBoundingClientRect().top, b.parentElement.querySelector('h2').getBoundingClientRect().top])
+  .map(([button, title]) => Math.round(button - title))"""
+
+
+def test_an_organization_signs_up_and_its_invitation_brings_in_a_second_person(browser, tmp_path):
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        owner, owner_errors = _signed_in(browser, server)  # root owns the server: it lets anyone create an account
+        owner.goto(server.base + "/app/settings")
+        title = owner.get_by_role("heading", name="Sign-up", exact=True)
+        signup = owner.locator("main div.grid").filter(has=title).last  # the section, not the page around it
+        signup.get_by_role("switch", name="Anyone can create an account").click()
+        # beside its title on a wide screen, as in every other section
+        below = owner.evaluate(SAVE_BELOW_TITLE)
+        assert len(below) == 4 and max(below) < 16, below
+        with owner.expect_response(lambda response: response.request.method == "PATCH") as saved:
+            signup.get_by_role("button", name="Save").click()
+        assert saved.value.url.endswith("/api/v1/server-settings") and saved.value.status == 200
+
+        page, errors = _visitor(browser)
+        page.goto(server.base + "/")
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        page.get_by_role("banner").get_by_role("link", name="Create account").click()
+        page.get_by_role("button", name="My organization").click()
+        _account(page, "olivia")
+        page.get_by_label("Organization", exact=True).fill("Acme SOC")
+        page.locator("form [type=submit]").click()
+        page.wait_for_selector(".ph-commandbar")
+        assert page.url == server.base + "/app/"
+
+        page.goto(server.base + "/app/users")
+        page.get_by_role("button", name="Invite").first.click()
+        page.get_by_role("button", name="Make the link").click()
+        link = page.locator("code").filter(has_text="/app/join/").inner_text().strip()
+        assert link.startswith(server.base + "/app/join/")
+        # the whole link, Copy and Done fit in the dialog: nothing in it scrolls sideways
+        assert page.evaluate("() => { const d = document.querySelector('dialog[open]');"
+                             " return d.scrollWidth - d.clientWidth }") <= 1
+
+        guest, guest_errors = _visitor(browser)  # another browser, where nobody is signed in
+        guest.goto(link)
+        guest.get_by_role("heading", level=1, name="Join Acme SOC").wait_for()
+        _account(guest, "priya")
+        guest.locator("form [type=submit]").click()
+        guest.wait_for_selector(".ph-commandbar")
+        me = guest.evaluate("fetch('/api/v1/session').then((r) => r.json())")
+        assert (me["username"], me["role"], me["workspace"]["name"]) == ("priya", "analyst", "Acme SOC")
+        assert guest.evaluate("fetch('/api/v1/analyses').then((r) => r.json())") == []  # none of root's
+        guest.goto(link)
+        guest.get_by_role("heading", level=1, name="This invitation is for a new account").wait_for()
+
+        visitor, visitor_errors = _visitor(browser)
+        for width in WIDTHS:
+            for screen, path, ready in ((page, "/app/users", "Invitations"),
+                                        (page, "/app/profile", "Your profile"),
+                                        (visitor, "/app/signup", "Who is it for?")):
+                screen.set_viewport_size({"width": width, "height": 900})
+                screen.goto(server.base + path)
+                screen.get_by_text(ready).first.wait_for()
+                screen.wait_for_timeout(400)
+                assert screen.evaluate(PAST_EDGE) == [], (width, path)
+            # where the bar shows its icon alone, Sign out still has its name for a screen reader
+            sync_api.expect(page.get_by_role("button", name="Sign out")).to_have_count(1)
+            visitor.get_by_role("button", name="Just me").click()
+            visitor.get_by_label("Username", exact=True).wait_for()
+            assert visitor.evaluate(PAST_EDGE) == [], (width, "the sign-up form")
+            assert visitor.evaluate(UNDER_TOGGLE) == [], (width, "the sign-up form")
+        visitor.locator("form [type=submit]").click()  # nothing filled in: the first refusal is about First name
+        visitor.get_by_text("Required.").wait_for()
+        tops = [visitor.get_by_label(name, exact=True).bounding_box()["y"] for name in ("First name", "Last name")]
+        assert tops[0] == tops[1], tops  # side by side, even when only one of them has something to say
+        visitor_errors = [e for e in visitor_errors if "status of 422" not in e]  # that refusal
+        assert errors == [] and guest_errors == [] and visitor_errors == [] and owner_errors == []

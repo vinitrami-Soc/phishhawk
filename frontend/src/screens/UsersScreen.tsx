@@ -1,8 +1,9 @@
-/* Users (admin): who can sign in, and with which role. This is where accounts
-   are created; there is no self sign-up. */
+/* Users (admin): who can sign in, and with which role. In an organization the
+   admin invites people with a link (they make their own account) or adds a user
+   with a password. An individual workspace has one member, so it has neither. */
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { UserPlus } from 'lucide-react';
+import { Link2, UserPlus } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/core/dialog';
 import { createUser, listUsers, updateUser } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
@@ -10,6 +11,7 @@ import type { Role, Session, User } from '@/api/types';
 import { ROLE_LABEL } from '@/app/vocabulary';
 import { Button, Card, ConfirmDialog, ErrorState, PageHeader, PasswordField, SkeletonRows, TextField, Time } from '@/components/ui/ui';
 import { useToast } from '@/components/ui/toast';
+import { Invitations } from '@/components/phishhawk/Invitations';
 import { cn } from '@/lib/utils';
 
 type Change = { user: User; kind: 'role' | 'disable' | 'enable' } | null;
@@ -86,6 +88,8 @@ export default function UsersScreen({ session }: { session: Session }) {
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [adding, setAdding] = useState(false);
+  const [inviting, setInviting] = useState(false);
+  const organization = session.workspace?.kind !== 'individual';
   const [change, setChange] = useState<Change>(null);
   const [busy, setBusy] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
@@ -127,11 +131,18 @@ export default function UsersScreen({ session }: { session: Session }) {
       <PageHeader
         eyebrow="Users"
         title="Users"
-        description="Who can sign in to PhishHawk, and what they can do."
+        description={organization ? `Who can sign in to ${session.workspace?.name ?? 'PhishHawk'}, and what they can do.` : 'An individual workspace has one member: you. To work as a team, create an organization.'}
         actions={
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            <UserPlus className="h-4 w-4" strokeWidth={1.75} /> Add user
-          </Button>
+          organization && (
+            <>
+              <Button variant="primary" onClick={() => setInviting(true)}>
+                <Link2 className="h-4 w-4" strokeWidth={1.75} /> Invite
+              </Button>
+              <Button onClick={() => setAdding(true)}>
+                <UserPlus className="h-4 w-4" strokeWidth={1.75} /> Add user
+              </Button>
+            </>
+          )
         }
       />
       {error ? (
@@ -168,6 +179,8 @@ export default function UsersScreen({ session }: { session: Session }) {
           })}
         </Card>
       )}
+
+      {organization && <Invitations inviting={inviting} onInvitingChange={setInviting} />}
 
       <AddUserDialog
         open={adding}

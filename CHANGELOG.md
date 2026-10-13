@@ -9,6 +9,12 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Setup, sign-up, invitations and profiles in the frontend.** `/app/setup`,
+  `/app/signup` (Just me or My organization), `/app/join/{token}` and
+  `/app/profile`; Invite and pending invitations on Users, for an
+  organization's admins; Sign-up in Settings for the owner. A refusal is shown
+  next to the field it names. Sign in and the product page offer Create
+  account only while sign-up is open.
 - **Setup, sign-up, invitations and profiles in the web app.** A new server
   prints a one-time setup code (also `phishhawk server setup-code`); at
   `/setup` the owner makes their account and organization with it. While the
@@ -202,6 +208,9 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- **Sign out had no name for a screen reader** where the top bar shows its
+  icon alone, on narrow screens. It is now "Sign out" at every width. A long
+  section description in Settings no longer pushes Save below it.
 - **Phones, tablets and desktops, checked screen by screen.** On screens from
   1024 to 1440 px an admin's top bar ran past the right edge, cutting off
   Mailboxes, Sign out and the theme switch. The admin pages are now in More at

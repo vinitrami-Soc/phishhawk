@@ -149,3 +149,75 @@ test('mailboxes: listed without their credentials, added, changed, polled and de
   assert.ok(!(await call('GET', '/api/v1/mailboxes')).body.some((m: { id: number }) => m.id === id));
   assert.equal((await call('POST', `/api/v1/mailboxes/${id}/poll`)).status, 404);
 });
+
+const PERSON = { username: 'sam', password: 'long-enough-password', first_name: 'Sam', last_name: 'Lee', location: 'Leeds', organization: '', job_title: '' };
+
+test('the preview is set up already, and anyone may create an account in it', async () => {
+  assert.deepEqual((await call('GET', '/api/v1/setup')).body, { open: false });
+  assert.equal((await call('POST', '/api/v1/setup', { code: 'ABCD-EFGH-JKLM-NPQR' })).status, 404);
+  assert.deepEqual((await call('GET', '/api/v1/signup')).body, { open: true });
+  const me = (await call('GET', '/api/v1/session')).body;
+  assert.deepEqual([me.owner, me.workspace.name, me.workspace.kind], [true, 'Example Corp', 'organization']);
+});
+
+test('an individual signs up without a CSRF token, and works alone', async () => {
+  await call('DELETE', '/api/v1/session');
+  csrf = '';
+  const bad = await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual', last_name: ' ' });
+  assert.equal(bad.status, 422);
+  assert.match(bad.body.detail, /^last_name: /);
+  assert.equal((await call('POST', '/api/v1/signup', { ...PERSON, kind: 'organization' })).status, 422);
+  assert.equal((await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual', username: 'alice' })).status, 409);
+  const made = await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual' });
+  assert.equal(made.status, 201);
+  csrf = made.body.csrf;
+  const me = (await call('GET', '/api/v1/session')).body;
+  assert.deepEqual([me.username, me.role, me.owner, me.workspace.kind, me.workspace.name], ['sam', 'admin', false, 'individual', 'Sam Lee']);
+  assert.deepEqual(me.profile, { first_name: 'Sam', last_name: 'Lee', location: 'Leeds', job_title: '' });
+  assert.deepEqual((await call('GET', '/api/v1/analyses')).body, []);
+  assert.deepEqual((await call('GET', '/api/v1/campaigns')).body, []);
+  assert.deepEqual((await call('GET', '/api/v1/users')).body.map((u: { username: string }) => u.username), ['sam']);
+  assert.equal((await call('POST', '/api/v1/invites', { role: 'analyst', note: '' })).status, 403);
+  assert.equal((await call('POST', '/api/v1/users', { username: 'friend', password: 'long-enough-password', role: 'analyst' })).status, 403);
+  assert.equal((await call('GET', '/api/v1/server-settings')).status, 403);
+});
+
+test('an organization admin invites, and the person joins with that role, once', async () => {
+  await call('DELETE', '/api/v1/session');
+  csrf = (await signIn('boss', 'x')).body.csrf;
+  const invite = await call('POST', '/api/v1/invites', { role: 'analyst', note: 'for Priya' });
+  assert.equal(invite.status, 201);
+  const { token } = invite.body;
+  assert.ok(token.length >= 40);
+  const pending = (await call('GET', '/api/v1/invites')).body;
+  assert.deepEqual(pending.map((i: { note: string }) => i.note), ['for Priya']);
+  assert.ok(!JSON.stringify(pending).includes(token));
+  await call('DELETE', '/api/v1/session');
+  csrf = '';
+  assert.deepEqual((await call('GET', `/api/v1/join/${token}`)).body, { organization: 'Example Corp', role: 'analyst' });
+  const joined = await call('POST', `/api/v1/join/${token}`, { ...PERSON, username: 'priya' });
+  assert.equal(joined.status, 201);
+  csrf = joined.body.csrf;
+  const me = (await call('GET', '/api/v1/session')).body;
+  assert.deepEqual([me.username, me.role, me.workspace.name], ['priya', 'analyst', 'Example Corp']);
+  assert.equal((await call('GET', `/api/v1/join/${token}`)).status, 404);
+  assert.equal((await call('GET', '/api/v1/join/not-a-token')).status, 404);
+});
+
+test('everyone edits their own profile; the owner alone sets the server', async () => {
+  const changed = await call('PATCH', '/api/v1/me', { first_name: 'Priya', job_title: 'Analyst' });
+  assert.equal(changed.status, 200);
+  assert.deepEqual([changed.body.profile.first_name, changed.body.profile.job_title], ['Priya', 'Analyst']);
+  assert.equal((await call('GET', '/api/v1/session')).body.profile.first_name, 'Priya');
+  assert.equal((await call('PATCH', '/api/v1/me', { organization: 'Renamed' })).status, 403);
+  assert.equal((await call('PATCH', '/api/v1/me', { last_name: '' })).status, 422);
+  assert.equal((await call('PATCH', '/api/v1/me', { password: 'another long password', current_password: '' })).status, 403);
+  await call('DELETE', '/api/v1/session');
+  csrf = (await signIn('boss', 'x')).body.csrf;
+  assert.deepEqual((await call('GET', '/api/v1/server-settings')).body, { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500 });
+  assert.equal((await call('PATCH', '/api/v1/server-settings', { signup_open: false })).body.signup_open, false);
+  assert.deepEqual((await call('GET', '/api/v1/signup')).body, { open: false });
+  assert.equal((await call('PATCH', '/api/v1/server-settings', { signup_daily_cap: 0 })).status, 422);
+  await call('PATCH', '/api/v1/server-settings', { signup_open: true });
+  assert.equal((await call('PATCH', '/api/v1/me', { organization: 'Example Corp Ltd' })).body.workspace.name, 'Example Corp Ltd');
+});

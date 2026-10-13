@@ -11,10 +11,14 @@
    admin "boss". After "Sign out", any existing user ("boss", "alice", or one
    added on the Users screen) signs in with any password. An unknown username
    is refused, and three refusals in a row throttle sign-in for 8 seconds, as
-   on the real server. The real server always checks the password. */
+   on the real server. The real server always checks the password.
+
+   The server is set up already, with "boss" as its owner in the organization
+   "Example Corp", and anyone may create an account: an individual or a new
+   organization. A new workspace starts empty and sees nothing of the others. */
 
 import fixtures from './fixtures.json';
-import type { Analysis, AnalysisFile, AuditEntry, Batch, Mailbox, MailboxConfig, MailboxKind, Settings, Submission, Token, User } from '../api/types';
+import type { Analysis, AnalysisFile, AuditEntry, Batch, Invite, Mailbox, MailboxConfig, MailboxKind, Profile, ServerSettings, Settings, Submission, Token, User, Workspace } from '../api/types';
 
 const CSRF_DETAIL = 'the form is out of date: reload the page and try again';
 const THROTTLE_MS = 8_000;
@@ -48,6 +52,53 @@ const users: User[] = [
   { id: 2, username: 'alice', role: 'analyst', disabled: false, last_login_at: null },
 ];
 const tokens: Token[] = [];
+
+/* Workspaces: who is in which, with their profile. The users list stays the server's shape. */
+const workspaces: Workspace[] = [{ id: 1, name: 'Example Corp', kind: 'organization' }];
+type Member = { workspace_id: number; owner: boolean; profile: Profile };
+const blank: Profile = { first_name: '', last_name: '', location: '', job_title: '' };
+const members = new Map<number, Member>([
+  [1, { workspace_id: 1, owner: true, profile: { first_name: 'Sam', last_name: 'Boss', location: 'London', job_title: 'SOC lead' } }],
+  [2, { workspace_id: 1, owner: false, profile: { ...blank } }],
+]);
+const memberOf = (userId: number): Member => members.get(userId) ?? { workspace_id: 1, owner: false, profile: { ...blank } };
+/* Analyses made in the preview belong to the workspace that submitted them; the sample ones to Example Corp. */
+const analysisWorkspace = new Map<number, number>();
+const workspaceOf = (a: Analysis) => analysisWorkspace.get(a.id) ?? 1;
+const serverSettings: ServerSettings = { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500 };
+type MockInvite = Invite & { token: string; workspace_id: number; used: boolean };
+const invites: MockInvite[] = [];
+const PROFILE_FIELDS = ['first_name', 'last_name', 'location', 'job_title'] as const;
+
+/** A profile field as the server checks it: trimmed, at most 80 characters, no control characters. */
+function clean(field: string, value: unknown, required = true): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (required && !text) throw `${field}: required`;
+  if (text.length > 80) throw `${field}: 80 characters at most`;
+  if (/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u2064\ufeff]/.test(text)) throw `${field}: control characters are not allowed`;
+  return text;
+}
+
+/** The new account's profile and credentials, or the refusal (status and detail) the server would send. */
+function newAccount(given: Record<string, unknown>): { username: string; profile: Profile } | [number, string] {
+  try {
+    const profile = Object.fromEntries(PROFILE_FIELDS.map((f) => [f, clean(f, given[f], f !== 'job_title')])) as Profile;
+    const username = String(given.username ?? '');
+    if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return [422, 'username: 3 to 64 lowercase letters, digits, dots, dashes or underscores'];
+    if (String(given.password ?? '').length < 12) return [422, 'password: at least 12 characters'];
+    if (users.some((u) => u.username === username)) return [409, 'username: that username is taken'];
+    return { username, profile };
+  } catch (refusal) {
+    return [422, String(refusal)];
+  }
+}
+
+function addMember(username: string, role: 'admin' | 'analyst', workspaceId: number, profile: Profile): User {
+  const user: User = { id: Math.max(...users.map((u) => u.id)) + 1, username, role, disabled: false, last_login_at: new Date().toISOString() };
+  users.push(user);
+  members.set(user.id, { workspace_id: workspaceId, owner: false, profile });
+  return user;
+}
 
 /* Two report mailboxes: one polled a few minutes ago, one whose sign-in Google refuses. A poll of an enabled
    mailbox that is not in error imports one copy of a sample analysis, as the real worker would import a report. */
@@ -108,8 +159,11 @@ function mailboxSecret(kind: MailboxKind, secret: string): MailboxConfig | strin
   return 'the key must be the JSON key file of a service account';
 }
 
-type MockSession = { user_id: number; username: string; role: 'analyst' | 'admin'; csrf: string };
-const sessionFor = (user: User): MockSession => ({ user_id: user.id, username: user.username, role: user.role, csrf: crypto.randomUUID() });
+type MockSession = { user_id: number; username: string; role: 'analyst' | 'admin'; csrf: string; workspace_id: number; owner: boolean };
+const sessionFor = (user: User): MockSession => ({
+  user_id: user.id, username: user.username, role: user.role, csrf: crypto.randomUUID(),
+  workspace_id: memberOf(user.id).workspace_id, owner: memberOf(user.id).owner,
+});
 // direct admin access in development: no sign-in screen at start
 let session: MockSession | null = sessionFor(users[0]);
 users[0].last_login_at = new Date().toISOString();
@@ -140,7 +194,7 @@ function viewOf(sub: MockSubmission): Submission {
 }
 
 /** A submission moves on with the clock: queued, running, then done with a copy of a real analysis. */
-function advance(sub: MockSubmission, me: { user_id: number; username: string }) {
+function advance(sub: MockSubmission, me: { user_id: number; username: string; workspace_id?: number }) {
   if (sub.status === 'done') return;
   const left = sub.ready - Date.now();
   if (left <= 0) {
@@ -152,6 +206,7 @@ function advance(sub: MockSubmission, me: { user_id: number; username: string })
     copy.created_at = new Date().toISOString();
     if (sub.batch_id) copy.source = 'batch';
     analyses.unshift(copy);
+    analysisWorkspace.set(copy.id, me.workspace_id ?? 1);
     Object.assign(sub, { status: 'done', analysis_id: copy.id });
     record('system', 'analyze', 'analysis', copy.id, { submission: sub.id, verdict: copy.verdict, providers: [], lookups: 0 });
   } else if (left < 2000) {
@@ -161,7 +216,7 @@ function advance(sub: MockSubmission, me: { user_id: number; username: string })
 
 const KIND_ORDER = ['json', 'stix', 'misp', 'md', 'csv', 'html', 'manifest'];
 
-function batchView(batch: MockBatch, me: { user_id: number; username: string }): Batch {
+function batchView(batch: MockBatch, me: { user_id: number; username: string; workspace_id?: number }): Batch {
   const subs = batch.submissionIds.map((id) => submissions.get(id)!);
   subs.forEach((sub) => advance(sub, me));
   const counts = { queued: 0, running: 0, done: 0, failed: 0 };
@@ -259,15 +314,59 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     return json(200, { csrf: session.csrf });
   }
 
+  let m: RegExpMatchArray | null;
+  // getting in: setup (done already in the preview), sign-up and invitations, signed in or not
+  if (pathname === '/api/v1/setup') {
+    if (method === 'GET') return json(200, { open: false });
+    return error(404, 'not_found', 'this server is set up already: sign in');
+  }
+  if (pathname === '/api/v1/signup') {
+    if (method === 'GET') return json(200, { open: serverSettings.signup_open });
+    if (!serverSettings.signup_open) return error(404, 'not_found', 'sign-up is closed: ask an admin for an invitation');
+    const given = (body ?? {}) as Record<string, unknown>;
+    if (given.kind !== 'individual' && given.kind !== 'organization') return error(422, 'invalid', 'kind: individual or organization');
+    const account = newAccount(given);
+    if (Array.isArray(account)) return error(account[0], account[0] === 409 ? 'conflict' : 'invalid', account[1]);
+    let organization: string;
+    try {
+      organization = clean('organization', given.organization, given.kind === 'organization');
+    } catch (refusal) {
+      return error(422, 'invalid', String(refusal));
+    }
+    const { first_name, last_name } = account.profile;
+    const workspace: Workspace = { id: Math.max(...workspaces.map((w) => w.id)) + 1, name: given.kind === 'organization' ? organization : `${first_name} ${last_name}`, kind: given.kind };
+    workspaces.push(workspace);
+    const user = addMember(account.username, 'admin', workspace.id, account.profile);
+    session = sessionFor(user);
+    record(user.username, 'signup', '', '', { kind: workspace.kind, workspace: workspace.id });
+    return json(201, { csrf: session.csrf });
+  }
+  if ((m = pathname.match(/^\/api\/v1\/join\/([A-Za-z0-9_-]+)$/))) {
+    const invite = invites.find((i) => i.token === m![1] && !i.used && Date.parse(i.expires_at) > Date.now());
+    if (!invite) return error(404, 'not_found', 'this invitation is not valid: it was used, withdrawn, or is over 7 days old');
+    const workspace = workspaces.find((w) => w.id === invite.workspace_id)!;
+    if (method === 'GET') return json(200, { organization: workspace.name, role: invite.role });
+    const account = newAccount((body ?? {}) as Record<string, unknown>);
+    if (Array.isArray(account)) return error(account[0], account[0] === 409 ? 'conflict' : 'invalid', account[1]);
+    invite.used = true;
+    const user = addMember(account.username, invite.role, workspace.id, account.profile);
+    session = sessionFor(user);
+    record(user.username, 'join', 'invite', invite.id, { role: invite.role });
+    return json(201, { csrf: session.csrf });
+  }
+
   if (!session) return error(401, 'unauthorized', 'log in first');
   const me = session;
+  const workspace = workspaces.find((w) => w.id === me.workspace_id)!;
+  const home = (a: Analysis) => workspaceOf(a) === me.workspace_id;
   if (method !== 'GET' && headers.get('X-CSRF-Token') !== me.csrf) return error(403, 'forbidden', CSRF_DETAIL);
   const admin = me.role === 'admin';
   const adminOnly = () => error(403, 'forbidden', 'only an admin can do that');
-  let m: RegExpMatchArray | null;
 
   if (pathname === '/api/v1/session') {
-    if (method === 'GET') return json(200, { user_id: me.user_id, username: me.username, role: me.role, via: 'session', scope: 'full', csrf: me.csrf });
+    if (method === 'GET') {
+      return json(200, { user_id: me.user_id, username: me.username, role: me.role, via: 'session', scope: 'full', csrf: me.csrf, owner: me.owner, workspace, profile: memberOf(me.user_id).profile });
+    }
     if (method === 'DELETE') {
       record(me.username, 'logout');
       session = null;
@@ -317,11 +416,12 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
   }
 
   if (pathname === '/api/v1/campaigns' && method === 'GET') {
+    if (me.workspace_id !== 1) return json(200, []);
     return json(200, CAMPAIGNS.map((c) => campaignView(c, false)).filter((c) => c.size >= 2));
   }
 
   if ((m = pathname.match(/^\/api\/v1\/campaigns\/(\d+)$/)) && method === 'GET') {
-    const spec = CAMPAIGNS.find((c) => campaignView(c, false).id === Number(m![1]) && campaignView(c, false).size >= 2);
+    const spec = me.workspace_id === 1 ? CAMPAIGNS.find((c) => campaignView(c, false).id === Number(m![1]) && campaignView(c, false).size >= 2) : undefined;
     return spec ? json(200, campaignView(spec, true)) : error(404, 'not_found', 'no such campaign');
   }
 
@@ -336,6 +436,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     if ((since && !day.test(since)) || (until && !day.test(until))) return error(422, 'invalid', 'the request is not valid');
     const offset = Number(searchParams.get('offset') ?? 0);
     const rows = analyses
+      .filter(home)
       .filter((a) => !verdict || a.verdict === verdict)
       .filter((a) => !source || a.source === source)
       .filter((a) => user === null || a.submitted_by === Number(user))
@@ -347,7 +448,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
   }
 
   if ((m = pathname.match(/^\/api\/v1\/analyses\/(\d+)$/)) && method === 'GET') {
-    const a = analyses.find((x) => x.id === Number(m![1]));
+    const a = analyses.find((x) => x.id === Number(m![1]) && home(x));
     return a ? json(200, a) : error(404, 'not_found', 'no such analysis');
   }
 
@@ -396,12 +497,82 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
 
   if (pathname === '/api/v1/audit' && method === 'GET') {
     const offset = Number(searchParams.get('offset') ?? 0);
-    const rows = admin ? audit : audit.filter((e) => e.actor === me.username);
+    const names = new Set(users.filter((u) => memberOf(u.id).workspace_id === me.workspace_id).map((u) => u.username));
+    const rows = admin ? audit.filter((e) => names.has(e.actor) || (me.workspace_id === 1 && e.actor === 'system')) : audit.filter((e) => e.actor === me.username);
     return json(200, rows.slice(offset, offset + 100));
   }
 
-  if (pathname.startsWith('/api/v1/settings') || pathname.startsWith('/api/v1/users') || pathname.startsWith('/api/v1/tokens') || pathname.startsWith('/api/v1/mailboxes')) {
+  // the profile: everyone's own
+  if (pathname === '/api/v1/me') {
+    const mine = memberOf(me.user_id);
+    const view = () => ({ username: me.username, role: me.role, owner: me.owner, profile: mine.profile, workspace });
+    if (method === 'GET') return json(200, view());
+    const patch = (body ?? {}) as Record<string, string | undefined>;
+    try {
+      const changes: Partial<Profile> = {};
+      for (const f of PROFILE_FIELDS) if (patch[f] !== undefined) changes[f] = clean(f, patch[f], f !== 'job_title');
+      let rename: string | null = null;
+      if (patch.organization !== undefined) {
+        if (!admin || workspace.kind !== 'organization') return error(403, 'forbidden', 'only an admin of an organization can rename it');
+        rename = clean('organization', patch.organization);
+      }
+      if (patch.password !== undefined) {
+        if (patch.password.length < 12) return error(422, 'invalid', 'password: at least 12 characters');
+        // the preview takes any current password that is not empty; the server checks it
+        if (!patch.current_password) return error(403, 'forbidden', 'the current password is not right');
+        record(me.username, 'password_change', 'user', me.user_id);
+      }
+      Object.assign(mine.profile, changes);
+      if (rename) workspace.name = rename;
+      members.set(me.user_id, mine);
+      return json(200, view());
+    } catch (refusal) {
+      return error(422, 'invalid', String(refusal));
+    }
+  }
+
+  if (pathname === '/api/v1/server-settings') {
+    if (!admin || !me.owner) return error(403, 'forbidden', 'only the server\'s owner can do that');
+    if (method === 'GET') return json(200, serverSettings);
+    const patch = (body ?? {}) as Partial<ServerSettings>;
+    for (const key of ['signup_daily_cap', 'max_upload_mb', 'max_batch_messages'] as const) {
+      const value = patch[key];
+      if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 100000)) return error(422, 'invalid', `${key}: between 1 and 100000`);
+    }
+    Object.assign(serverSettings, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)));
+    settings.max_upload_mb = serverSettings.max_upload_mb;
+    settings.max_batch_messages = serverSettings.max_batch_messages;
+    record(me.username, 'server_settings', '', '', { changed: Object.keys(patch) });
+    return json(200, serverSettings);
+  }
+
+  if (pathname.startsWith('/api/v1/settings') || pathname.startsWith('/api/v1/users') || pathname.startsWith('/api/v1/tokens') || pathname.startsWith('/api/v1/mailboxes') || pathname.startsWith('/api/v1/invites')) {
     if (!admin) return adminOnly();
+  }
+
+  if (pathname === '/api/v1/invites') {
+    if (method === 'GET') {
+      return json(200, invites.filter((i) => i.workspace_id === me.workspace_id && !i.used && Date.parse(i.expires_at) > Date.now()).map(({ token: _t, workspace_id: _w, used: _u, ...view }) => view));
+    }
+    if (workspace.kind !== 'organization') return error(403, 'forbidden', 'an individual workspace has one member: create an organization to work as a team');
+    const { role, note = '' } = (body ?? {}) as { role?: string; note?: string };
+    if (role !== 'admin' && role !== 'analyst') return error(422, 'invalid', 'role: admin or analyst');
+    if (note.length > 120) return error(422, 'invalid', 'note: 120 characters at most');
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const invite: MockInvite = { id: invites.length + 1, role, note: note.trim(), created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString(), created_by_name: me.username, token, workspace_id: me.workspace_id, used: false };
+    invites.push(invite);
+    record(me.username, 'invite_create', 'invite', invite.id, { role, note: invite.note });
+    const { workspace_id: _w, used: _u, ...made } = invite;
+    return json(201, { ...made, link: `/join/${token}` });
+  }
+  if ((m = pathname.match(/^\/api\/v1\/invites\/(\d+)$/)) && method === 'DELETE') {
+    const invite = invites.find((i) => i.id === Number(m![1]) && i.workspace_id === me.workspace_id);
+    if (!invite) return error(404, 'not_found', 'no such invitation');
+    if (invite.used) return error(409, 'conflict', 'this invitation was used already');
+    invite.used = true;
+    record(me.username, 'invite_revoke', 'invite', invite.id, { role: invite.role });
+    return json(204, null);
   }
 
   if (pathname === '/api/v1/mailboxes') {
@@ -518,20 +689,21 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
   }
 
   if (pathname === '/api/v1/users') {
-    if (method === 'GET') return json(200, users);
+    if (method === 'GET') return json(200, users.filter((u) => memberOf(u.id).workspace_id === me.workspace_id));
+    if (method === 'POST' && workspace.kind === 'individual') return error(403, 'forbidden', 'an individual workspace has one member: create an organization to work as a team');
     if (method === 'POST') {
       const { username, password, role } = body as { username: string; password: string; role: 'admin' | 'analyst' };
       if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return error(422, 'invalid', 'usernames are 3 to 64 lowercase letters, digits, dots, dashes or underscores');
       if (!password || password.length < 12) return error(422, 'invalid', 'passwords need at least 12 characters');
       if (users.some((u) => u.username === username)) return error(422, 'invalid', 'that username is taken');
-      const user: User = { id: Math.max(...users.map((u) => u.id)) + 1, username, role, disabled: false, last_login_at: null };
-      users.push(user);
+      const user = addMember(username, role, me.workspace_id, { ...blank });
+      user.last_login_at = null;
       record(me.username, 'user_create', 'user', user.id, { username, role });
       return json(201, user);
     }
   }
   if ((m = pathname.match(/^\/api\/v1\/users\/(\d+)$/)) && method === 'PATCH') {
-    const user = users.find((u) => u.id === Number(m![1]));
+    const user = users.find((u) => u.id === Number(m![1]) && memberOf(u.id).workspace_id === me.workspace_id);
     if (!user) return error(404, 'not_found', 'no such user');
     const patch = body as { role?: 'admin' | 'analyst'; disabled?: boolean; password?: string };
     if (user.id === me.user_id && (patch.disabled || (patch.role && patch.role !== 'admin'))) return error(422, 'invalid', 'you cannot disable yourself or remove your own admin role');

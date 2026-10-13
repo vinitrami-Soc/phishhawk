@@ -1,6 +1,8 @@
 /* Sign in. Desktop: the card on the left, the product on the right; phones: the
-   card only. Accounts are created by an admin on the Users screen. The logo and
-   "About PhishHawk" lead back to the product page. */
+   card only. Below the card: Create an account while the server's owner allows
+   it, else how to get an account (an invitation or an admin); on a server with no
+   accounts yet, the way to set it up. The logo and "About PhishHawk" lead back to
+   the product page. */
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, Eye, EyeOff, FileCheck2, ScrollText, Server } from 'lucide-react';
@@ -15,6 +17,7 @@ import { ApiError, NETWORK_MESSAGE } from '@/api/errors';
 import { Link, asset } from '@/app/router';
 import { Panel } from '@/components/ui/ui';
 import { usePicturesLoaded } from '@/hooks/usePicturesLoaded';
+import { useGettingIn } from '@/hooks/useGettingIn';
 
 const FACTS = [
   { icon: Server, title: 'Runs on your server', text: 'Messages are analysed on the machine you run PhishHawk on.' },
@@ -87,6 +90,7 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
+  const gettingIn = useGettingIn();
 
   useEffect(() => {
     if (wait <= 0) return;
@@ -203,7 +207,25 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
             )}
           </div>
         </Panel>
-        <p className="mt-5 text-center text-[13px] text-ink-muted">No account? Ask your PhishHawk admin to add you on the Users page.</p>
+        <p className="mt-5 min-h-5 text-center text-[13px] text-ink-muted">
+          {gettingIn?.setup ? (
+            <>
+              No one has an account here yet.{' '}
+              <Link href="/app/setup" className="font-medium text-ink underline underline-offset-2">
+                Set up this server
+              </Link>
+            </>
+          ) : gettingIn?.signup ? (
+            <>
+              New here?{' '}
+              <Link href="/app/signup" className="font-medium text-ink underline underline-offset-2">
+                Create an account
+              </Link>
+            </>
+          ) : (
+            gettingIn && 'No account? Ask your PhishHawk admin for an invitation.'
+          )}
+        </p>
         <p className="mt-3 text-center text-xs text-ink-muted">
           Signing in sets one cookie, only to keep you signed in.{' '}
           <Link href="/app/privacy" className="text-ink-dim underline underline-offset-2 hover:text-ink">

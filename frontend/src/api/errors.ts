@@ -70,3 +70,14 @@ export async function errorFrom(res: Response): Promise<ApiError> {
 export function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
 }
+
+/** The account form's own fields: a refusal that starts with one of these names belongs next to it. */
+const ACCOUNT_FIELDS = ['code', 'kind', 'username', 'password', 'first_name', 'last_name', 'location', 'organization', 'job_title', 'role', 'note'];
+
+/** The field a refusal is about ("last_name: required" is about last_name), and its message as a sentence. */
+export function fieldOf(detail: string): { field: string | null; message: string } {
+  const match = /^([a-z_]+): (.+)$/.exec(detail);
+  if (!match || !ACCOUNT_FIELDS.includes(match[1])) return { field: null, message: detail };
+  const text = match[2].trim();
+  return { field: match[1], message: `${text[0].toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}` };
+}

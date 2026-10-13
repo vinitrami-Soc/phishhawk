@@ -30,8 +30,9 @@ builds it and drives the build in Chromium against a real server at seven
 widths from 320 to 1440 px (`tests/server/test_frontend_browser.py`): the
 product page a visitor sees first, signing in from it and signing out back to
 it; one message from paste to report and files; a batch of two from upload to its
-combined reports, its campaign and the queue's filters; and a mailbox added on
-the Mailboxes screen, polled from a test IMAP server, its reports in the queue.
+combined reports, its campaign and the queue's filters; a mailbox added on
+the Mailboxes screen, polled from a test IMAP server, its reports in the queue;
+and an organization that signs up, invites a second person and sees them join.
 
 Signed out, `/app/` is the product page: what PhishHawk does and checks, the
 measured results, the verdicts, the ways to use it and common questions, with
@@ -42,6 +43,14 @@ code (it is a locked file).
 Several files, an .mbox or a .zip chosen on the triage page open the batch page
 (`/app/batches/{id}`); Campaigns is in the top bar (`/app/campaigns`), and so
 is Mailboxes for admins (`/app/mailboxes`).
+
+Getting in: `/app/setup` makes the owner's account with the setup code while
+no one has one; `/app/signup` creates an account (Just me, or My organization)
+while the owner allows it, and only then do Sign in and the product page offer
+Create account; `/app/join/{token}` makes an account in the organization an
+invitation is for. Signed in, everyone has Profile (`/app/profile`: their
+details and password); an organization's admins invite people on Users, and
+the owner sets sign-up and the server's limits in Settings.
 
 To bring in a change made in Google AI Studio, export the project as a ZIP and
 replace `frontend/` with it, keeping `public/brand/report-*.webp`, then run the

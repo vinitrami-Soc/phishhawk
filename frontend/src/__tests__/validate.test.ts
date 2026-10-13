@@ -24,3 +24,13 @@ test('a limit is a whole number from 1 to 100000', () => {
     assert.equal(parseLimit(bad), null, bad);
   }
 });
+
+test('a refusal that names its field is shown next to that field', async () => {
+  const { fieldOf } = await import('../api/errors');
+  assert.deepEqual(fieldOf('last_name: required'), { field: 'last_name', message: 'Required.' });
+  assert.deepEqual(fieldOf('username: that username is taken'), { field: 'username', message: 'That username is taken.' });
+  assert.deepEqual(fieldOf('password: at least 12 characters'), { field: 'password', message: 'At least 12 characters.' });
+  // a colon alone does not make a field: only the account form's own names do
+  assert.deepEqual(fieldOf('too many attempts: wait 3 s'), { field: null, message: 'too many attempts: wait 3 s' });
+  assert.deepEqual(fieldOf('that setup code is not right'), { field: null, message: 'that setup code is not right' });
+});

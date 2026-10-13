@@ -1,11 +1,12 @@
 /* App start, session, routes and the signed-in shell. The user and role come
    only from the server (useAuth). Every screen is loaded on demand. Signed out,
    the start page is the product page, with Sign in at the top; the product
-   page, Privacy and Help can be read signed out too. */
+   page, Privacy and Help can be read signed out too, and so can the pages for
+   getting in: setup, Create an account and an invitation's Join. */
 
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
-import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, Users } from 'lucide-react';
+import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, UserRound, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
 import { ProgressiveBlur } from '@/components/core/progressive-blur';
 import { TextShimmerWave } from '@/components/core/text-shimmer-wave';
@@ -18,7 +19,8 @@ import { useAuth } from '@/app/useAuth';
 import { Link, asset, navigate, usePath } from '@/app/router';
 import { ADMIN_ONLY, pageTitle, parseRoute, signedOutView } from '@/app/routes';
 import { ROLE_LABEL } from '@/app/vocabulary';
-import { NotFoundState, PermissionDeniedState, UnreachableState } from '@/screens/StateScreens';
+import type { Session } from '@/api/types';
+import { NotFoundState, PermissionDeniedState, SignedInInvitationState, UnreachableState } from '@/screens/StateScreens';
 
 const LandingScreen = lazy(() => import('@/screens/LandingScreen'));
 const LoginScreen = lazy(() => import('@/screens/LoginScreen'));
@@ -36,6 +38,10 @@ const TokensScreen = lazy(() => import('@/screens/TokensScreen'));
 const MailboxesScreen = lazy(() => import('@/screens/MailboxesScreen'));
 const PrivacyScreen = lazy(() => import('@/screens/PrivacyScreen'));
 const HelpScreen = lazy(() => import('@/screens/HelpScreen'));
+const SetupScreen = lazy(() => import('@/screens/SetupScreen'));
+const SignupScreen = lazy(() => import('@/screens/SignupScreen'));
+const JoinScreen = lazy(() => import('@/screens/JoinScreen'));
+const ProfileScreen = lazy(() => import('@/screens/ProfileScreen'));
 
 const icon = 'h-4 w-4';
 
@@ -85,7 +91,7 @@ function SkipLink() {
 }
 
 export default function App() {
-  const { auth, signIn, signOut, retry } = useAuth();
+  const { auth, signIn, signOut, retry, enter, refresh } = useAuth();
   const path = usePath();
   const route = parseRoute(path);
   const session = auth.status === 'signed-in' ? auth.session : null;
@@ -101,10 +107,16 @@ export default function App() {
     navigate('/app/');
   }, [auth.status]);
 
-  // signed in on /app/login: go to the start page
+  // signed in on /app/login, setup or Create an account: go to the start page
   useEffect(() => {
-    if (session && route.name === 'login') navigate('/app/', { replace: true });
+    if (session && (route.name === 'login' || route.name === 'setup' || route.name === 'signup')) navigate('/app/', { replace: true });
   }, [session, route.name]);
+
+  /** A new account is signed in already: open the console at its start. */
+  const entered = (next: Session) => {
+    enter(next);
+    navigate('/app/', { replace: true });
+  };
 
   useEffect(() => {
     if (auth.status !== 'checking') document.title = pageTitle(parseRoute(path), Boolean(session));
@@ -126,8 +138,9 @@ export default function App() {
         { href: '/app/mailboxes', label: 'Mailboxes', icon: <Mailbox className={icon} strokeWidth={1.5} /> },
       );
     }
+    if (session) list.push({ href: '/app/profile', label: 'Profile', icon: <UserRound className={icon} strokeWidth={1.5} /> });
     return list;
-  }, [session?.role]);
+  }, [session]);
 
   let body;
   if (auth.status === 'checking') {
@@ -170,6 +183,13 @@ export default function App() {
         <BackToTop />
       </>
     );
+  } else if (!session && view === 'account') {
+    // getting in: setting the server up, creating an account, joining with an invitation
+    body = (
+      <Suspense fallback={null}>
+        {route.name === 'join' ? <JoinScreen token={route.token} onEntered={entered} /> : route.name === 'signup' ? <SignupScreen onEntered={entered} /> : <SetupScreen onEntered={entered} />}
+      </Suspense>
+    );
   } else if (auth.status === 'signed-out' || !session) {
     body = (
       <Suspense fallback={null}>
@@ -186,7 +206,7 @@ export default function App() {
     const isAdmin = session.role === 'admin';
     let screen;
     if (ADMIN_ONLY.includes(route.name) && !isAdmin) screen = <PermissionDeniedState />;
-    else if (route.name === 'triage' || route.name === 'login') screen = <TriageScreen />;
+    else if (route.name === 'triage' || route.name === 'login' || route.name === 'setup' || route.name === 'signup') screen = <TriageScreen />;
     else if (route.name === 'queue') screen = <QueueScreen session={session} />;
     else if (route.name === 'analysis') screen = <AnalysisScreen id={route.id} session={session} />;
     else if (route.name === 'batch') screen = <BatchScreen id={route.id} />;
@@ -194,12 +214,14 @@ export default function App() {
     else if (route.name === 'campaign') screen = <CampaignScreen id={route.id} />;
     else if (route.name === 'audit') screen = <AuditScreen session={session} />;
     else if (route.name === 'health') screen = <HealthScreen />;
-    else if (route.name === 'settings') screen = <SettingsScreen />;
+    else if (route.name === 'settings') screen = <SettingsScreen session={session} />;
     else if (route.name === 'users') screen = <UsersScreen session={session} />;
     else if (route.name === 'tokens') screen = <TokensScreen />;
     else if (route.name === 'mailboxes') screen = <MailboxesScreen />;
     else if (route.name === 'privacy') screen = <PrivacyScreen />;
     else if (route.name === 'help') screen = <HelpScreen />;
+    else if (route.name === 'profile') screen = <ProfileScreen session={session} onChanged={() => void refresh()} />;
+    else if (route.name === 'join') screen = <SignedInInvitationState username={session.username} />;
     else screen = <NotFoundState />;
 
     body = (

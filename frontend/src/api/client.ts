@@ -2,7 +2,8 @@
 
    - Relative URLs on the same origin; the session cookie goes with them.
    - The CSRF token lives in this module's memory only, and goes out as the
-     X-CSRF-Token header on every POST, PATCH and DELETE except the login.
+     X-CSRF-Token header on every POST, PATCH and DELETE except those of
+     someone not signed in yet: the login, setup, sign-up and joining.
    - A 403 whose detail is the server's CSRF text refreshes the session once
      and retries the request once. Every other 403 is a permission refusal.
    - A 401 clears the token and calls the handler the app registers (which
@@ -13,6 +14,7 @@
 
 import { ApiError, CSRF_DETAIL, NETWORK_MESSAGE, UNREADABLE_MESSAGE, errorFrom, isAbort } from './errors';
 import type {
+  AccountFields,
   Analysis,
   AnalysisSummary,
   AuditEntry,
@@ -21,14 +23,22 @@ import type {
   Campaign,
   CampaignSummary,
   Health,
+  Invitation,
+  Invite,
   Mailbox,
   MailboxPatch,
+  Me,
+  NewInvite,
   NewMailbox,
   NewToken,
+  ProfilePatch,
   Role,
+  ServerSettings,
   Session,
   Settings,
   SettingsPatch,
+  SetupFields,
+  SignupFields,
   Submission,
   Token,
   User,
@@ -69,9 +79,14 @@ type Options = {
   retried?: boolean;
 };
 
+/** Requests of someone not signed in yet: no CSRF token, and a 401 is theirs, not an ended session. */
+function signingIn(method: string, url: string): boolean {
+  return method === 'POST' && (url === '/api/v1/session' || url === '/api/v1/setup' || url === '/api/v1/signup' || url.startsWith('/api/v1/join/'));
+}
+
 async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, options: Options = {}): Promise<T> {
   const { json, form, signal, retried = false } = options;
-  const isLogin = method === 'POST' && url === '/api/v1/session';
+  const isLogin = signingIn(method, url);
   const changes = method !== 'GET' && !isLogin;
   const headers: Record<string, string> = { Accept: 'application/json' };
   let body: BodyInit | undefined;
@@ -138,6 +153,43 @@ export async function logout(): Promise<void> {
   } finally {
     csrf = null;
   }
+}
+
+/* ---- getting in: setup, sign-up, invitations; each new account is signed in, as a login is ---- */
+
+async function enter(url: string, fields: unknown): Promise<Session> {
+  const { csrf: token } = await request<{ csrf: string }>('POST', url, { json: fields });
+  csrf = token;
+  return getSession();
+}
+
+/** open: no one has an account on this server yet, so it waits for its owner. */
+export function getSetupState(signal?: AbortSignal): Promise<{ open: boolean }> {
+  return request('GET', '/api/v1/setup', { signal });
+}
+
+/** The owner's account and organization. 403: wrong code (429 after a few); 404: set up already. */
+export function setUp(fields: SetupFields): Promise<Session> {
+  return enter('/api/v1/setup', fields);
+}
+
+/** open: anyone may create an account now. While it is false, show no "Create an account". */
+export function getSignupState(signal?: AbortSignal): Promise<{ open: boolean }> {
+  return request('GET', '/api/v1/signup', { signal });
+}
+
+/** A workspace of their own, or a new organization with them as its admin. 409: username taken; 429: see retryAfter. */
+export function signUp(fields: SignupFields): Promise<Session> {
+  return enter('/api/v1/signup', fields);
+}
+
+/** The organization and role of an invitation; 404 when it was used, withdrawn or is over 7 days old. */
+export function getInvitation(token: string, signal?: AbortSignal): Promise<Invitation> {
+  return request<Invitation>('GET', `/api/v1/join/${enc(token)}`, { signal });
+}
+
+export function joinInvitation(token: string, fields: AccountFields): Promise<Session> {
+  return enter(`/api/v1/join/${enc(token)}`, fields);
 }
 
 /* ---- submissions and analyses ---- */
@@ -270,6 +322,44 @@ export function createToken(token: { name: string; scope: 'read' | 'submit'; use
 
 export function revokeToken(id: number): Promise<{ revoked: boolean }> {
   return request('DELETE', `/api/v1/tokens/${id}`);
+}
+
+/** The invitations of the caller's organization that can still be used (admins). */
+export function listInvites(signal?: AbortSignal): Promise<Invite[]> {
+  return request<Invite[]>('GET', '/api/v1/invites', { signal });
+}
+
+/** The token is shown once: build the link from it, and do not keep it after the dialog closes. */
+export function createInvite(invite: { role: Role; note: string }): Promise<NewInvite> {
+  return request<NewInvite>('POST', '/api/v1/invites', { json: invite });
+}
+
+export function revokeInvite(id: number): Promise<void> {
+  return request<void>('DELETE', `/api/v1/invites/${id}`);
+}
+
+/** The link that opens an invitation in this frontend. */
+export function inviteLink(token: string): string {
+  return `${window.location.origin}/app/join/${enc(token)}`;
+}
+
+/* ---- the profile, and the owner's settings for the whole server ---- */
+
+export function getMe(signal?: AbortSignal): Promise<Me> {
+  return request<Me>('GET', '/api/v1/me', { signal });
+}
+
+/** 403 when current_password is wrong, or when someone who is not an organization's admin renames it. */
+export function patchMe(patch: ProfilePatch): Promise<Me> {
+  return request<Me>('PATCH', '/api/v1/me', { json: patch });
+}
+
+export function getServerSettings(signal?: AbortSignal): Promise<ServerSettings> {
+  return request<ServerSettings>('GET', '/api/v1/server-settings', { signal });
+}
+
+export function patchServerSettings(patch: Partial<ServerSettings>): Promise<ServerSettings> {
+  return request<ServerSettings>('PATCH', '/api/v1/server-settings', { json: patch });
 }
 
 /* ---- mailboxes (admin) ---- */

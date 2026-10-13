@@ -1,7 +1,8 @@
-/* Not found, permission denied and server unreachable: one sentence, one action. */
+/* Not found, permission denied, server unreachable, and an invitation opened while
+   signed in: one sentence, one action. */
 
 import type { ReactNode } from 'react';
-import { CloudOff, Compass, Lock } from 'lucide-react';
+import { CloudOff, Compass, Lock, Ticket } from 'lucide-react';
 import { navigate } from '@/app/router';
 import { Button } from '@/components/ui/ui';
 
@@ -45,6 +46,22 @@ export function UnreachableState({ detail, onRetry }: { detail: string; onRetry:
       title="PhishHawk is not answering."
       detail={detail}
       action={<Button onClick={onRetry}>Try again</Button>}
+    />
+  );
+}
+
+/** An invitation link opened by someone who is signed in: it is for a new account. */
+export function SignedInInvitationState({ username }: { username: string }) {
+  return (
+    <StateBlock
+      icon={<Ticket className="h-5 w-5" strokeWidth={1.5} />}
+      title="This invitation is for a new account"
+      detail={`You are signed in as ${username}. Pass the link on to the person it is for, or sign out first if it is meant for you on another account.`}
+      action={
+        <Button onClick={() => navigate('/app/')} variant="primary">
+          Back to Triage
+        </Button>
+      }
     />
   );
 }

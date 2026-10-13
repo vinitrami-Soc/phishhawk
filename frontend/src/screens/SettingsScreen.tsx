@@ -1,13 +1,15 @@
-/* Settings (admin): reputation providers and their keys, domain lists, limits.
-   Keys are never shown or sent back: the server returns only their last four
-   characters, and a key is sent only when the admin types a new one. */
+/* Settings (admin): reputation providers and their keys, domain lists, limits,
+   all of them the workspace's own. Keys are never shown or sent back: the server
+   returns only their last four characters, and a key is sent only when the admin
+   types a new one. The upload and batch limits are the whole server's: only its
+   owner changes them, and the owner also decides who may create an account. */
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Plus, X } from 'lucide-react';
 import { TextMorph } from '@/components/core/text-morph';
-import { getSettings, patchSettings } from '@/api/client';
+import { getServerSettings, getSettings, patchServerSettings, patchSettings } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
-import type { Settings, SettingsPatch } from '@/api/types';
+import type { ServerSettings, Session, Settings, SettingsPatch } from '@/api/types';
 import { PROVIDERS } from '@/app/vocabulary';
 import { normaliseDomain, parseLimit } from '@/lib/validate';
 import { Button, ConfirmDialog, ErrorState, PageHeader, Panel, SectionTitle, Skeleton, Switch, TextField } from '@/components/ui/ui';
@@ -19,7 +21,7 @@ function Section({ title, description, children, onSave, state, error }: { title
     <Panel>
       <div className="grid grid-cols-1 gap-6 p-6 sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0 flex-1 basis-64">
             <SectionTitle>{title}</SectionTitle>
             <p className="mt-1 text-[13px] text-ink-muted">{description}</p>
           </div>
@@ -99,6 +101,75 @@ function DomainList({ label, hint, values, onChange }: { label: string; hint: st
   );
 }
 
+/** The limits only the server's owner changes; the others are the workspace's. */
+const SERVER_LIMITS = ['max_upload_mb', 'max_batch_messages'];
+
+/** Who may create an account (the owner only): a switch, and how many accounts a day the server takes. */
+function SignupSection() {
+  const [server, setServer] = useState<ServerSettings | null>(null);
+  const [open, setOpen] = useState(false);
+  const [cap, setCap] = useState('');
+  const [state, setState] = useState<SaveState>('idle');
+  const [error, setError] = useState<string | null>(null);
+
+  function adopt(s: ServerSettings) {
+    setServer(s);
+    setOpen(s.signup_open);
+    setCap(String(s.signup_daily_cap));
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getServerSettings(controller.signal)
+      .then(adopt)
+      .catch((e) => !isAbort(e) && setError(e instanceof ApiError ? e.detail : NETWORK_MESSAGE));
+    return () => controller.abort();
+  }, []);
+
+  async function save() {
+    const daily = parseLimit(cap);
+    if (daily === null) return setError('Accounts a day must be a whole number from 1 to 100000.');
+    setState('saving');
+    setError(null);
+    try {
+      adopt(await patchServerSettings({ signup_open: open, signup_daily_cap: daily }));
+      setState('saved');
+      setTimeout(() => setState('idle'), 1600);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.detail : NETWORK_MESSAGE);
+      setState('idle');
+    }
+  }
+
+  return (
+    <Section title="Sign-up" description="For the whole server: you own it. People who create an account get a workspace of their own and see nothing of anyone else's." state={state} error={error} onSave={save}>
+      {!server && !error ? (
+        <Skeleton className="h-24 rounded-2xl" />
+      ) : (
+        <div className="grid gap-5">
+          <Switch
+            checked={open}
+            onChange={setOpen}
+            label="Anyone can create an account"
+            description="Off: accounts come only from you, your admins and their invitations. Sign-in then shows no Create account."
+          />
+          <TextField
+            label="New accounts a day, at most"
+            type="number"
+            min={1}
+            max={100000}
+            inputMode="numeric"
+            value={cap}
+            onChange={(e) => setCap(e.target.value)}
+            hint="For the whole server. One address can also create only 3 an hour."
+            className="sm:max-w-xs"
+          />
+        </div>
+      )}
+    </Section>
+  );
+}
+
 const LIMITS: { key: 'retention_days' | 'max_upload_mb' | 'max_batch_messages' | 'campaign_window_days'; label: string }[] = [
   { key: 'retention_days', label: 'Keep messages and reports for (days)' },
   { key: 'max_upload_mb', label: 'Largest upload (MB)' },
@@ -106,7 +177,7 @@ const LIMITS: { key: 'retention_days' | 'max_upload_mb' | 'max_batch_messages' |
   { key: 'campaign_window_days', label: 'Campaign window (days)' },
 ];
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ session }: { session: Session }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -221,7 +292,7 @@ export default function SettingsScreen() {
 
       <Section
         title="Limits"
-        description="Each accepts 1 to 100000."
+        description={session.owner ? 'Each accepts 1 to 100000. The upload and batch limits apply to the whole server.' : "Each accepts 1 to 100000. The upload and batch limits are the server owner's to change."}
         state={state.limits ?? 'idle'}
         error={errors.limits ?? null}
         onSave={() => {
@@ -235,10 +306,23 @@ export default function SettingsScreen() {
       >
         <div className="grid gap-4 sm:grid-cols-2">
           {LIMITS.map(({ key, label }) => (
-            <TextField key={key} label={label} type="number" min={1} max={100000} inputMode="numeric" value={limits[key] ?? ''} onChange={(e) => setLimits((l) => ({ ...l, [key]: e.target.value }))} />
+            <TextField
+              key={key}
+              label={label}
+              type="number"
+              min={1}
+              max={100000}
+              inputMode="numeric"
+              value={limits[key] ?? ''}
+              onChange={(e) => setLimits((l) => ({ ...l, [key]: e.target.value }))}
+              disabled={!session.owner && SERVER_LIMITS.includes(key)}
+              hint={!session.owner && SERVER_LIMITS.includes(key) ? 'Set by the server owner.' : undefined}
+            />
           ))}
         </div>
       </Section>
+
+      {session.owner && <SignupSection />}
 
       <ConfirmDialog
         open={removeKey !== null}
