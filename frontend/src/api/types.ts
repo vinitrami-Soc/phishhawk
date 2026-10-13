@@ -23,6 +23,8 @@ export type Session = {
   csrf: string;
   /** runs the server: sign-up, the daily cap and the upload limits are theirs alone */
   owner: boolean;
+  /** false until the setup after sign-up is finished or skipped; an older server leaves it out */
+  onboarded?: boolean;
   workspace: Workspace | null;
   profile: Profile | null;
 };

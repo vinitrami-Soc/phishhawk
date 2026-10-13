@@ -221,3 +221,15 @@ test('everyone edits their own profile; the owner alone sets the server', async 
   await call('PATCH', '/api/v1/server-settings', { signup_open: true });
   assert.equal((await call('PATCH', '/api/v1/me', { organization: 'Example Corp Ltd' })).body.workspace.name, 'Example Corp Ltd');
 });
+
+test('the setup after sign-up opens once: a new account has it, the preview account does not', async () => {
+  assert.equal((await call('GET', '/api/v1/session')).body.onboarded, true); // boss
+  await call('DELETE', '/api/v1/session');
+  csrf = '';
+  const made = await call('POST', '/api/v1/signup', { ...PERSON, username: 'noor', kind: 'individual' });
+  assert.equal(made.status, 201);
+  csrf = made.body.csrf;
+  assert.equal((await call('GET', '/api/v1/session')).body.onboarded, false);
+  assert.equal((await call('POST', '/api/v1/me/onboarded')).status, 204);
+  assert.equal((await call('GET', '/api/v1/session')).body.onboarded, true);
+});

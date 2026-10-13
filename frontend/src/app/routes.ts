@@ -23,9 +23,10 @@ export type Route =
   | { name: 'signup' }
   | { name: 'join'; token: string }
   | { name: 'profile' }
+  | { name: 'welcome' }
   | { name: 'not-found' };
 
-const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help', 'about', 'setup', 'signup', 'profile'] as const;
+const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help', 'about', 'setup', 'signup', 'profile', 'welcome'] as const;
 
 export function parseRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, '') || '/';
@@ -84,6 +85,7 @@ const TITLES: Record<Route['name'], string> = {
   signup: 'Create an account',
   join: 'Join an organization',
   profile: 'Your profile',
+  welcome: 'Welcome',
   'not-found': 'Page not found',
 };
 

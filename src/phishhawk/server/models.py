@@ -62,6 +62,7 @@ class User(Base):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    onboarded_at: Mapped[dt.datetime | None] = mapped_column(default=None)  # finished or skipped the setup
     # the profile: seen only inside the workspace
     first_name: Mapped[str] = mapped_column(String(80), default="")
     last_name: Mapped[str] = mapped_column(String(80), default="")

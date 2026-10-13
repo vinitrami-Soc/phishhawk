@@ -10,8 +10,8 @@ import { TextMorph } from '@/components/core/text-morph';
 import { getServerSettings, getSettings, patchServerSettings, patchSettings } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
 import type { ServerSettings, Session, Settings, SettingsPatch } from '@/api/types';
-import { PROVIDERS } from '@/app/vocabulary';
 import { normaliseDomain, parseLimit } from '@/lib/validate';
+import { ProviderFields, typedKeys } from '@/components/phishhawk/ProviderFields';
 import { Button, ConfirmDialog, ErrorState, PageHeader, Panel, SectionTitle, Skeleton, Switch, TextField } from '@/components/ui/ui';
 
 type SaveState = 'idle' | 'saving' | 'saved';
@@ -228,7 +228,7 @@ export default function SettingsScreen({ session }: { session: Session }) {
       </div>
     );
 
-  const typedKeys = Object.fromEntries(Object.entries(keys).filter(([, v]) => v.trim()));
+  const typed = typedKeys(keys);
 
   return (
     <div className="grid max-w-4xl grid-cols-1 gap-8">
@@ -239,43 +239,9 @@ export default function SettingsScreen({ session }: { session: Session }) {
         description="All are off on a new install. Offline analyses never use them."
         state={state.providers ?? 'idle'}
         error={errors.providers ?? null}
-        onSave={() => save('providers', { providers, ...(Object.keys(typedKeys).length ? { keys: typedKeys } : {}) }, () => setKeys({}))}
+        onSave={() => save('providers', { providers, ...(Object.keys(typed).length ? { keys: typed } : {}) }, () => setKeys({}))}
       >
-        <div className="grid gap-3">
-          {PROVIDERS.map((p) => {
-            const saved = settings.keys[p.id] ?? '';
-            return (
-              <div key={p.id} className="grid gap-4 rounded-[20px] border border-line bg-raised p-5">
-                <Switch
-                  checked={providers.includes(p.id)}
-                  onChange={(on) => setProviders((list) => (on ? [...list, p.id] : list.filter((x) => x !== p.id)))}
-                  label={p.name}
-                  description={`When this is on, PhishHawk sends indicators (never the email itself) to ${p.name}.`}
-                />
-                {p.needsKey && (
-                  <div className="flex flex-wrap items-end gap-3">
-                    <TextField
-                      data-bwignore="true" data-1p-ignore="true" data-lpignore="true"
-                      className="min-w-[220px] flex-1"
-                      label="API key"
-                      type="password"
-                      autoComplete="off"
-                      value={keys[p.id] ?? ''}
-                      onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
-                      placeholder={saved ? 'Type a new key to replace it' : 'Paste the key'}
-                      hint={saved ? `Saved key ending ${saved.replace(/^\.+/, '')}` : 'No key saved'}
-                    />
-                    {saved && (
-                      <Button size="sm" variant="ghost" className="mb-6" onClick={() => setRemoveKey(p.id)}>
-                        Remove key
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        <ProviderFields saved={settings.keys} providers={providers} onProvidersChange={setProviders} keys={keys} onKeysChange={setKeys} onRemoveKey={setRemoveKey} />
       </Section>
 
       <Section

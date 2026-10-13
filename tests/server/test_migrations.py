@@ -214,3 +214,21 @@ def test_a_workspaces_database_gains_profiles_and_invites(settings):
     command.downgrade(alembic_config(settings.db_url), "0004")
     assert "invites" not in inspect(engine).get_table_names()
     assert "first_name" not in {column["name"] for column in inspect(engine).get_columns("users")}
+
+
+def test_the_people_an_upgraded_server_has_skip_the_setup_after_sign_up(settings):
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    from phishhawk.server.db import alembic_config
+
+    command.upgrade(alembic_config(settings.db_url), "0005")
+    engine = make_engine(settings.db_url)
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO users (id, workspace_id, username, password_hash, role, disabled, owner, "
+                       "created_at) VALUES (1, 1, 'root', 'x', 'admin', false, true, '2026-10-01 00:00:00')"))
+    migrate(settings.db_url)
+    with engine.connect() as c:
+        assert c.execute(text("SELECT onboarded_at FROM users")).scalar() is not None
+    command.downgrade(alembic_config(settings.db_url), "0005")
+    assert "onboarded_at" not in {column["name"] for column in inspect(engine).get_columns("users")}

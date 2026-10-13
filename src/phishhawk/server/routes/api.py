@@ -74,11 +74,12 @@ def create_session(request: Request, db: DB, body: Login) -> Response:
 
 @router.get("/session")
 def current_session(db: DB, actor: CurrentActor) -> dict[str, Any]:
-    """Who is calling, for a frontend after a reload: their workspace, whether they own the server, and the CSRF
-    token."""
+    """Who is calling, for a frontend after a reload: their workspace, whether they own the server, whether they
+    finished the setup after sign-up, and the CSRF token."""
     workspace, user = db.get(Workspace, actor.workspace_id), db.get(User, actor.user_id)
     return {"user_id": actor.user_id, "username": actor.username, "role": actor.role, "via": actor.via,
             "scope": actor.scope, "csrf": actor.csrf, "owner": actor.owner,
+            "onboarded": user is not None and user.onboarded_at is not None,
             "profile": profile_view(user) if user else None,
             "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}
             if workspace else None}

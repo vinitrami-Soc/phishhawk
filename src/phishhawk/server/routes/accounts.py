@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from .. import accounts, audit, auth, scope, views
 from ..deps import DB, Admin, CurrentActor, secret, services
-from ..models import SERVER, Invite, User, Workspace
+from ..models import SERVER, Invite, User, Workspace, utcnow
 from . import api
 
 router = APIRouter(prefix="/api/v1")
@@ -254,6 +254,17 @@ def patch_me(request: Request, db: DB, actor: CurrentActor, body: ProfilePatch) 
     if changed:
         api._audit(db, actor, "profile", "user", user.id, {"changed": changed})
     return _me(db, actor)
+
+
+@router.post("/me/onboarded", status_code=204)
+def finish_onboarding(db: DB, actor: CurrentActor) -> Response:
+    """The setup after sign-up is finished or skipped: the frontend stops opening it."""
+    api._session_only(actor, "finish the setup")
+    user = db.get(User, actor.user_id)
+    assert user is not None
+    if user.onboarded_at is None:
+        user.onboarded_at = utcnow()
+    return Response(status_code=204)
 
 
 class ServerSettingsPatch(BaseModel):

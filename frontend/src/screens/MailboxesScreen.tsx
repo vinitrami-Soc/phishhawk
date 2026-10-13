@@ -50,7 +50,7 @@ type Draft = { kind: MailboxKind; name: string; interval: string; enabled: boole
 const emptyDraft = (kind: MailboxKind = 'imap'): Draft => ({ kind, name: '', interval: '5', enabled: true, secret: '', config: {} });
 const draftOf = (m: Mailbox): Draft => ({ kind: m.kind, name: m.name, interval: String(m.interval_minutes), enabled: m.enabled, secret: '', config: { ...m.config } });
 
-function MailboxDialog({ open, onOpenChange, editing, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; editing: Mailbox | null; onSaved: (m: Mailbox) => void }) {
+export function MailboxDialog({ open, onOpenChange, editing, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; editing: Mailbox | null; onSaved: (m: Mailbox) => void }) {
   const [draft, setDraft] = useState<Draft>(emptyDraft());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

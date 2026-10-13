@@ -95,3 +95,9 @@ test('setup, sign-up and joining are reached signed out; the profile signed in',
   assert.equal(pageTitle({ name: 'profile' }, true), 'Your profile · PhishHawk');
   assert.equal(pageTitle({ name: 'profile' }, false), 'Sign in · PhishHawk');
 });
+
+test('the setup after sign-up has a page of its own, signed in', () => {
+  assert.deepEqual(parseRoute('/app/welcome'), { name: 'welcome' });
+  assert.equal(signedOutView(parseRoute('/app/welcome')), 'login');
+  assert.equal(pageTitle({ name: 'welcome' }, true), 'Welcome · PhishHawk');
+});

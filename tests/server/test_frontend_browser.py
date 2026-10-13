@@ -396,3 +396,62 @@ def test_an_organization_signs_up_and_its_invitation_brings_in_a_second_person(b
         assert tops[0] == tops[1], tops  # side by side, even when only one of them has something to say
         visitor_errors = [e for e in visitor_errors if "status of 422" not in e]  # that refusal
         assert errors == [] and guest_errors == [] and visitor_errors == [] and owner_errors == []
+
+
+def _open_signup(server):
+    """root owns the server: it lets anyone create an account."""
+    import requests
+
+    owner = requests.Session()
+    signed_in = owner.post(server.base + "/api/v1/session", json={"username": "root", "password": PASSWORD})
+    csrf = signed_in.json()["csrf"]
+    opened = owner.patch(server.base + "/api/v1/server-settings", json={"signup_open": True},
+                         headers={"X-CSRF-Token": csrf})
+    assert opened.status_code == 200, opened.text
+
+
+def test_someone_who_signs_up_alone_is_set_up_shown_around_and_analyses_a_first_message(browser, tmp_path):
+    import re
+
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        _open_signup(server)
+        page, errors = _visitor(browser)
+        page.goto(server.base + "/")
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        page.get_by_role("banner").get_by_role("link", name="Create account").click()
+        page.get_by_role("button", name="Just me").click()
+        _account(page, "noor")
+        page.locator("form [type=submit]").click()
+
+        # the setup after sign-up, for one person: reputation providers (offline is fine), then the tour
+        page.get_by_role("heading", name="Reputation providers").wait_for()
+        assert page.url == server.base + "/app/welcome"
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            page.goto(server.base + "/app/welcome")
+            page.get_by_role("heading", name="Reputation providers").wait_for()
+            page.wait_for_timeout(400)
+            assert page.evaluate(PAST_EDGE, "body") == [], (width, "providers")
+            page.get_by_role("button", name="Skip", exact=True).click()
+            page.get_by_role("heading", name="A look around").wait_for()
+            page.wait_for_timeout(400)
+            assert page.evaluate(PAST_EDGE, "body") == [], (width, "the tour")
+            sync_api.expect(page.get_by_role("link", name=re.compile("^Show me"))).to_have_count(5)
+        page.set_viewport_size({"width": 1280, "height": 900})
+        page.get_by_role("button", name="Finish").click()
+        page.wait_for_url(server.base + "/app/")
+        assert page.evaluate("fetch('/api/v1/session').then((r) => r.json())")["onboarded"] is True
+
+        # the first analysis
+        page.get_by_role("button", name="Paste the message").click()
+        with open(sample("sample_phish.eml"), encoding="utf-8") as message:
+            page.fill("textarea[aria-label='Raw message']", message.read())
+        page.get_by_role("button", name="Analyze").click()
+        page.wait_for_url("**/app/analyses/*", timeout=60000)
+        page.get_by_text("LIKELY PHISHING").first.wait_for(timeout=30000)
+
+        # from now on the console opens at Triage
+        page.goto(server.base + "/app/")
+        page.get_by_role("button", name="Paste the message").wait_for()
+        assert page.url == server.base + "/app/"
+        assert errors == []

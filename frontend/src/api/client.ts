@@ -354,6 +354,11 @@ export function patchMe(patch: ProfilePatch): Promise<Me> {
   return request<Me>('PATCH', '/api/v1/me', { json: patch });
 }
 
+/** The setup after sign-up is finished or skipped: the console stops opening it. */
+export function finishOnboarding(): Promise<void> {
+  return request<void>('POST', '/api/v1/me/onboarded');
+}
+
 export function getServerSettings(signal?: AbortSignal): Promise<ServerSettings> {
   return request<ServerSettings>('GET', '/api/v1/server-settings', { signal });
 }
