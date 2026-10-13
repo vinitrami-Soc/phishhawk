@@ -15,16 +15,18 @@ import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from . import appsettings, audit, auth
 from .crypto import Box
-from .models import SERVER, User, Workspace, utcnow
+from .models import SERVER, Invite, User, Workspace, utcnow
 
 FIELD_MAX = 80
 KINDS = ("individual", "organization")
 DAILY_CAP = 100  # sign-ups a day for the whole server, until the owner sets another
+INVITE_DAYS = 7
+NOTE_MAX = 120
 PROFILE = ("first_name", "last_name", "location", "job_title")
 OPTIONAL = ("job_title",)
 
@@ -37,14 +39,14 @@ class AccountError(Exception):
         self.status, self.detail = status, detail
 
 
-def clean(field: str, value: object, required: bool = True) -> str:
+def clean(field: str, value: object, required: bool = True, most: int = FIELD_MAX) -> str:
     """A profile field: trimmed, at most 80 characters, no control or formatting characters (which could hide
     or reorder what another person reads)."""
     text = value.strip() if isinstance(value, str) else ""
     if required and not text:
         raise AccountError(422, "%s: required" % field)
-    if len(text) > FIELD_MAX:
-        raise AccountError(422, "%s: %d characters at most" % (field, FIELD_MAX))
+    if len(text) > most:
+        raise AccountError(422, "%s: %d characters at most" % (field, most))
     if any(unicodedata.category(c) in ("Cc", "Cf") for c in text):
         raise AccountError(422, "%s: control characters are not allowed" % field)
     return text
@@ -152,4 +154,65 @@ def sign_up(db: Session, data: Mapping[str, Any]) -> User:
     user = _new_user(db, data, "admin", workspace.id, fields)
     audit.record(db, user.username, "signup", details={"kind": kind, "workspace": workspace.id},
                  workspace_id=SERVER)
+    return user
+
+
+def invite(db: Session, actor: auth.Actor, role: object, note: object) -> tuple[Invite, str]:
+    """An invitation into the actor's organization, and its token, which is never stored and so shown once."""
+    workspace = db.get(Workspace, actor.workspace_id)
+    if workspace is None or workspace.kind != "organization":
+        raise AccountError(403, "an individual workspace has one member: create an organization to work as a team")
+    if role not in auth.ROLES:
+        raise AccountError(422, "role: admin or analyst")
+    text = clean("note", note, required=False, most=NOTE_MAX)
+    token = secrets.token_urlsafe(32)
+    row = Invite(workspace_id=workspace.id, token_hash=auth.digest(token), role=role, note=text,
+                 created_by=actor.user_id, expires_at=utcnow() + dt.timedelta(days=INVITE_DAYS))
+    db.add(row)
+    db.flush()
+    audit.record(db, actor.label, "invite_create", "invite", row.id, {"role": role, "note": text},
+                 workspace_id=workspace.id)
+    return row, token
+
+
+def _pending() -> Any:
+    return (Invite.used_at.is_(None), Invite.revoked_at.is_(None), Invite.expires_at > utcnow())
+
+
+def pending(db: Session, workspace_id: int) -> list[Invite]:
+    return list(db.scalars(select(Invite).where(Invite.workspace_id == workspace_id, *_pending())
+                           .order_by(Invite.id)))
+
+
+def revoke(db: Session, actor: auth.Actor, row: Invite) -> None:
+    if row.used_at is not None:
+        raise AccountError(409, "this invitation was used already")
+    if row.revoked_at is None:
+        row.revoked_at = utcnow()
+        audit.record(db, actor.label, "invite_revoke", "invite", row.id, {"role": row.role},
+                     workspace_id=row.workspace_id)
+
+
+def open_invite(db: Session, token: str) -> Invite:
+    """The invitation a token opens, while it is unused, not withdrawn and within its 7 days; 404 otherwise."""
+    row = db.scalars(select(Invite).where(Invite.token_hash == auth.digest(token), *_pending())).first()
+    if row is None:
+        raise AccountError(404, "this invitation is not valid: it was used, withdrawn, or is over %d days old"
+                           % INVITE_DAYS)
+    return row
+
+
+def join(db: Session, token: str, data: Mapping[str, Any]) -> User:
+    """The new member, with the invitation's role in its organization. The invitation is taken first, so two
+    people with one link cannot both join; a refused request leaves it unused (the transaction rolls back)."""
+    row = open_invite(db, token)
+    fields = profile(data)
+    _credentials(db, data)
+    taken = db.execute(update(Invite).where(Invite.id == row.id, Invite.used_at.is_(None))
+                       .values(used_at=utcnow()))
+    if taken.rowcount != 1:  # type: ignore[attr-defined]
+        raise AccountError(404, "this invitation was used already")
+    user = _new_user(db, data, row.role, row.workspace_id, fields)
+    row.used_by = user.id
+    audit.record(db, user.username, "join", "invite", row.id, {"role": row.role}, workspace_id=row.workspace_id)
     return user

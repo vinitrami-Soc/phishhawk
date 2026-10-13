@@ -9,9 +9,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from .. import accounts, auth
-from ..deps import DB, secret, services
-from ..models import User
+from .. import accounts, auth, scope, views
+from ..deps import DB, Admin, secret, services
+from ..models import Invite, User, Workspace
 from . import api
 
 router = APIRouter(prefix="/api/v1")
@@ -108,4 +108,76 @@ def sign_up(request: Request, db: DB, body: SignUp) -> Response:
             signups.add(address(request))
         raise HTTPException(exc.status, exc.detail) from None
     signups.add(address(request))
+    return signed_in(request, db, user)
+
+
+class NewInvite(BaseModel):
+    role: str
+    note: str = ""
+
+
+class Join(BaseModel):
+    username: str
+    password: str
+    first_name: str = ""
+    last_name: str = ""
+    location: str = ""
+    job_title: str = ""
+
+
+def _invite_view(row: Invite, names: dict[int, str]) -> dict[str, Any]:
+    return {"id": row.id, "role": row.role, "note": row.note, "created_at": row.created_at.isoformat(),
+            "expires_at": row.expires_at.isoformat(), "created_by_name": names.get(row.created_by or 0)}
+
+
+def _refused(exc: accounts.AccountError) -> HTTPException:
+    return HTTPException(exc.status, exc.detail)
+
+
+@router.get("/invites")
+def list_invites(db: DB, actor: Admin) -> list[dict[str, Any]]:
+    """The invitations of the caller's organization that can still be used; never their tokens."""
+    names = views.usernames(db, actor.workspace_id)
+    return [_invite_view(row, names) for row in accounts.pending(db, actor.workspace_id)]
+
+
+@router.post("/invites", status_code=201)
+def create_invite(db: DB, actor: Admin, body: NewInvite) -> dict[str, Any]:
+    """An invitation with a role and a note for whoever sends it on. `link` (and `token`) are shown once: the
+    server keeps only a hash. It works once, within 7 days. 403 in an individual workspace."""
+    try:
+        row, token = accounts.invite(db, actor, body.role, body.note)
+    except accounts.AccountError as exc:
+        raise _refused(exc) from None
+    return _invite_view(row, views.usernames(db, actor.workspace_id)) | {"token": token,
+                                                                          "link": "/app/join/" + token}
+
+
+@router.delete("/invites/{invite_id}", status_code=204)
+def revoke_invite(db: DB, actor: Admin, invite_id: int) -> Response:
+    try:
+        accounts.revoke(db, actor, scope.invite(db, actor, invite_id))
+    except accounts.AccountError as exc:
+        raise _refused(exc) from None
+    return Response(status_code=204)
+
+
+@router.get("/join/{token}")
+def invitation(db: DB, token: str) -> dict[str, Any]:
+    """Which organization an invitation opens, and with which role; 404 when it cannot be used."""
+    try:
+        row = accounts.open_invite(db, token)
+    except accounts.AccountError as exc:
+        raise _refused(exc) from None
+    workspace = db.get(Workspace, row.workspace_id)
+    return {"organization": workspace.name if workspace else "", "role": row.role}
+
+
+@router.post("/join/{token}", status_code=201)
+def join(request: Request, db: DB, token: str, body: Join) -> Response:
+    """The new member's account in the invitation's organization, with its role; then signed in."""
+    try:
+        user = accounts.join(db, token, body.model_dump())
+    except accounts.AccountError as exc:
+        raise _refused(exc) from None
     return signed_in(request, db, user)

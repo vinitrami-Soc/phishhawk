@@ -306,8 +306,11 @@ def _ids(admin, theirs):
     box = admin.post("/api/v1/mailboxes", json={"name": "Guarded", "kind": "imap", "secret": "pw",
                                                 "config": {"host": "imap.example", "user": "soc@corp.example"}})
     assert box.status_code == 201, box.text
+    invite = admin.post("/api/v1/invites", json={"role": "analyst", "note": "guard"})
+    assert invite.status_code == 201, invite.text
     a = theirs["analysis"]
-    return {"analysis_id": a["id"], "submission_id": theirs["submission"], "batch_id": theirs["batch"]["id"],
+    return {"invite_id": invite.json()["id"],
+            "analysis_id": a["id"], "submission_id": theirs["submission"], "batch_id": theirs["batch"]["id"],
             "message_id": a["message_id"], "campaign_id": theirs["campaign"]["id"], "mailbox_id": box.json()["id"],
             "user_id": a["submitted_by"], "token_id": admin.get("/api/v1/tokens").json()[0]["id"],
             "name": a["files"][0]["name"]}

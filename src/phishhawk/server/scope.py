@@ -10,9 +10,9 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from .auth import Actor
-from .models import Analysis, ApiToken, Batch, Campaign, Mailbox, Message, Submission, User
+from .models import Analysis, ApiToken, Batch, Campaign, Invite, Mailbox, Message, Submission, User
 
-Row = TypeVar("Row", Analysis, Batch, Campaign, Mailbox, Message, Submission, User)
+Row = TypeVar("Row", Analysis, Batch, Campaign, Invite, Mailbox, Message, Submission, User)
 
 
 def _get(db: Session, model: type[Row], ident: int, actor: Actor, what: str) -> Row:
@@ -52,6 +52,10 @@ def mailbox(db: Session, actor: Actor, ident: int) -> Mailbox:
 
 def user(db: Session, actor: Actor, ident: int) -> User:
     return _get(db, User, ident, actor, "user")
+
+
+def invite(db: Session, actor: Actor, ident: int) -> Invite:
+    return _get(db, Invite, ident, actor, "invitation")
 
 
 def token(db: Session, actor: Actor, ident: int) -> ApiToken:

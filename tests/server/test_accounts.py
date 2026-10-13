@@ -177,3 +177,72 @@ def test_the_daily_cap_holds_for_the_whole_server(app, services):
     second = TestClient(app).post("/api/v1/signup", json=PERSON | {"kind": "individual", "username": "kim"})
     assert second.status_code == 429 and "today" in second.json()["detail"]
     assert int(second.headers["retry-after"]) > 0
+
+
+def _invite(client, role="analyst", note=""):
+    made = client.post("/api/v1/invites", json={"role": role, "note": note})
+    assert made.status_code == 201, made.text
+    return made.json()
+
+
+def test_an_organization_admin_invites_with_a_link_shown_once(admin, alice):
+    made = _invite(admin, note="for Priya, SOC team")
+    assert made["link"] == "/app/join/" + made["token"] and len(made["token"]) >= 40
+    pending = admin.get("/api/v1/invites").json()
+    assert [(i["id"], i["role"], i["note"], i["created_by_name"]) for i in pending] == [
+        (made["id"], "analyst", "for Priya, SOC team", "admin")]
+    assert made["token"] not in str(pending)
+    assert alice.post("/api/v1/invites", json={"role": "analyst"}).status_code == 403
+    assert admin.post("/api/v1/invites", json={"role": "owner"}).status_code == 422
+
+
+def test_an_individual_works_alone(anon, services):
+    _open_signup(services)
+    _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}))
+    refused = anon.post("/api/v1/invites", json={"role": "analyst"})
+    assert refused.status_code == 403 and "individual" in refused.json()["detail"]
+
+
+def test_an_invite_brings_its_role_into_its_organization_once(app, admin, services):
+    made = _invite(admin, role="analyst")
+    guest = TestClient(app)
+    assert guest.get("/api/v1/join/" + made["token"]).json() == {"organization": "Default organization",
+                                                                  "role": "analyst"}
+    me = _signed_in(guest, guest.post("/api/v1/join/" + made["token"], json=PERSON | {"username": "priya"}))
+    assert (me["username"], me["role"], me["workspace"]["name"]) == ("priya", "analyst", "Default organization")
+    assert "priya" in [u["username"] for u in admin.get("/api/v1/users").json()]
+    assert admin.get("/api/v1/invites").json() == []
+    late = TestClient(app)
+    assert late.get("/api/v1/join/" + made["token"]).status_code == 404
+    assert late.post("/api/v1/join/" + made["token"], json=PERSON | {"username": "pat"}).status_code == 404
+    with transaction(services.sessions) as s:
+        record = s.scalars(select(AuditRecord).where(AuditRecord.action == "join")).one()
+        assert (record.actor, record.workspace_id, record.details) == ("priya", me["workspace"]["id"],
+                                                                       {"role": "analyst"})
+
+
+def test_an_invite_over_seven_days_old_or_withdrawn_does_not_open(app, admin, services):
+    import datetime as dt
+
+    from phishhawk.server.models import Invite
+
+    old, withdrawn = _invite(admin), _invite(admin)
+    with transaction(services.sessions) as s:
+        s.get(Invite, old["id"]).expires_at -= dt.timedelta(days=7, seconds=1)
+    assert admin.delete("/api/v1/invites/%d" % withdrawn["id"]).status_code == 204
+    guest = TestClient(app)
+    for made in (old, withdrawn):
+        assert guest.get("/api/v1/join/" + made["token"]).status_code == 404
+        assert guest.post("/api/v1/join/" + made["token"], json=PERSON).status_code == 404
+    assert guest.get("/api/v1/join/not-a-token").status_code == 404
+    assert admin.get("/api/v1/invites").json() == []
+
+
+def test_joining_checks_the_fields_before_the_invite_is_used(app, admin):
+    made = _invite(admin)
+    guest = TestClient(app)
+    bad = guest.post("/api/v1/join/" + made["token"], json=PERSON | {"last_name": ""})
+    assert bad.status_code == 422 and bad.json()["detail"].startswith("last_name")
+    taken = guest.post("/api/v1/join/" + made["token"], json=PERSON | {"username": "alice"})
+    assert taken.status_code == 409
+    assert guest.post("/api/v1/join/" + made["token"], json=PERSON).status_code == 201
