@@ -103,3 +103,77 @@ def test_a_server_no_one_has_an_account_on_prints_its_setup_code_at_start(tmp_pa
     with running_server(tmp_path) as server:  # it makes "root" once the server answers
         log = server.log.read_text("utf-8", "replace")
     assert re.search(r"setup code [A-Z2-7]{4}(-[A-Z2-7]{4}){3} \(it works once\)", log), log
+
+
+PERSON = {"username": "sam", "password": PASSWORD, "first_name": "Sam", "last_name": "Lee", "location": "Leeds",
+          "job_title": "", "organization": ""}
+
+
+def _open_signup(services, cap=None):
+    with transaction(services.sessions) as s:
+        appsettings.set_value(s, SERVER, "signup_open", True)
+        if cap is not None:
+            appsettings.set_value(s, SERVER, "signup_daily_cap", cap)
+
+
+def _signed_in(client, answer):
+    assert answer.status_code == 201, answer.text
+    client.headers["X-CSRF-Token"] = answer.json()["csrf"]
+    return client.get("/api/v1/session").json()
+
+
+def test_sign_up_is_closed_until_the_owner_opens_it(anon):
+    assert anon.get("/api/v1/signup").json() == {"open": False}
+    assert anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}).status_code == 404
+
+
+def test_an_individual_gets_a_workspace_of_their_own(anon, services, admin):
+    _open_signup(services)
+    assert anon.get("/api/v1/signup").json() == {"open": True}
+    me = _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}))
+    assert (me["username"], me["role"], me["owner"]) == ("sam", "admin", False)
+    assert (me["workspace"]["name"], me["workspace"]["kind"]) == ("Sam Lee", "individual")
+    assert [u["username"] for u in anon.get("/api/v1/users").json()] == ["sam"]
+    assert "sam" not in [u["username"] for u in admin.get("/api/v1/users").json()]
+    with transaction(services.sessions) as s:
+        record = s.scalars(select(AuditRecord).where(AuditRecord.action == "signup")).one()
+        assert (record.actor, record.workspace_id) == ("sam", SERVER)
+        assert record.details == {"kind": "individual", "workspace": me["workspace"]["id"]}
+
+
+def test_an_organization_is_named_after_itself_and_needs_its_name(anon, services):
+    _open_signup(services)
+    missing = anon.post("/api/v1/signup", json=PERSON | {"kind": "organization"})
+    assert missing.status_code == 422 and "organization" in missing.json()["detail"]
+    me = _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "organization",
+                                                                     "organization": "Acme SOC"}))
+    assert (me["workspace"]["name"], me["workspace"]["kind"]) == ("Acme SOC", "organization")
+
+
+def test_sign_up_names_the_field_that_is_wrong(anon, services):
+    _open_signup(services)
+    for field, value in (("kind", "team"), ("username", "Sam Lee"), ("password", "short"), ("first_name", ""),
+                         ("last_name", " "), ("location", ""), ("job_title", "x" * 81),
+                         ("first_name", "Sam‮")):
+        answer = anon.post("/api/v1/signup", json=PERSON | {"kind": "individual", field: value})
+        assert answer.status_code == 422 and answer.json()["detail"].startswith(field), (field, answer.text)
+    taken = anon.post("/api/v1/signup", json=PERSON | {"kind": "individual", "username": "alice"})
+    assert taken.status_code == 409 and "taken" in taken.json()["detail"]
+
+
+def test_three_sign_ups_an_hour_from_one_address(anon, services):
+    _open_signup(services)
+    for name in ("sam", "kim", "lee"):
+        answer = anon.post("/api/v1/signup", json=PERSON | {"kind": "individual", "username": name})
+        assert answer.status_code == 201, answer.text
+    fourth = anon.post("/api/v1/signup", json=PERSON | {"kind": "individual", "username": "max"})
+    assert fourth.status_code == 429 and int(fourth.headers["retry-after"]) > 3000
+
+
+def test_the_daily_cap_holds_for_the_whole_server(app, services):
+    _open_signup(services, cap=2)  # the default organization counts: it was made today
+    first = TestClient(app).post("/api/v1/signup", json=PERSON | {"kind": "individual"})
+    assert first.status_code == 201
+    second = TestClient(app).post("/api/v1/signup", json=PERSON | {"kind": "individual", "username": "kim"})
+    assert second.status_code == 429 and "today" in second.json()["detail"]
+    assert int(second.headers["retry-after"]) > 0

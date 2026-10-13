@@ -68,3 +68,44 @@ def set_up(request: Request, db: DB, body: Setup) -> Response:
         raise HTTPException(exc.status, exc.detail) from None
     throttle.succeeded(address(request))
     return signed_in(request, db, user)
+
+
+class SignUp(BaseModel):
+    kind: str
+    username: str
+    password: str
+    first_name: str = ""
+    last_name: str = ""
+    location: str = ""
+    organization: str = ""
+    job_title: str = ""
+
+
+@router.get("/signup")
+def signup_state(db: DB) -> dict[str, Any]:
+    """Whether anyone may create an account now; the owner decides."""
+    return {"open": accounts.signup_open(db)}
+
+
+@router.post("/signup", status_code=201)
+def sign_up(request: Request, db: DB, body: SignUp) -> Response:
+    """A workspace of its own for an individual, or a new organization, with the caller as its admin; then signed
+    in. 404 while sign-up is closed; 429 past 3 an hour from one address, or past the server's daily cap."""
+    if not accounts.signup_open(db):
+        raise HTTPException(404, "sign-up is closed: ask an admin for an invitation")
+    signups = request.app.state.signups
+    wait = signups.wait(address(request))
+    if wait > 0:
+        raise _throttled(wait)
+    wait = accounts.cap_wait(db)
+    if wait > 0:
+        raise HTTPException(429, "no more accounts can be made today: try again later",
+                            headers={"Retry-After": str(int(wait) + 1)})
+    try:
+        user = accounts.sign_up(db, body.model_dump())
+    except accounts.AccountError as exc:
+        if exc.status == 409:  # asking whether a username exists counts as a try
+            signups.add(address(request))
+        raise HTTPException(exc.status, exc.detail) from None
+    signups.add(address(request))
+    return signed_in(request, db, user)

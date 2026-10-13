@@ -20,7 +20,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from .. import __version__
 from ..report.common import printable
 from . import appsettings, auth
-from .auth import LoginThrottle
+from .auth import LoginThrottle, SignupThrottle
 from .bodylimit import BATCH_FACTOR, MB, BodyLimit
 from .config import ServerSettings, load_settings
 from .crypto import Box
@@ -46,6 +46,7 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     app = FastAPI(title="PhishHawk", version=__version__, docs_url=None, redoc_url=None)
     app.state.services = services
     app.state.throttle = LoginThrottle()
+    app.state.signups = SignupThrottle()
     templates = Jinja2Templates(directory=str(files("phishhawk.server") / "templates"))
     templates.env.filters["printable"] = lambda value: printable(str(value)) if value is not None else ""
     app.state.templates = templates

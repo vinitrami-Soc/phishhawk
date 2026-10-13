@@ -200,3 +200,29 @@ class LoginThrottle:
     def succeeded(self, *keys: str) -> None:
         for key in keys:
             self._failures.pop(key, None)
+
+
+class SignupThrottle:
+    """At most `per_hour` sign-ups from one address in an hour. It remembers at most `limit` addresses,
+    forgetting the one seen longest ago first."""
+
+    def __init__(self, per_hour: int = 3, clock: object = time.monotonic, limit: int = 10000) -> None:
+        self._per_hour, self._clock, self._limit = per_hour, clock, limit
+        self._seen: dict[str, list[float]] = {}
+
+    def _recent(self, key: str, now: float) -> list[float]:
+        return [at for at in self._seen.get(key, []) if now - at < 3600]
+
+    def wait(self, key: str) -> float:
+        """Seconds until this address may sign up again; 0 when it may now."""
+        now = self._clock()  # type: ignore[operator]
+        recent = self._recent(key, now)
+        return 0.0 if len(recent) < self._per_hour else 3600 - (now - recent[0])
+
+    def add(self, key: str) -> None:
+        now = self._clock()  # type: ignore[operator]
+        recent = self._recent(key, now) + [now]
+        self._seen.pop(key, None)  # popped, so it moves to the newest end
+        self._seen[key] = recent
+        while len(self._seen) > self._limit:
+            del self._seen[next(iter(self._seen))]

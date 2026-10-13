@@ -8,20 +8,23 @@ daily sign-up cap, and the setup code (sealed, like a provider key)."""
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import hmac
 import secrets
 import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import appsettings, audit, auth
 from .crypto import Box
-from .models import SERVER, User, Workspace
+from .models import SERVER, User, Workspace, utcnow
 
 FIELD_MAX = 80
+KINDS = ("individual", "organization")
+DAILY_CAP = 100  # sign-ups a day for the whole server, until the owner sets another
 PROFILE = ("first_name", "last_name", "location", "job_title")
 OPTIONAL = ("job_title",)
 
@@ -108,4 +111,45 @@ def set_up(db: Session, box: Box, data: Mapping[str, Any]) -> User:
     appsettings.set_value(db, SERVER, "signup_open", signup_open)
     appsettings.set_secret(db, box, SERVER, "setup_code", "")
     audit.record(db, user.username, "setup", details={"signup_open": signup_open}, workspace_id=SERVER)
+    return user
+
+
+def signup_open(db: Session) -> bool:
+    """Off until the owner opens it: at setup, or in the server settings. An upgraded server stays closed."""
+    return appsettings.get_value(db, SERVER, "signup_open", False) is True
+
+
+def cap_wait(db: Session, now: dt.datetime | None = None) -> float:
+    """Seconds until another workspace may be made under the daily cap; 0 when one may be made now. Counted from
+    the database, so it holds however many processes serve sign-ups."""
+    now = now or utcnow()
+    since = now - dt.timedelta(days=1)
+    cap = appsettings.get_value(db, SERVER, "signup_daily_cap", DAILY_CAP)
+    made = db.scalar(select(func.count()).select_from(Workspace).where(Workspace.created_at >= since)) or 0
+    if made < cap:
+        return 0.0
+    oldest = db.scalar(select(func.min(Workspace.created_at)).where(Workspace.created_at >= since))
+    if oldest is None:
+        return 0.0
+    if oldest.tzinfo is None:
+        oldest = oldest.replace(tzinfo=dt.timezone.utc)
+    return max(1.0, (oldest + dt.timedelta(days=1) - now).total_seconds())
+
+
+def sign_up(db: Session, data: Mapping[str, Any]) -> User:
+    """A new workspace of the kind asked for, and its first admin. Everything is checked before anything is made,
+    and each problem names its field."""
+    kind = data.get("kind")
+    if kind not in KINDS:
+        raise AccountError(422, "kind: individual or organization")
+    fields = profile(data)
+    organization = clean("organization", data.get("organization"), required=kind == "organization")
+    _credentials(db, data)
+    name = organization if kind == "organization" else "%s %s" % (fields["first_name"], fields["last_name"])
+    workspace = Workspace(name=name[:FIELD_MAX], kind=kind)
+    db.add(workspace)
+    db.flush()
+    user = _new_user(db, data, "admin", workspace.id, fields)
+    audit.record(db, user.username, "signup", details={"kind": kind, "workspace": workspace.id},
+                 workspace_id=SERVER)
     return user
