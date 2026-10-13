@@ -2,7 +2,8 @@
    the product page, Help and Privacy. The bar floats like the console's command
    bar and takes its colours; the footer is a site map in four columns. Links to
    the product page's sections scroll in place on that page and open it
-   everywhere else. */
+   everywhere else. Create account shows only while the server's owner lets
+   anyone create one. */
 
 import type { MouseEvent, ReactNode } from 'react';
 import { useReducedMotion } from 'motion/react';
@@ -11,6 +12,7 @@ import { AnimatedBackground } from '@/components/core/animated-background';
 import { TextRoll } from '@/components/core/text-roll';
 import { Link, asset } from '@/app/router';
 import { cn } from '@/lib/utils';
+import { useGettingIn } from '@/hooks/useGettingIn';
 
 export const SECTIONS = [
   { id: 'how', label: 'How it works' },
@@ -89,6 +91,17 @@ function Brand({ onLanding }: { onLanding: boolean }) {
   );
 }
 
+/** Create account, next to Sign in, while sign-up is open. */
+function CreateAccountLink({ className }: { className?: string }) {
+  const gettingIn = useGettingIn();
+  if (!gettingIn?.signup) return null;
+  return (
+    <Link href="/app/signup" className={cn('inline-flex h-10 shrink-0 items-center rounded-full px-3.5 text-[13px] font-medium text-ink-dim transition-colors hover:bg-hover hover:text-ink', className)}>
+      Create account
+    </Link>
+  );
+}
+
 export function PublicHeader({ signedIn = false, onLanding = false }: { signedIn?: boolean; onLanding?: boolean }) {
   return (
     <header className="sticky top-0 z-40 px-3 pt-3 print:hidden sm:px-4">
@@ -111,7 +124,10 @@ export function PublicHeader({ signedIn = false, onLanding = false }: { signedIn
             </AnimatedBackground>
           </div>
         </nav>
-        <EnterLink signedIn={signedIn} />
+        <div className="flex shrink-0 items-center gap-1">
+          {!signedIn && <CreateAccountLink className="hidden sm:inline-flex" />}
+          <EnterLink signedIn={signedIn} />
+        </div>
       </div>
     </header>
   );

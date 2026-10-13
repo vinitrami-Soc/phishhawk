@@ -41,6 +41,18 @@ export function useAuth() {
     return session;
   }, []);
 
+  /** Signed in by setup, sign-up or an invitation: the server already opened the session. */
+  const enter = useCallback((session: Session) => setAuth({ status: 'signed-in', session }), []);
+
+  /** Reads the session again (after the profile or the organization's name changed), without a loading screen. */
+  const refresh = useCallback(async () => {
+    try {
+      setAuth({ status: 'signed-in', session: await getSession() });
+    } catch {
+      // a 401 already reached the handler above; anything else leaves the session as it was
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await logout();
@@ -53,5 +65,5 @@ export function useAuth() {
 
   const retry = useCallback(() => check(), [check]);
 
-  return { auth, signIn, signOut, retry };
+  return { auth, signIn, signOut, retry, enter, refresh };
 }

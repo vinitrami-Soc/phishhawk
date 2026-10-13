@@ -171,8 +171,9 @@ export function CommandBar({
               <span className="ph-commandbar__role">{user.role}</span>
             </span>
           )}
+          {/* aria-label: the name stays when narrow bars hide the words and show the icon alone */}
           {onSignOut && (
-            <button type="button" className="atd-modern__cta" onClick={onSignOut}>
+            <button type="button" className="atd-modern__cta" onClick={onSignOut} aria-label={signOutLabel}>
               <span>{signOutLabel}</span>
               <svg viewBox="0 0 16 16" aria-hidden="true">
                 <path d="M3.2 8h9.1M8.6 4.3 12.4 8l-3.8 3.7" />

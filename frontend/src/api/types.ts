@@ -7,6 +7,12 @@ export type Verdict = 'NO STRONG INDICATORS' | 'SUSPICIOUS' | 'LIKELY PHISHING' 
 export type Severity = 'high' | 'medium' | 'low';
 export type SubmissionStatus = 'queued' | 'running' | 'done' | 'failed';
 
+/** Where a user's data lives: an organization (a team) or one person. No workspace sees another's data. */
+export type Workspace = { id: number; name: string; kind: 'organization' | 'individual' };
+
+/** A person's profile, seen only inside their workspace. */
+export type Profile = { first_name: string; last_name: string; location: string; job_title: string };
+
 /** GET /api/v1/session */
 export type Session = {
   user_id: number | null;
@@ -15,6 +21,10 @@ export type Session = {
   via: 'session' | 'token';
   scope: string;
   csrf: string;
+  /** runs the server: sign-up, the daily cap and the upload limits are theirs alone */
+  owner: boolean;
+  workspace: Workspace | null;
+  profile: Profile | null;
 };
 
 /** POST /api/v1/submissions (one message), GET /api/v1/submissions/{id}, POST /api/v1/analyses/{id}/reanalyze */
@@ -290,3 +300,32 @@ export type Health = {
   last_heartbeat: string | null;
   disk_free_mb: number;
 };
+
+/* ---- getting in: setup, sign-up, invitations, profile ---- */
+
+/** A new account's own fields. A 422 or 409 `detail` starts with the field it is about ("last_name: required"). */
+export type AccountFields = Profile & { username: string; password: string };
+
+/** POST /api/v1/setup: the owner's account, with the code from the server's log. */
+export type SetupFields = AccountFields & { code: string; organization: string; signup_open: boolean };
+
+/** POST /api/v1/signup. `organization` is needed for an organization, and optional for an individual. */
+export type SignupFields = AccountFields & { kind: Workspace['kind']; organization: string };
+
+/** GET /api/v1/join/{token}: the organization an invitation opens, and the role it gives. */
+export type Invitation = { organization: string; role: Role };
+
+/** GET /api/v1/invites: an invitation that can still be used. Never its token. */
+export type Invite = { id: number; role: Role; note: string; created_at: string; expires_at: string; created_by_name: string | null };
+
+/** POST /api/v1/invites: the token is shown once; the server keeps only a hash of it. */
+export type NewInvite = Invite & { token: string; link: string };
+
+/** GET /api/v1/me */
+export type Me = { username: string; role: Role; owner: boolean; profile: Profile; workspace: Workspace };
+
+/** PATCH /api/v1/me: any of these. A new password needs the current one. */
+export type ProfilePatch = Partial<Profile> & { organization?: string; password?: string; current_password?: string };
+
+/** GET /api/v1/server-settings (the owner only) */
+export type ServerSettings = { signup_open: boolean; signup_daily_cap: number; max_upload_mb: number; max_batch_messages: number };

@@ -75,3 +75,23 @@ test('every page has its own title', () => {
   assert.equal(pageTitle({ name: 'queue' }, false), 'Sign in · PhishHawk');
   assert.equal(pageTitle({ name: 'login' }, false), 'Sign in · PhishHawk');
 });
+
+test('setup, sign-up and joining are reached signed out; the profile signed in', () => {
+  const token = 'Ab3_-'.repeat(9);
+  assert.deepEqual(parseRoute('/app/setup'), { name: 'setup' });
+  assert.deepEqual(parseRoute('/app/signup/'), { name: 'signup' });
+  assert.deepEqual(parseRoute('/app/profile'), { name: 'profile' });
+  assert.deepEqual(parseRoute(`/app/join/${token}`), { name: 'join', token });
+  for (const path of ['/app/join', '/app/join/short', '/app/join/a%20b', `/app/join/${token}/x`, `/app/join/${'a'.repeat(129)}`]) {
+    assert.deepEqual(parseRoute(path), { name: 'not-found' }, path);
+  }
+  for (const path of ['/app/setup', '/app/signup', `/app/join/${token}`]) {
+    assert.equal(signedOutView(parseRoute(path)), 'account', path);
+  }
+  assert.equal(signedOutView(parseRoute('/app/profile')), 'login');
+  assert.equal(pageTitle({ name: 'setup' }, false), 'Set up PhishHawk · PhishHawk');
+  assert.equal(pageTitle({ name: 'signup' }, false), 'Create an account · PhishHawk');
+  assert.equal(pageTitle({ name: 'join', token }, false), 'Join an organization · PhishHawk');
+  assert.equal(pageTitle({ name: 'profile' }, true), 'Your profile · PhishHawk');
+  assert.equal(pageTitle({ name: 'profile' }, false), 'Sign in · PhishHawk');
+});

@@ -19,9 +19,13 @@ export type Route =
   | { name: 'privacy' }
   | { name: 'help' }
   | { name: 'about' }
+  | { name: 'setup' }
+  | { name: 'signup' }
+  | { name: 'join'; token: string }
+  | { name: 'profile' }
   | { name: 'not-found' };
 
-const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help', 'about'] as const;
+const SIMPLE = ['audit', 'health', 'settings', 'users', 'tokens', 'mailboxes', 'login', 'privacy', 'help', 'about', 'setup', 'signup', 'profile'] as const;
 
 export function parseRoute(pathname: string): Route {
   const path = pathname.replace(/\/+$/, '') || '/';
@@ -34,6 +38,9 @@ export function parseRoute(pathname: string): Route {
   if (path === '/app/campaigns') return { name: 'campaigns' };
   const campaign = path.match(/^\/app\/campaigns\/(\d{1,12})$/);
   if (campaign) return { name: 'campaign', id: Number(campaign[1]) };
+  // an invitation's token: URL-safe base64, as the server makes it
+  const join = path.match(/^\/app\/join\/([A-Za-z0-9_-]{20,128})$/);
+  if (join) return { name: 'join', token: join[1] };
   for (const name of SIMPLE) {
     if (path === `/app/${name}`) return { name };
   }
@@ -45,9 +52,14 @@ export const ADMIN_ONLY: Route['name'][] = ['health', 'settings', 'users', 'toke
 /** Pages anyone can read, signed in or not. */
 export const PUBLIC_ROUTES: Route['name'][] = ['about', 'privacy', 'help'];
 
-/** What a signed-out visitor sees: the product page at the start, a public page, or the sign-in form. */
-export function signedOutView(route: Route): 'landing' | 'public' | 'login' {
+/** Pages for getting in: setting the server up, creating an account, joining with an invitation. */
+export const ACCOUNT_ROUTES: Route['name'][] = ['setup', 'signup', 'join'];
+
+/** What a signed-out visitor sees: the product page at the start, a public page, a page for getting in, or the
+    sign-in form. */
+export function signedOutView(route: Route): 'landing' | 'public' | 'account' | 'login' {
   if (route.name === 'triage' || route.name === 'about') return 'landing';
+  if (ACCOUNT_ROUTES.includes(route.name)) return 'account';
   return PUBLIC_ROUTES.includes(route.name) ? 'public' : 'login';
 }
 
@@ -68,6 +80,10 @@ const TITLES: Record<Route['name'], string> = {
   privacy: 'Privacy and terms',
   help: 'Help',
   about: 'Phishing email triage',
+  setup: 'Set up PhishHawk',
+  signup: 'Create an account',
+  join: 'Join an organization',
+  profile: 'Your profile',
   'not-found': 'Page not found',
 };
 
@@ -75,7 +91,7 @@ const TITLES: Record<Route['name'], string> = {
     every page but the public ones is the sign-in page. */
 export function pageTitle(route: Route, signedIn: boolean): string {
   const view = signedOutView(route);
-  const name = signedIn ? TITLES[route.name] : view === 'landing' ? TITLES.about : view === 'public' ? TITLES[route.name] : TITLES.login;
+  const name = signedIn ? TITLES[route.name] : view === 'landing' ? TITLES.about : view === 'login' ? TITLES.login : TITLES[route.name];
   const numbered = signedIn && 'id' in route;
   return `${numbered ? `${name} ${route.id}` : name} · PhishHawk`;
 }
