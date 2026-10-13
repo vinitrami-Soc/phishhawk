@@ -21,7 +21,9 @@ const B = ({ children }: { children: ReactNode }) => <strong className="font-med
 export default function PrivacyScreen() {
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-6">
-      <ScrollProgress className="fixed z-50 h-0.5 bg-accent print:hidden" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden">
+        <ScrollProgress className="absolute h-0.5 bg-accent" />
+      </div>
       <PageHeader
         eyebrow="Privacy"
         title="Privacy and terms"

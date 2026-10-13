@@ -180,11 +180,11 @@ function MailboxRow({ m, onPoll, onEdit, onDelete, polling }: { m: Mailbox; onPo
     <div className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
-          <span className="break-all">{m.name}</span>
+          <span className="[overflow-wrap:anywhere]">{m.name}</span>
           <span className="rounded-full border border-line px-2 py-0.5 text-[11px] font-normal text-ink-dim">{KIND_LABEL[m.kind]}</span>
           <StatusPill m={m} />
         </p>
-        <p className="mt-1 break-all font-mono text-xs text-ink-muted">{whereOf(m)}</p>
+        <p className="mt-1 font-mono text-xs text-ink-muted [overflow-wrap:anywhere]">{whereOf(m)}</p>
         {m.status === 'error' && m.error && <p className="mt-2 break-words text-[13px] text-v-malicious">{m.error}</p>}
         <p className="mt-2 text-xs text-ink-muted">
           {m.last_poll_at ? (
@@ -284,11 +284,15 @@ export default function MailboxesScreen() {
           }
         />
       ) : (
-        <Card className="divide-y divide-line overflow-hidden">
+        <ul className="grid grid-cols-1 gap-4">
           {rows.map((m) => (
-            <MailboxRow key={m.id} m={m} polling={polling === m.id} onPoll={() => pollNow(m)} onEdit={() => setDialog({ open: true, editing: m })} onDelete={() => setRemoving(m)} />
+            <li key={m.id}>
+              <Card className="overflow-hidden">
+                <MailboxRow m={m} polling={polling === m.id} onPoll={() => pollNow(m)} onEdit={() => setDialog({ open: true, editing: m })} onDelete={() => setRemoving(m)} />
+              </Card>
+            </li>
           ))}
-        </Card>
+        </ul>
       )}
 
       <MailboxDialog

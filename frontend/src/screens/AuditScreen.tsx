@@ -80,7 +80,7 @@ export default function AuditScreen({ session }: { session: Session }) {
         <EmptyState title="Nothing has been recorded yet." />
       ) : (
         <>
-          <Card className="hidden overflow-hidden md:block">
+          <Card className="hidden overflow-hidden lg:block">
             <table className="w-full table-fixed text-left text-[13px]">
               <caption className="sr-only">Audit log</caption>
               <thead className="border-b border-line bg-sunken/60 text-xs text-ink-muted">
@@ -105,7 +105,7 @@ export default function AuditScreen({ session }: { session: Session }) {
               </tbody>
             </table>
           </Card>
-          <div className="grid gap-3 md:hidden">
+          <div className="grid gap-3 lg:hidden">
             {rows.map((e) => (
               <Card key={e.id} className="grid gap-2 p-4">
                 <div className="flex items-baseline justify-between gap-3">

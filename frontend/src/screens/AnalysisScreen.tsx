@@ -65,11 +65,11 @@ function TechniqueChip({ id, name }: { id: string; name?: string }) {
   const href = attackUrl(id);
   const inner = <span className="font-mono">{id}</span>;
   return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer" title={name} className="inline-flex rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/15">
+    <a href={href} target="_blank" rel="noopener noreferrer" title={name} className="inline-flex min-h-6 items-center rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent hover:bg-accent/15">
       {inner}
     </a>
   ) : (
-    <span className="inline-flex rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-muted">{inner}</span>
+    <span className="inline-flex min-h-6 items-center rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-muted">{inner}</span>
   );
 }
 
@@ -583,9 +583,11 @@ export default function AnalysisScreen({ id, session }: { id: number; session: S
 
   return (
     <div className="grid grid-cols-1 gap-8 pb-20 lg:pb-24">
-      <ScrollProgress className="fixed inset-x-0 top-0 z-50 h-0.5 bg-accent" />
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden">
+        <ScrollProgress className="absolute h-0.5 bg-accent" />
+      </div>
 
-      <Link href="/app/analyses" className="inline-flex w-max items-center gap-2 text-sm text-ink-muted hover:text-ink">
+      <Link href="/app/analyses" className="inline-flex min-h-8 w-max items-center gap-2 text-sm text-ink-muted hover:text-ink">
         <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> Queue
       </Link>
 
