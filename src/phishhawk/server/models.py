@@ -70,7 +70,8 @@ class User(Base):
 
 
 class Invite(Base):
-    """A link that lets one person join an organization, once, within its time. Only the token's SHA-256 is kept."""
+    """A link that lets one person join an organization, once, within its time. Only the token's SHA-256 is
+    kept."""
     __tablename__ = "invites"
     id: Mapped[int] = mapped_column(primary_key=True)
     workspace_id: Mapped[int] = workspace_column()

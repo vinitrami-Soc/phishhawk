@@ -22,7 +22,8 @@ def address(request: Request) -> str:
 
 
 def _throttled(wait: float) -> HTTPException:
-    return HTTPException(429, "too many attempts: wait %d s" % (wait + 1), headers={"Retry-After": str(int(wait) + 1)})
+    return HTTPException(429, "too many attempts: wait %d s" % (wait + 1),
+                         headers={"Retry-After": str(int(wait) + 1)})
 
 
 def signed_in(request: Request, db: DB, user: User, status: int = 201) -> Response:
