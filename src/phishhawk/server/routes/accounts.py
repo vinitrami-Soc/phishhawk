@@ -9,9 +9,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from .. import accounts, auth, scope, views
-from ..deps import DB, Admin, secret, services
-from ..models import Invite, User, Workspace
+from .. import accounts, audit, auth, scope, views
+from ..deps import DB, Admin, CurrentActor, secret, services
+from ..models import SERVER, Invite, User, Workspace
 from . import api
 
 router = APIRouter(prefix="/api/v1")
@@ -181,3 +181,87 @@ def join(request: Request, db: DB, token: str, body: Join) -> Response:
     except accounts.AccountError as exc:
         raise _refused(exc) from None
     return signed_in(request, db, user)
+
+
+class ProfilePatch(BaseModel):
+    first_name: str | None = None
+    last_name: str | None = None
+    location: str | None = None
+    job_title: str | None = None
+    organization: str | None = None  # an organization's admin renames it
+    password: str | None = None  # a new password, with the current one
+    current_password: str = ""
+
+
+def _me(db: DB, actor: auth.Actor) -> dict[str, Any]:
+    user, workspace = db.get(User, actor.user_id), db.get(Workspace, actor.workspace_id)
+    assert user is not None and workspace is not None
+    return {"username": user.username, "role": user.role, "owner": user.owner,
+            "profile": accounts.profile_view(user),
+            "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}}
+
+
+@router.get("/me")
+def get_me(db: DB, actor: CurrentActor) -> dict[str, Any]:
+    """The caller's account, profile and workspace."""
+    return _me(db, actor)
+
+
+@router.patch("/me")
+def patch_me(request: Request, db: DB, actor: CurrentActor, body: ProfilePatch) -> dict[str, Any]:
+    """Names, location and job title; an organization's admin renames it. A new password needs the current one
+    (403 otherwise, throttled as logins are) and ends the account's other sessions."""
+    api._session_only(actor, "change a profile")
+    user = db.get(User, actor.user_id)
+    assert user is not None
+    try:
+        changed = accounts.update_profile(db, actor, user, body.model_dump())
+    except accounts.AccountError as exc:
+        raise _refused(exc) from None
+    if body.password is not None:
+        if len(body.password) < auth.MIN_PASSWORD:
+            raise HTTPException(422, "password: at least %d characters" % auth.MIN_PASSWORD)
+        throttle, key = request.app.state.throttle, "user:" + user.username
+        wait = throttle.wait(key)
+        if wait > 0:
+            raise _throttled(wait)
+        if auth.check_login(db, user.username, body.current_password) is None:
+            throttle.failed(key)
+            raise HTTPException(403, "the current password is not right")
+        throttle.succeeded(key)
+        auth.set_password(user, body.password)
+        auth.end_sessions(db, user.id, keep=actor.session)  # whoever else is signed in as them is out
+        api._audit(db, actor, "password_change", "user", user.id)
+    if changed:
+        api._audit(db, actor, "profile", "user", user.id, {"changed": changed})
+    return _me(db, actor)
+
+
+class ServerSettingsPatch(BaseModel):
+    signup_open: bool | None = None
+    signup_daily_cap: int | None = None
+    max_upload_mb: int | None = None
+    max_batch_messages: int | None = None
+
+
+def _owner(actor: auth.Actor) -> None:
+    if not actor.owner:
+        raise HTTPException(403, "only the server's owner can do that")
+
+
+@router.get("/server-settings")
+def get_server_settings(request: Request, db: DB, actor: Admin) -> dict[str, Any]:
+    """The owner's settings for the whole server: sign-up, its daily cap, and the upload limits."""
+    _owner(actor)
+    return accounts.server_view(db, services(request).settings)
+
+
+@router.patch("/server-settings")
+def patch_server_settings(request: Request, db: DB, actor: Admin, body: ServerSettingsPatch) -> dict[str, Any]:
+    _owner(actor)
+    try:
+        changed = accounts.update_server(db, body.model_dump())
+    except accounts.AccountError as exc:
+        raise _refused(exc) from None
+    audit.record(db, actor.label, "server_settings", details={"changed": changed}, workspace_id=SERVER)
+    return accounts.server_view(db, services(request).settings)

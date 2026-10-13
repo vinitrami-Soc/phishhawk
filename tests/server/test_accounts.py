@@ -246,3 +246,62 @@ def test_joining_checks_the_fields_before_the_invite_is_used(app, admin):
     taken = guest.post("/api/v1/join/" + made["token"], json=PERSON | {"username": "alice"})
     assert taken.status_code == 409
     assert guest.post("/api/v1/join/" + made["token"], json=PERSON).status_code == 201
+
+
+ALICE = {"first_name": "Alice", "last_name": "Rao", "location": "Delhi", "job_title": "Analyst"}
+
+
+def test_everyone_edits_their_own_profile(alice):
+    me = alice.get("/api/v1/me").json()
+    assert (me["username"], me["role"], me["workspace"]["name"]) == ("alice", "analyst", "Default organization")
+    assert me["profile"] == {"first_name": "", "last_name": "", "location": "", "job_title": ""}  # upgraded
+    changed = alice.patch("/api/v1/me", json=ALICE)
+    assert changed.status_code == 200 and changed.json()["profile"] == ALICE
+    assert alice.get("/api/v1/session").json()["profile"] == ALICE
+    cleared = alice.patch("/api/v1/me", json={"last_name": " "})
+    assert cleared.status_code == 422 and cleared.json()["detail"].startswith("last_name")
+    assert alice.patch("/api/v1/me", json={"job_title": ""}).json()["profile"]["job_title"] == ""
+
+
+def test_only_an_organizations_admin_renames_it(alice, admin):
+    refused = alice.patch("/api/v1/me", json={"organization": "Renamed"})
+    assert refused.status_code == 403
+    assert admin.patch("/api/v1/me", json={"organization": "Example Corp"}).json()["workspace"]["name"] == \
+        "Example Corp"
+    assert alice.get("/api/v1/session").json()["workspace"]["name"] == "Example Corp"
+
+
+def test_a_new_password_needs_the_current_one_and_ends_the_other_sessions(app, alice, services):
+    from .serverkit import login
+
+    elsewhere = login(app, "alice")
+    new = "a much longer password"
+    wrong = alice.patch("/api/v1/me", json={"password": new, "current_password": "not it"})
+    assert wrong.status_code == 403 and "current password" in wrong.json()["detail"]
+    short = alice.patch("/api/v1/me", json={"password": "short", "current_password": PASSWORD})
+    assert short.status_code == 422 and short.json()["detail"].startswith("password")
+    assert alice.patch("/api/v1/me", json={"password": new, "current_password": PASSWORD}).status_code == 200
+    assert alice.get("/api/v1/session").status_code == 200
+    assert elsewhere.get("/api/v1/session").status_code == 401
+    assert TestClient(app).post("/api/v1/session", json={"username": "alice", "password": new}).status_code == 200
+    with transaction(services.sessions) as s:
+        record = s.scalars(select(AuditRecord).where(AuditRecord.action == "password_change")).one()
+        assert record.actor == "alice" and record.workspace_id != SERVER
+
+
+def test_the_server_settings_are_the_owners_alone(admin, anon, services):
+    assert admin.get("/api/v1/server-settings").json() == {"signup_open": False, "signup_daily_cap": 100,
+                                                           "max_upload_mb": 25, "max_batch_messages": 500}
+    changed = admin.patch("/api/v1/server-settings", json={"signup_open": True, "signup_daily_cap": 5,
+                                                          "max_upload_mb": 10})
+    assert changed.status_code == 200 and changed.json() == {"signup_open": True, "signup_daily_cap": 5,
+                                                             "max_upload_mb": 10, "max_batch_messages": 500}
+    assert anon.get("/api/v1/signup").json() == {"open": True}
+    assert admin.patch("/api/v1/server-settings", json={"signup_daily_cap": 0}).status_code == 422
+    _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}))
+    assert anon.get("/api/v1/server-settings").status_code == 403  # an admin, of their own workspace only
+    assert anon.patch("/api/v1/server-settings", json={"signup_open": False}).status_code == 403
+    with transaction(services.sessions) as s:
+        record = s.scalars(select(AuditRecord).where(AuditRecord.action == "server_settings")).one()
+        assert record.workspace_id == SERVER and record.details["changed"] == ["signup_open", "signup_daily_cap",
+                                                                             "max_upload_mb"]
