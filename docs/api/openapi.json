@@ -2355,6 +2355,7 @@
         "summary": "List Users"
       },
       "post": {
+        "description": "A member of the caller's organization; 403 in an individual workspace, which has one member.",
         "operationId": "create_user_api_v1_users_post",
         "requestBody": {
           "content": {

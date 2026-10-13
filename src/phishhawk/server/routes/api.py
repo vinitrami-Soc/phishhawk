@@ -364,6 +364,11 @@ def list_users(db: DB, actor: Admin) -> list[dict[str, Any]]:
 
 @router.post("/users", status_code=201)
 def create_user(db: DB, actor: Admin, body: NewUser) -> dict[str, Any]:
+    """A member of the caller's organization; 403 in an individual workspace, which has one member."""
+    workspace = db.get(Workspace, actor.workspace_id)
+    if workspace is not None and workspace.kind == "individual":
+        raise HTTPException(403, "an individual workspace has one member: "
+                                 "create an organization to work as a team")
     try:
         user = auth.create_user(db, body.username, body.password, body.role, workspace_id=actor.workspace_id)
     except auth.AuthError as exc:

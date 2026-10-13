@@ -381,3 +381,11 @@ def test_the_profile_page(alice):
     assert wrong.status_code == 403 and "current password is not right" in wrong.text
     assert 'value="Changed"' in wrong.text  # shown again, but not saved: all of it, or none
     assert alice.get("/api/v1/me", headers={"X-CSRF-Token": csrf}).json()["profile"]["last_name"] == "Rao"
+
+
+def test_an_individual_workspace_has_one_member(anon, services):
+    _open_signup(services)
+    _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}))
+    refused = anon.post("/api/v1/users", json={"username": "friend", "password": PASSWORD, "role": "analyst"})
+    assert refused.status_code == 403 and "individual" in refused.json()["detail"]
+    assert [u["username"] for u in anon.get("/api/v1/users").json()] == ["sam"]
