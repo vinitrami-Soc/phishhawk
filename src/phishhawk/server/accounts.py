@@ -210,7 +210,7 @@ def join(db: Session, token: str, data: Mapping[str, Any]) -> User:
     _credentials(db, data)
     taken = db.execute(update(Invite).where(Invite.id == row.id, Invite.used_at.is_(None))
                        .values(used_at=utcnow()))
-    if taken.rowcount != 1:  # type: ignore[attr-defined]
+    if getattr(taken, "rowcount", 0) != 1:  # an UPDATE's result has it; the type does not say so everywhere
         raise AccountError(404, "this invitation was used already")
     user = _new_user(db, data, row.role, row.workspace_id, fields)
     row.used_by = user.id
