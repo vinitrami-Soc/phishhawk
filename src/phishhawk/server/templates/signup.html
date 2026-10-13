@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Create an account · PhishHawk{% endblock %}
+{% block main %}
+<h1>Create an account</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/signup" class="card narrow">
+  <fieldset>
+    <legend>Who is it for?</legend>
+    <label class="check"><input type="radio" name="kind" value="individual"{% if f.kind != 'organization' %} checked{% endif %}> Just me: I check my own mail, no one else is involved</label>
+    <label class="check"><input type="radio" name="kind" value="organization"{% if f.kind == 'organization' %} checked{% endif %}> My organization: I invite the team</label>
+  </fieldset>
+  {% include "_account_fields.html" %}
+  {% include "_profile_fields.html" %}
+  <label for="organization">Organization (needed for an organization)</label>
+  <input id="organization" name="organization" value="{{ f.organization or '' }}" autocomplete="organization" maxlength="80">
+  <button type="submit">Create account</button>
+</form>
+<p>Have an account? <a href="/login">Log in</a></p>
+{% endblock %}

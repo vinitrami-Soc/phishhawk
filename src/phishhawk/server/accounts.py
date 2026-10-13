@@ -222,22 +222,33 @@ def profile_view(user: User) -> dict[str, str]:
     return {name: getattr(user, name) for name in PROFILE}
 
 
-def update_profile(db: Session, actor: auth.Actor, user: User, data: Mapping[str, Any]) -> list[str]:
-    """The fields sent (None leaves one as it is), all checked before any is changed; the names of those changed.
-    An organization's admin may also rename it."""
+def check_profile(db: Session, actor: auth.Actor, user: User, data: Mapping[str, Any]) -> dict[str, str]:
+    """The fields sent (None leaves one as it is), checked; nothing is changed yet. An organization's admin may
+    also rename it."""
     values = {name: clean(name, data[name], name not in OPTIONAL)
               for name in PROFILE if data.get(name) is not None}
-    workspace = db.get(Workspace, user.workspace_id)
     if data.get("organization") is not None:
+        workspace = db.get(Workspace, user.workspace_id)
         if workspace is None or workspace.kind != "organization" or not actor.is_admin:
             raise AccountError(403, "only an admin of an organization can rename it")
         values["organization"] = clean("organization", data["organization"])
+    return values
+
+
+def apply_profile(db: Session, user: User, values: dict[str, str]) -> list[str]:
+    """The checked values written; the names of those changed."""
     for name, value in values.items():
-        if name == "organization" and workspace is not None:
+        if name == "organization":
+            workspace = db.get(Workspace, user.workspace_id)
+            assert workspace is not None
             workspace.name = value
         else:
             setattr(user, name, value)
     return list(values)
+
+
+def update_profile(db: Session, actor: auth.Actor, user: User, data: Mapping[str, Any]) -> list[str]:
+    return apply_profile(db, user, check_profile(db, actor, user, data))
 
 
 SERVER_LIMITS = ("signup_daily_cap", "max_upload_mb", "max_batch_messages")

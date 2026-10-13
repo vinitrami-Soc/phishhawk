@@ -1,0 +1,6 @@
+{# a new account's username and password #}
+<label for="username">Username</label>
+<input id="username" name="username" value="{{ f.username or '' }}" autocomplete="username" maxlength="64" required aria-describedby="username-help">
+<p id="username-help" class="help">3 to 64 lowercase letters, digits, dots, dashes or underscores. You sign in with it.</p>
+<label for="password">Password (12 characters or more)</label>
+<input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required>

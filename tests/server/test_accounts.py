@@ -305,3 +305,79 @@ def test_the_server_settings_are_the_owners_alone(admin, anon, services):
         record = s.scalars(select(AuditRecord).where(AuditRecord.action == "server_settings")).one()
         assert record.workspace_id == SERVER and record.details["changed"] == ["signup_open", "signup_daily_cap",
                                                                              "max_upload_mb"]
+
+
+# the built-in pages: every form works without JavaScript
+
+
+def _form(fields):
+    return {name: str(value) for name, value in fields.items() if not isinstance(value, bool)}
+
+
+def test_the_setup_page(fresh, services):
+    page = fresh.get("/setup").text
+    assert '<label for="code">' in page and 'name="signup_open"' in page and page.count("<h1") == 1
+    wrong = fresh.post("/setup", data=_form(OWNER) | {"code": "WRONG-CODE"})
+    assert wrong.status_code == 403 and "setup code is not right" in wrong.text and 'value="olivia"' in wrong.text
+    done = fresh.post("/setup", data=_form(OWNER) | {"code": _code(services), "signup_open": "true"},
+                      follow_redirects=False)
+    assert done.status_code == 303 and done.headers["location"] == "/"
+    assert "olivia" in fresh.get("/").text
+    assert fresh.get("/setup").status_code == 404
+    with transaction(services.sessions) as s:
+        assert accounts.signup_open(s)
+
+
+def test_the_login_page_offers_sign_up_only_while_it_is_open(anon, services):
+    assert "/signup" not in anon.get("/login").text
+    assert anon.get("/signup").status_code == 404
+    _open_signup(services)
+    assert 'href="/signup"' in anon.get("/login").text
+
+
+def test_the_sign_up_page(anon, services):
+    _open_signup(services)
+    page = anon.get("/signup").text
+    assert 'value="individual"' in page and 'value="organization"' in page and '<label for="location">' in page
+    bad = anon.post("/signup", data=_form(PERSON) | {"kind": "organization"})
+    assert bad.status_code == 422 and "organization: required" in bad.text and 'value="Leeds"' in bad.text
+    done = anon.post("/signup", data=_form(PERSON) | {"kind": "individual"}, follow_redirects=False)
+    assert done.status_code == 303 and done.headers["location"] == "/"
+    assert "sam" in anon.get("/").text
+
+
+def test_invites_on_the_users_page_and_the_join_page(app, admin):
+    import re
+
+    csrf = admin.headers.pop("X-CSRF-Token")
+    page = admin.post("/invites", data={"csrf_token": csrf, "role": "analyst", "note": "for Priya"}).text
+    token = re.search(r"/join/([A-Za-z0-9_-]{40,})", page).group(1)
+    listed = admin.get("/users").text
+    assert "for Priya" in listed and token not in listed
+    guest = TestClient(app)
+    invited = guest.get("/join/" + token).text
+    assert "Default organization" in invited and "analyst" in invited
+    joined = guest.post("/join/" + token, data=_form(PERSON) | {"username": "priya"}, follow_redirects=False)
+    assert joined.status_code == 303 and "priya" in guest.get("/").text
+    assert TestClient(app).get("/join/" + token).status_code == 404
+    second = re.search(r"/join/([A-Za-z0-9_-]{40,})", admin.post(
+        "/invites", data={"csrf_token": csrf, "role": "admin"}).text).group(1)
+    invite_id = admin.get("/api/v1/invites", headers={"X-CSRF-Token": csrf}).json()[0]["id"]
+    assert admin.post("/invites/%d/revoke" % invite_id, data={"csrf_token": csrf},
+                      follow_redirects=False).status_code == 303
+    assert TestClient(app).get("/join/" + second).status_code == 404
+
+
+def test_the_profile_page(alice):
+    csrf = alice.headers.pop("X-CSRF-Token")
+    page = alice.get("/profile").text
+    assert '<label for="first_name">' in page and '<label for="current_password">' in page
+    assert 'href="/profile"' in page  # from every page's top bar
+    saved = alice.post("/profile", data={"csrf_token": csrf, **ALICE}, follow_redirects=False)
+    assert saved.status_code == 303 and saved.headers["location"] == "/profile?saved=1"
+    assert 'value="Rao"' in alice.get("/profile?saved=1").text
+    wrong = alice.post("/profile", data={"csrf_token": csrf, **ALICE, "last_name": "Changed",
+                                         "password": "a much longer password", "current_password": "not it"})
+    assert wrong.status_code == 403 and "current password is not right" in wrong.text
+    assert 'value="Changed"' in wrong.text  # shown again, but not saved: all of it, or none
+    assert alice.get("/api/v1/me", headers={"X-CSRF-Token": csrf}).json()["profile"]["last_name"] == "Rao"

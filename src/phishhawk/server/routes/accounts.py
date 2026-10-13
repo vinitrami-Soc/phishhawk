@@ -52,22 +52,27 @@ def setup_state(request: Request, db: DB) -> dict[str, Any]:
     return {"open": accounts.setup_code(db, services(request).box) is not None}
 
 
-@router.post("/setup", status_code=201)
-def set_up(request: Request, db: DB, body: Setup) -> Response:
-    """The owner's account and organization, with the code from the server's log or `phishhawk server setup-code`.
-    403 for a wrong code (and wrong codes are throttled), 404 once the server is set up."""
+def setup_user(request: Request, db: DB, data: dict[str, Any]) -> User:
+    """The owner, made with the setup code; wrong codes are throttled. For the API and the setup page."""
     throttle = request.app.state.throttle
     wait = throttle.wait(address(request))
     if wait > 0:
         raise _throttled(wait)
     try:
-        user = accounts.set_up(db, services(request).box, body.model_dump())
+        user = accounts.set_up(db, services(request).box, data)
     except accounts.AccountError as exc:
         if exc.status == 403:
             throttle.failed(address(request))
         raise HTTPException(exc.status, exc.detail) from None
     throttle.succeeded(address(request))
-    return signed_in(request, db, user)
+    return user
+
+
+@router.post("/setup", status_code=201)
+def set_up(request: Request, db: DB, body: Setup) -> Response:
+    """The owner's account and organization, with the code from the server's log or `phishhawk server setup-code`.
+    403 for a wrong code (and wrong codes are throttled), 404 once the server is set up."""
+    return signed_in(request, db, setup_user(request, db, body.model_dump()))
 
 
 class SignUp(BaseModel):
@@ -87,10 +92,9 @@ def signup_state(db: DB) -> dict[str, Any]:
     return {"open": accounts.signup_open(db)}
 
 
-@router.post("/signup", status_code=201)
-def sign_up(request: Request, db: DB, body: SignUp) -> Response:
-    """A workspace of its own for an individual, or a new organization, with the caller as its admin; then signed
-    in. 404 while sign-up is closed; 429 past 3 an hour from one address, or past the server's daily cap."""
+def signup_user(request: Request, db: DB, data: dict[str, Any]) -> User:
+    """A new workspace and its admin, within the per-address limit and the daily cap. For the API and the
+    sign-up page."""
     if not accounts.signup_open(db):
         raise HTTPException(404, "sign-up is closed: ask an admin for an invitation")
     signups = request.app.state.signups
@@ -102,13 +106,20 @@ def sign_up(request: Request, db: DB, body: SignUp) -> Response:
         raise HTTPException(429, "no more accounts can be made today: try again later",
                             headers={"Retry-After": str(int(wait) + 1)})
     try:
-        user = accounts.sign_up(db, body.model_dump())
+        user = accounts.sign_up(db, data)
     except accounts.AccountError as exc:
         if exc.status == 409:  # asking whether a username exists counts as a try
             signups.add(address(request))
         raise HTTPException(exc.status, exc.detail) from None
     signups.add(address(request))
-    return signed_in(request, db, user)
+    return user
+
+
+@router.post("/signup", status_code=201)
+def sign_up(request: Request, db: DB, body: SignUp) -> Response:
+    """A workspace of its own for an individual, or a new organization, with the caller as its admin; then signed
+    in. 404 while sign-up is closed; 429 past 3 an hour from one address, or past the server's daily cap."""
+    return signed_in(request, db, signup_user(request, db, body.model_dump()))
 
 
 class NewInvite(BaseModel):
@@ -201,6 +212,24 @@ def _me(db: DB, actor: auth.Actor) -> dict[str, Any]:
             "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}}
 
 
+def change_password(request: Request, db: DB, actor: auth.Actor, user: User, password: str, current: str) -> None:
+    """A new password, with the current one (403 otherwise, throttled as logins are); the account's other
+    sessions end."""
+    if len(password) < auth.MIN_PASSWORD:
+        raise HTTPException(422, "password: at least %d characters" % auth.MIN_PASSWORD)
+    throttle, key = request.app.state.throttle, "user:" + user.username
+    wait = throttle.wait(key)
+    if wait > 0:
+        raise _throttled(wait)
+    if auth.check_login(db, user.username, current) is None:
+        throttle.failed(key)
+        raise HTTPException(403, "the current password is not right")
+    throttle.succeeded(key)
+    auth.set_password(user, password)
+    auth.end_sessions(db, user.id, keep=actor.session)  # whoever else is signed in as them is out
+    api._audit(db, actor, "password_change", "user", user.id)
+
+
 @router.get("/me")
 def get_me(db: DB, actor: CurrentActor) -> dict[str, Any]:
     """The caller's account, profile and workspace."""
@@ -215,23 +244,12 @@ def patch_me(request: Request, db: DB, actor: CurrentActor, body: ProfilePatch) 
     user = db.get(User, actor.user_id)
     assert user is not None
     try:
-        changed = accounts.update_profile(db, actor, user, body.model_dump())
+        values = accounts.check_profile(db, actor, user, body.model_dump())
     except accounts.AccountError as exc:
         raise _refused(exc) from None
     if body.password is not None:
-        if len(body.password) < auth.MIN_PASSWORD:
-            raise HTTPException(422, "password: at least %d characters" % auth.MIN_PASSWORD)
-        throttle, key = request.app.state.throttle, "user:" + user.username
-        wait = throttle.wait(key)
-        if wait > 0:
-            raise _throttled(wait)
-        if auth.check_login(db, user.username, body.current_password) is None:
-            throttle.failed(key)
-            raise HTTPException(403, "the current password is not right")
-        throttle.succeeded(key)
-        auth.set_password(user, body.password)
-        auth.end_sessions(db, user.id, keep=actor.session)  # whoever else is signed in as them is out
-        api._audit(db, actor, "password_change", "user", user.id)
+        change_password(request, db, actor, user, body.password, body.current_password)
+    changed = accounts.apply_profile(db, user, values)
     if changed:
         api._audit(db, actor, "profile", "user", user.id, {"changed": changed})
     return _me(db, actor)

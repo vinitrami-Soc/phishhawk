@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Join {{ organization }} · PhishHawk{% endblock %}
+{% block main %}
+<h1>Join {{ organization }}</h1>
+<p>You are invited as {{ "an admin" if role == "admin" else "an analyst" }}. Make your account to accept.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/join/{{ token }}" class="card narrow">
+  {% include "_account_fields.html" %}
+  {% include "_profile_fields.html" %}
+  <button type="submit">Join</button>
+</form>
+{% endblock %}

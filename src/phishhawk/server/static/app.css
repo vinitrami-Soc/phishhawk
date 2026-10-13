@@ -45,3 +45,4 @@ iframe.report{width:100%;height:80vh;border:1px solid var(--line);border-radius:
   .list td{display:block;border:0;padding:4px 12px}.list td::before{content:attr(data-label) ": ";font-weight:600;color:var(--ink-3)}
   dl{grid-template-columns:1fr}.logout{margin-left:0}
 }
+.help{font-size:.9rem;margin:.25rem 0 .75rem}fieldset{border:1px solid var(--line);border-radius:8px;padding:.5rem 1rem 1rem;margin:0 0 1rem}legend{font-weight:600;padding:0 .25rem}

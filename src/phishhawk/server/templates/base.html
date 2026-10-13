@@ -23,7 +23,7 @@
   </nav>
   <form class="logout" method="post" action="/logout">
     <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
-    <span class="who">{{ actor.username }} ({{ actor.role }})</span>
+    <a class="who" href="/profile">{{ actor.username }} ({{ actor.role }})</a>
     <button type="submit">Log out</button>
   </form>
   {% endif %}
