@@ -62,6 +62,27 @@ class User(Base):
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    # the profile: seen only inside the workspace
+    first_name: Mapped[str] = mapped_column(String(80), default="")
+    last_name: Mapped[str] = mapped_column(String(80), default="")
+    location: Mapped[str] = mapped_column(String(80), default="")
+    job_title: Mapped[str] = mapped_column(String(80), default="")
+
+
+class Invite(Base):
+    """A link that lets one person join an organization, once, within its time. Only the token's SHA-256 is kept."""
+    __tablename__ = "invites"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = workspace_column()
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    role: Mapped[str] = mapped_column(String(16))
+    note: Mapped[str] = mapped_column(String(120), default="")  # "for Priya, SOC team"
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    expires_at: Mapped[dt.datetime] = mapped_column()
+    used_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+    used_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(default=None)
 
 
 class Session(Base):
