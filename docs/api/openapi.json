@@ -1235,7 +1235,7 @@
         "summary": "List Invites"
       },
       "post": {
-        "description": "An invitation with a role and a note for whoever sends it on. `link` (and `token`) are shown once: the\nserver keeps only a hash. It works once, within 7 days. 403 in an individual workspace.",
+        "description": "An invitation with a role and a note for whoever sends it on. `link` (the join page, relative to this\nserver) and `token` are shown once: the server keeps only a hash. It works once, within 7 days. 403 in an\nindividual workspace.",
         "operationId": "create_invite_api_v1_invites_post",
         "requestBody": {
           "content": {

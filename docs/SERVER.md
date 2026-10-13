@@ -16,6 +16,7 @@ import (see the [design](superpowers/specs/2026-10-06-phishhawk-v3-web-design.md
 - [Settings](#settings)
 - [Users, roles and API tokens](#users-roles-and-api-tokens)
 - [Workspaces](#workspaces)
+- [Setup and sign-up](#setup-and-sign-up)
 - [Reputation lookups](#reputation-lookups)
 - [Batches](#batches)
 - [Campaigns](#campaigns)
@@ -37,10 +38,15 @@ openssl rand -base64 32 > secrets/phishhawk_secret_key
 openssl rand -base64 32 > secrets/phishhawk_encryption_key
 chmod 644 secrets/*        # the container's user reads them; the folder keeps others out
 docker compose up -d --wait
-docker compose exec phishhawk phishhawk server create-admin admin
+docker compose exec phishhawk phishhawk server setup-code
 ```
 
-Open <http://127.0.0.1:8000> and log in: it opens the web app at `/app/`. The
+Open <http://127.0.0.1:8000/setup>, enter
+the setup code and make your account: you own this server. The code works
+once; see [Setup and sign-up](#setup-and-sign-up). For a scripted install,
+`phishhawk server create-admin admin` makes the first admin instead.
+
+Then log in at <http://127.0.0.1:8000>: it opens the web app at `/app/`. The
 built-in pages, the backup and admin interface, stay at `/login`, `/queue` and
 the rest. Compose publishes the port on this machine only. To reach it from other machines, put a reverse proxy with TLS
 (Caddy or nginx) in front of it; do not publish port 8000 on a network.
@@ -89,8 +95,7 @@ pip install "phishhawk[server]"
 export PHISHHAWK_DATA_DIR=/var/lib/phishhawk
 export PHISHHAWK_SECRET_KEY="$(openssl rand -base64 32)"
 export PHISHHAWK_ENCRYPTION_KEY="$(openssl rand -base64 32)"   # keep a copy
-phishhawk server create-admin admin
-phishhawk server run
+phishhawk server run      # prints the setup code: open /setup and enter it
 ```
 
 `run` brings the database up to date, then starts the web app and one worker.
@@ -186,10 +191,48 @@ server's own audit records (failed logins, key rotation, the hourly retention
 run's total).
 
 An upgraded server keeps all its data in one workspace, "Default
-organization", and works as before. Its first admin becomes the owner. Sign-up
-for individuals and other organizations, and inviting people into a
-workspace, come in the next release; until then `create-admin` adds users to
-Default organization.
+organization", and works as before. Its first admin becomes the owner.
+
+## Setup and sign-up
+
+**Setup.** While no one has an account, the server makes a one-time setup
+code. `run` prints it to the log at start, and `phishhawk server setup-code`
+prints it again. At `/setup` the owner enters it and makes
+their account: username, password, first and last name, location,
+organization and job title, and whether people may create accounts. That
+makes the owner the admin of their organization. The code then stops working
+and `/setup` answers 404. Wrong codes are throttled like wrong passwords.
+`create-admin` still works for scripted installs.
+
+**Sign-up.** Off after an upgrade, and off unless the owner turns it on, at
+setup or in the server settings (`PATCH /api/v1/server-settings`). While it is
+on, the login page offers "Create an account" (`/signup`).
+
+- **Just me** makes an individual workspace for one person, named after them.
+- **My organization** makes an organization, named as they type it, with them
+  as its admin. They invite the team.
+- Each new account starts empty: it sees nothing of anyone else's.
+- One address can sign up 3 times an hour, and the server makes at most 100
+  accounts a day (the owner's `signup_daily_cap`). Past either limit the
+  answer is 429 with `Retry-After`.
+- There is no email check: PhishHawk sends no email.
+
+**Invitations.** On Users, an organization's admin makes an invitation with a
+role and a note ("for Priya, SOC team"). They get a link
+(`/join/<token>`) to send however they like. It is
+shown once: the server keeps only a hash of it. It works once, for 7 days,
+and can be withdrawn. The person makes their own account with it and joins
+with that role. An individual workspace has one member and cannot invite.
+"Add a user", with a password the admin sets, still works.
+
+**Profile.** Everyone changes their first and last name, location and job
+title at `/profile` (or `GET/PATCH /api/v1/me`), and their password after
+entering the current one. A new password signs them out everywhere else. An
+organization's admin can also rename it. A profile is seen only inside its
+workspace.
+
+**Server settings (owner only).** Whether sign-up is on, the daily sign-up
+cap, and the upload and batch limits: `GET/PATCH /api/v1/server-settings`.
 
 ## Reputation lookups
 
@@ -444,6 +487,7 @@ phishhawk server run            bring the database up to date, then start the we
 phishhawk server worker         run a worker without the web app
 phishhawk server migrate        create the database or bring it up to date
 phishhawk server create-admin   create an admin user (--password-stdin to read it from standard input)
+phishhawk server setup-code     print the one-time setup code, while no one has an account
 phishhawk server rotate-key     re-encrypt everything under PHISHHAWK_NEW_ENCRYPTION_KEY
 phishhawk server audit verify   check the audit log's hash chain
 ```

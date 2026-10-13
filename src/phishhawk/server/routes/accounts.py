@@ -154,14 +154,15 @@ def list_invites(db: DB, actor: Admin) -> list[dict[str, Any]]:
 
 @router.post("/invites", status_code=201)
 def create_invite(db: DB, actor: Admin, body: NewInvite) -> dict[str, Any]:
-    """An invitation with a role and a note for whoever sends it on. `link` (and `token`) are shown once: the
-    server keeps only a hash. It works once, within 7 days. 403 in an individual workspace."""
+    """An invitation with a role and a note for whoever sends it on. `link` (the join page, relative to this
+    server) and `token` are shown once: the server keeps only a hash. It works once, within 7 days. 403 in an
+    individual workspace."""
     try:
         row, token = accounts.invite(db, actor, body.role, body.note)
     except accounts.AccountError as exc:
         raise _refused(exc) from None
     return _invite_view(row, views.usernames(db, actor.workspace_id)) | {"token": token,
-                                                                          "link": "/app/join/" + token}
+                                                                          "link": "/join/" + token}
 
 
 @router.delete("/invites/{invite_id}", status_code=204)

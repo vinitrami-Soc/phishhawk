@@ -187,7 +187,7 @@ def _invite(client, role="analyst", note=""):
 
 def test_an_organization_admin_invites_with_a_link_shown_once(admin, alice):
     made = _invite(admin, note="for Priya, SOC team")
-    assert made["link"] == "/app/join/" + made["token"] and len(made["token"]) >= 40
+    assert made["link"] == "/join/" + made["token"] and len(made["token"]) >= 40
     pending = admin.get("/api/v1/invites").json()
     assert [(i["id"], i["role"], i["note"], i["created_by_name"]) for i in pending] == [
         (made["id"], "analyst", "for Priya, SOC team", "admin")]

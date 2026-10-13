@@ -9,6 +9,19 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Setup, sign-up, invitations and profiles in the web app.** A new server
+  prints a one-time setup code (also `phishhawk server setup-code`); at
+  `/setup` the owner makes their account and organization with it. While the
+  owner allows it, anyone can create an account: **Just me** (an individual
+  workspace) or **My organization** (they are its admin), with their name,
+  location, organization and job title. Sign-up is off after an upgrade, and
+  limited to 3 an hour from one address and 100 a day for the server. An
+  organization's admin invites the team with one-use links that last 7 days
+  and can be withdrawn. Everyone edits their profile at `/profile`, and
+  changes their password with the current one. The owner sets sign-up and the
+  server's limits in `/api/v1/server-settings`. Migration 0005 adds the
+  profile fields and the invitations
+  ([docs/SERVER.md](docs/SERVER.md#setup-and-sign-up)).
 - **Workspaces in the web app.** Everything the web app keeps belongs to a
   workspace (an organization, or one person): messages, analyses, batches,
   campaigns, mailboxes, users, tokens, settings, provider keys and their lookup

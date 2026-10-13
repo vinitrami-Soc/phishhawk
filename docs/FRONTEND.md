@@ -83,7 +83,7 @@ JSON: `{"error": "<code>", "detail": "<text>"}`.
 
 | Step | Call | Notes |
 |---|---|---|
-| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf", "owner", "workspace"}`; keep `csrf` in memory. `workspace` is `{"id", "name", "kind"}` (`kind`: `organization` or `individual`); `owner` is true for the server's owner, the only one who can change `max_upload_mb` and `max_batch_messages`. |
+| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf", "owner", "workspace", "profile"}`; keep `csrf` in memory. `profile` is `{"first_name", "last_name", "location", "job_title"}`. `workspace` is `{"id", "name", "kind"}` (`kind`: `organization` or `individual`); `owner` is true for the server's owner, the only one who can change `max_upload_mb` and `max_batch_messages`. |
 | Log in | `POST /api/v1/session` with JSON `{"username", "password"}` | 200: `{"csrf"}` and the session cookie. 401: wrong details. 429: wait (the `Retry-After` header says how long). |
 | Submit | `POST /api/v1/submissions`, multipart: `files` (one or more .eml, .msg, .mbox or .zip files) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202. One message: `{"id", "status", "error", "analysis_id", "submitted_at", "batch_id": null}`. Several: a batch, `{"batch_id", "total", "submission_ids", "skipped"}` (`skipped`: files in a .zip that are not messages). 413: too large or too many messages, 415: not a message; `detail` says which. |
 | Wait | `GET /api/v1/submissions/{id}` every second or two | Until `status` is `done` (then `analysis_id` is set) or `failed` (then `error` says why). |
@@ -120,6 +120,22 @@ one; `POST /api/v1/mailboxes/{id}/poll` polls it now (202 `{"queued"}`; 409
 when it is switched off). The secret is never in an answer. A message
 imported from a mailbox has `source: "mailbox"`, `submitted_by: null` and the
 mailbox's name in `submitted_by_name`.
+
+Getting in, without an admin typing anyone's password. Each `POST` that makes
+an account answers 201 `{"csrf"}` with the session cookie, as a login does; a
+422 or 409 `detail` starts with the field it is about (`last_name: required`).
+
+| Call | Answer |
+|---|---|
+| `GET /api/v1/setup` | `{"open"}`: true while no one has an account. Show your setup screen then. |
+| `POST /api/v1/setup` with `{"code", "username", "password", "first_name", "last_name", "location", "organization", "job_title", "signup_open"}` | The owner's account. 403: wrong code (throttled; 429 with `Retry-After`). 404: set up already. |
+| `GET /api/v1/signup` | `{"open"}`. While false, offer no "Create account" link. |
+| `POST /api/v1/signup` with `{"kind", "username", "password", "first_name", "last_name", "location", "organization", "job_title"}` | `kind` is `individual` (just them; `organization` optional) or `organization` (needs `organization`). 404 while closed; 409 username taken; 429 past 3 an hour from one address, or past the daily cap. |
+| `GET /api/v1/join/{token}` | `{"organization", "role"}` of an invitation, or 404 (used, withdrawn or over 7 days old). |
+| `POST /api/v1/join/{token}` with the sign-up fields but `kind` and `organization` | The new member, with the invitation's role. |
+| `GET /api/v1/invites`, `POST /api/v1/invites` with `{"role", "note"}`, `DELETE /api/v1/invites/{id}` | Admins of an organization: the invitations still usable (`id`, `role`, `note`, `created_at`, `expires_at`, `created_by_name`); a new one adds `token` and `link` (`/join/<token>`, the built-in join page), shown once; 403 in an individual workspace. |
+| `GET /api/v1/me`, `PATCH /api/v1/me` | `{"username", "role", "owner", "profile", "workspace"}`. Send any of `first_name`, `last_name`, `location`, `job_title`; `organization` (an organization's admin renames it); `password` with `current_password` (403 when that is wrong). |
+| `GET /api/v1/server-settings`, `PATCH /api/v1/server-settings` | The owner's only (403 for anyone else): `signup_open`, `signup_daily_cap`, `max_upload_mb`, `max_batch_messages`. |
 
 Roles: analysts submit and read everything, and delete their own submissions;
 admins also hold, release and delete completely. Show only the buttons the
