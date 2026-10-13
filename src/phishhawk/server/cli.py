@@ -79,7 +79,8 @@ def create_admin(settings: ServerSettings, username: str, from_stdin: bool) -> i
             user = auth.create_user(db, username, password, "admin")
         except auth.AuthError as exc:
             raise CliError(str(exc)) from None
-        audit.record(db, "cli", "user_create", "user", user.id, {"username": user.username, "role": "admin"})
+        audit.record(db, "cli", "user_create", "user", user.id, {"username": user.username, "role": "admin"},
+                     workspace_id=user.workspace_id)
     print("created admin %s" % username)
     return 0
 

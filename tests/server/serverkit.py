@@ -43,6 +43,13 @@ def fresh_database():
         admin.dispose()
 
 
+def home(db):
+    """The ID of the default organization, where the fixtures' users and data are."""
+    from phishhawk.server import auth
+
+    return auth.default_workspace(db)
+
+
 def login(app, username):
     """A client logged in as username, sending its CSRF token on every request."""
     from fastapi.testclient import TestClient

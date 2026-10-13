@@ -32,12 +32,33 @@ class Base(DeclarativeBase):
     type_annotation_map = {dt.datetime: UTCDateTime()}
 
 
+SERVER = 0  # the workspace_id of settings and audit records that belong to the whole server
+
+
+class Workspace(Base):
+    """An organization or an individual. Every message, analysis, mailbox, setting and user belongs to one, and no
+    workspace reads another's (docs/superpowers/specs/2026-10-13-workspaces-signup-feedback-design.md)."""
+    __tablename__ = "workspaces"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(16))  # "organization" or "individual"
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+def workspace_column(index: bool = True) -> Mapped[int]:
+    """The workspace a row belongs to; its rows go with it. Tables with a unique key that starts with it need no
+    index of their own."""
+    return mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=index)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True)
+    workspace_id: Mapped[int] = workspace_column()
+    username: Mapped[str] = mapped_column(String(64), unique=True)  # one across the server: it signs in
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(16))  # "admin" or "analyst"
+    role: Mapped[str] = mapped_column(String(16))  # "admin" or "analyst", in its workspace
+    owner: Mapped[bool] = mapped_column(Boolean, default=False)  # runs the server: sign-up, server limits
     disabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(default=None)
@@ -66,8 +87,11 @@ class ApiToken(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+    # the same email reported in two workspaces is two messages, each with its own copy, retention and hold
+    __table_args__ = (UniqueConstraint("workspace_id", "sha256", name="uq_messages_workspace_sha256"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    workspace_id: Mapped[int] = workspace_column(index=False)
+    sha256: Mapped[str] = mapped_column(String(64))
     size: Mapped[int] = mapped_column(Integer)
     raw_blob: Mapped[str | None] = mapped_column(String(32))  # None once tier 1 is deleted
     first_seen_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
@@ -83,6 +107,7 @@ class Batch(Base):
     """Several messages uploaded together (several files, an .mbox or a .zip), and their combined exports."""
     __tablename__ = "batches"
     id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = workspace_column()
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     offline: Mapped[bool] = mapped_column(Boolean, default=False)
     total: Mapped[int] = mapped_column(Integer)  # messages in it
@@ -97,8 +122,10 @@ class Batch(Base):
 class Mailbox(Base):
     """A report mailbox the worker reads, read-only (spec 6.3). Its credential is sealed, bound to its ID."""
     __tablename__ = "mailboxes"
+    __table_args__ = (UniqueConstraint("workspace_id", "name", name="uq_mailboxes_workspace_name"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(48), unique=True)
+    workspace_id: Mapped[int] = workspace_column(index=False)
+    name: Mapped[str] = mapped_column(String(48))
     kind: Mapped[str] = mapped_column(String(8))  # imap, graph or gmail
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     interval_minutes: Mapped[int] = mapped_column(Integer, default=5)
@@ -132,6 +159,7 @@ class Submission(Base):
     __tablename__ = "submissions"
     __table_args__ = (Index("ix_submissions_batch", "batch_id", "position"),)
     id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = workspace_column()
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     batch_id: Mapped[int | None] = mapped_column(ForeignKey("batches.id", ondelete="SET NULL"), default=None)
@@ -147,6 +175,7 @@ class Submission(Base):
 class Analysis(Base):
     __tablename__ = "analyses"
     id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = workspace_column()
     message_id: Mapped[int] = mapped_column(ForeignKey("messages.id", ondelete="CASCADE"))
     submission_id: Mapped[int] = mapped_column(ForeignKey("submissions.id", ondelete="CASCADE"))
     engine_version: Mapped[str] = mapped_column(String(32))
@@ -177,6 +206,7 @@ class Campaign(Base):
     __tablename__ = "campaigns"
     # the ID of its oldest message, so a link to the campaign stays while it grows
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    workspace_id: Mapped[int] = workspace_column()  # rebuilt per workspace: a campaign never mixes two
     size: Mapped[int] = mapped_column(Integer)
     first_seen: Mapped[str] = mapped_column(String(32), default="")  # from the messages' Date lines, ISO
     last_seen: Mapped[str] = mapped_column(String(32), default="")
@@ -213,6 +243,8 @@ class Job(Base):
 
 class Setting(Base):
     __tablename__ = "settings"
+    # a workspace's own (providers and their keys, domains, retention), or SERVER's (sign-up, upload limits)
+    workspace_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[Any] = mapped_column(JSON)  # secrets: base64 of a sealed value
 
@@ -220,6 +252,9 @@ class Setting(Base):
 class AuditRecord(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(primary_key=True)
+    # SERVER for the server's own events; None for records written before workspaces (Default organization's).
+    # Not a foreign key: the record outlives a deleted workspace.
+    workspace_id: Mapped[int | None] = mapped_column(Integer, default=None, index=True)
     at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     actor: Mapped[str] = mapped_column(String(64))  # a username, "system" or "token:<name>"
     action: Mapped[str] = mapped_column(String(48))

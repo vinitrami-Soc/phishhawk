@@ -9,6 +9,17 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Workspaces in the web app.** Everything the web app keeps belongs to a
+  workspace (an organization, or one person): messages, analyses, batches,
+  campaigns, mailboxes, users, tokens, settings, provider keys and their lookup
+  cache, and audit records. No workspace reads or changes another's: a row of
+  another workspace answers 404, as one that does not exist, and a test walks
+  every route that names a row to keep it so. The upload and batch limits
+  belong to the server's owner (its first admin). An upgraded server keeps all
+  its data in "Default organization" and works as before; its audit log still
+  verifies. `GET /api/v1/session` also says `owner` and `workspace`. Sign-up
+  and invitations follow in the next release
+  ([docs/SERVER.md](docs/SERVER.md#workspaces)).
 - **A product page in the web app.** Signed out, `/app/` now explains
   PhishHawk before asking anyone to sign in: an example analysis that runs as
   you watch, how it works, what it checks in each part of a message (with

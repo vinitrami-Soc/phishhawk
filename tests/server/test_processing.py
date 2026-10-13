@@ -13,6 +13,7 @@ from phishhawk.server import audit, intake, retention, worker
 from phishhawk.server.db import transaction
 from phishhawk.server.models import Analysis, Indicator, Job, Message, Submission
 
+from .serverkit import home
 from conftest import build_eml, sample
 
 
@@ -24,7 +25,7 @@ def _raw(name="sample_bec_smuggling.eml"):
 def _submit(services, raw=None, offline=True):
     with transaction(services.sessions) as s:
         return intake.accept(s, services.store, raw or _raw(), source="upload", user_id=None, actor="alice",
-                             offline=offline, max_bytes=25 * 1024 * 1024).id
+                             workspace_id=home(s), offline=offline, max_bytes=25 * 1024 * 1024).id
 
 
 def test_intake_refuses_what_is_not_a_message(services):
@@ -32,11 +33,11 @@ def test_intake_refuses_what_is_not_a_message(services):
         for raw, status in ((b"", 400), (b"%PDF-1.7\n", 415), (b"x" * 30, 415)):
             with pytest.raises(intake.IntakeError) as caught:
                 intake.accept(s, services.store, raw, source="paste", user_id=None, actor="a", offline=True,
-                              max_bytes=1000)
+                              workspace_id=home(s), max_bytes=1000)
             assert caught.value.status == status
         with pytest.raises(intake.IntakeError) as caught:
             intake.accept(s, services.store, _raw(), source="upload", user_id=None, actor="a", offline=True,
-                          max_bytes=100)
+                          workspace_id=home(s), max_bytes=100)
         assert caught.value.status == 413
 
 
@@ -95,7 +96,7 @@ def test_retention_deletes_tier1_keeps_tier2_and_skips_held_messages(services):
         s.get(Message, s.get(Submission, held_id).message_id).hold = True
         raw_blob = s.get(Message, s.get(Submission, kept_id).message_id).raw_blob
     with transaction(services.sessions) as s:
-        assert retention.sweep(s, services.store, days=30) == 1
+        assert retention.sweep(s, services.store, 30, home(s)) == 1
     with transaction(services.sessions) as s:
         gone = s.get(Message, s.get(Submission, kept_id).message_id)
         assert gone.raw_blob is None and gone.deletion_reason == "retention"
@@ -114,7 +115,8 @@ def test_delete_completely_removes_tier2_but_audit_keeps_the_hash(services):
     with transaction(services.sessions) as s:
         message = s.get(Message, s.get(Submission, submission_id).message_id)
         sha256 = retention.delete_completely(s, services.store, message)
-        audit.record(s, "admin", "delete_completely", "message", message.id, {"sha256": sha256})
+        audit.record(s, "admin", "delete_completely", "message", message.id, {"sha256": sha256},
+                     workspace_id=message.workspace_id)
     with transaction(services.sessions) as s:
         assert s.scalars(select(Message)).first() is None
         assert s.scalars(select(Analysis)).first() is None and s.scalars(select(Indicator)).first() is None

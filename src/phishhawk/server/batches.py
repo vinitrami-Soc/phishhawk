@@ -143,15 +143,17 @@ def split(files: list[bytes], *, max_messages: int, max_message_bytes: int, max_
     return Split(messages, skipped)
 
 
-def accept(db: Session, store: BlobStore, messages: list[bytes], *, user_id: int | None, actor: str,
-           offline: bool, max_bytes: int) -> Batch:
-    batch = Batch(user_id=user_id, offline=offline, total=len(messages))
+def accept(db: Session, store: BlobStore, messages: list[bytes], *, workspace_id: int, user_id: int | None,
+           actor: str, offline: bool, max_bytes: int) -> Batch:
+    batch = Batch(workspace_id=workspace_id, user_id=user_id, offline=offline, total=len(messages))
     db.add(batch)
     db.flush()
     for position, raw in enumerate(messages, 1):
-        intake.accept(db, store, raw, source="batch", user_id=user_id, actor=actor, offline=offline,
-                      max_bytes=max_bytes, batch_id=batch.id, position=position, known_message=True)
-    audit.record(db, actor, "submit_batch", "batch", batch.id, {"messages": len(messages), "offline": offline})
+        intake.accept(db, store, raw, workspace_id=workspace_id, source="batch", user_id=user_id, actor=actor,
+                      offline=offline, max_bytes=max_bytes, batch_id=batch.id, position=position,
+                      known_message=True)
+    audit.record(db, actor, "submit_batch", "batch", batch.id, {"messages": len(messages), "offline": offline},
+                 workspace_id=workspace_id)
     return batch
 
 
@@ -251,4 +253,4 @@ def finalize(services: Services, batch_id: int, heartbeat: Any = None) -> None:
         batch.status, batch.error = ("failed", error) if error else ("done", "" if states else
                                                                       "no message in the batch was analysed")
         audit.record(db, "system", "batch_finalize", "batch", batch_id,
-                     {"messages": len(states), "files": len(stored)})
+                     {"messages": len(states), "files": len(stored)}, workspace_id=batch.workspace_id)

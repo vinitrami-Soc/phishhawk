@@ -129,12 +129,14 @@ def test_the_campaigns_are_rebuilt_hourly_as_messages_leave_the_window(alice, se
     from sqlalchemy import select
 
     from phishhawk.server.db import transaction
-    from phishhawk.server.models import Job
+    from phishhawk.server.models import Campaign, Job
 
     _submit_all(alice, services, _messages()[5:7])
-    with transaction(services.sessions) as s:
-        for job in s.scalars(select(Job).where(Job.kind == "campaign_rebuild")):
-            job.finished_at -= dt.timedelta(minutes=61)
+    worker.schedule(services)
+    with transaction(services.sessions) as s:  # made a minute ago: nothing to do yet
+        assert s.scalars(select(Job).where(Job.kind == "campaign_rebuild", Job.status == "queued")).all() == []
+        for campaign in s.scalars(select(Campaign)):
+            campaign.rebuilt_at -= dt.timedelta(minutes=61)
     worker.schedule(services)
     with transaction(services.sessions) as s:
         assert s.scalars(select(Job).where(Job.kind == "campaign_rebuild", Job.status == "queued")).one()

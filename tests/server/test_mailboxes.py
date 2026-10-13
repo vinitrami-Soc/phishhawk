@@ -12,6 +12,8 @@ from phishhawk.server.crypto import DecryptError
 from phishhawk.server.db import transaction
 from phishhawk.server.mailboxes import MailboxError
 
+from .serverkit import home
+
 
 def service_account_key(email="phishhawk@reports-project.iam.gserviceaccount.com"):
     """A Google service account's JSON key, made for the test."""
@@ -51,7 +53,7 @@ def gmail(**config):
 
 def _create(services, data):
     with transaction(services.sessions) as s:
-        return mailboxes.view(mailboxes.create(s, services.box, data))
+        return mailboxes.view(mailboxes.create(s, services.box, data, home(s)))
 
 
 def test_each_kind_has_its_settings_and_defaults(services):
@@ -91,14 +93,14 @@ def test_each_kind_has_its_settings_and_defaults(services):
 ])
 def test_what_is_refused(services, data, says):
     with transaction(services.sessions) as s, pytest.raises(MailboxError) as refused:
-        mailboxes.create(s, services.box, data)
+        mailboxes.create(s, services.box, data, home(s))
     assert refused.value.status == 422 and says in str(refused.value)
 
 
 def test_names_are_unique(services):
     _create(services, imap())
     with transaction(services.sessions) as s, pytest.raises(MailboxError) as refused:
-        mailboxes.create(s, services.box, graph() | {"name": "Reports"})
+        mailboxes.create(s, services.box, graph() | {"name": "Reports"}, home(s))
     assert refused.value.status == 409
 
 

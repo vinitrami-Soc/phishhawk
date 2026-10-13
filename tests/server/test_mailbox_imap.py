@@ -12,9 +12,20 @@ from sqlalchemy import select
 
 from phishhawk.server import appsettings, intake, mailbox, mailboxes, worker
 from phishhawk.server.db import transaction
-from phishhawk.server.models import AuditRecord, Job, Mailbox, MailboxItem, Submission, utcnow
+from phishhawk.server.models import (
+    SERVER,
+    AuditRecord,
+    Job,
+    Mailbox,
+    MailboxItem,
+    Message,
+    Submission,
+    Workspace,
+    utcnow,
+)
 
 from .fakeimap import FakeImapServer
+from .serverkit import home
 from conftest import build_eml
 
 USER = "soc@example-corp.co.uk"
@@ -42,7 +53,7 @@ def _mailbox(services, server, name="Reports", **config):
     with transaction(services.sessions) as s:
         made = mailboxes.create(s, services.box, {
             "name": name, "kind": "imap", "secret": config.pop("secret", server.password_for_tests),
-            "config": {"host": "127.0.0.1", "port": server.port, "user": USER, **config}})
+            "config": {"host": "127.0.0.1", "port": server.port, "user": USER, **config}}, home(s))
         return made.id
 
 
@@ -140,7 +151,7 @@ def test_the_same_message_in_two_mailboxes_is_imported_once(services, server):
 def test_a_message_uploaded_before_is_not_imported(services, server):
     with transaction(services.sessions) as s:
         intake.accept(s, services.store, report(1), source="upload", user_id=None, actor="alice", offline=True,
-                      max_bytes=25 * 1024 * 1024)
+                      workspace_id=home(s), max_bytes=25 * 1024 * 1024)
     server.add(report(1))
     assert mailbox.poll(services, _mailbox(services, server)) == {"imported": 0, "duplicates": 1, "skipped": 0}
 
@@ -155,7 +166,7 @@ def test_the_same_message_id_with_other_bytes_is_imported_once(services, server)
 
 def test_a_message_over_the_limit_is_skipped_and_counted(services, server):
     with transaction(services.sessions) as s:
-        appsettings.set_value(s, "max_upload_mb", 1)
+        appsettings.set_value(s, SERVER, "max_upload_mb", 1)
     server.add(build_eml(subject="Large", text="x" * (2 * 1024 * 1024)))
     server.add(report(1))
     box = _mailbox(services, server)
@@ -168,7 +179,7 @@ def test_a_server_that_understates_a_size_cannot_make_the_poll_read_more_than_th
                                                                                          monkeypatch):
     """imaplib reads a literal whatever its size: a hostile server could send gigabytes as one message."""
     with transaction(services.sessions) as s:
-        appsettings.set_value(s, "max_upload_mb", 1)
+        appsettings.set_value(s, SERVER, "max_upload_mb", 1)
     server.understate_sizes = True
     server.add(build_eml(subject="Large", text="x" * (3 * 1024 * 1024)))
     reads, read = [], imaplib.IMAP4.read
@@ -199,7 +210,7 @@ def test_starttls_on_port_143(services, tmp_path, monkeypatch):
     with transaction(services.sessions) as s:
         box = mailboxes.create(s, services.box, {
             "name": "Plain port", "kind": "imap", "secret": password,
-            "config": {"host": "127.0.0.1", "port": fake.port, "starttls": True, "user": USER}}).id
+            "config": {"host": "127.0.0.1", "port": fake.port, "starttls": True, "user": USER}}, home(s)).id
     assert mailbox.poll(services, box)["imported"] == 1
     assert fake.commands[:2] == ["CAPABILITY", "STARTTLS"] and fake.violations == []
     fake.close()
@@ -314,3 +325,23 @@ def test_a_real_server_and_worker_import_from_the_mailbox(server, tmp_path):
             time.sleep(0.5)
         state = web.get(running.base + "/api/v1/mailboxes/%d" % made["id"]).json()
         assert (state["status"], state["last_counts"]["imported"]) == ("ok", 2)
+
+
+def test_a_mailboxs_imports_land_in_its_workspace_and_only_its_own_are_duplicates(services, server):
+    server.add(report(1))
+    with transaction(services.sessions) as s:
+        intake.accept(s, services.store, report(1), source="upload", user_id=None, actor="alice", offline=True,
+                      workspace_id=home(s), max_bytes=25 * 1024 * 1024)  # in the default organization
+        other = Workspace(name="Beta", kind="organization")
+        s.add(other)
+        s.flush()
+        theirs = other.id
+        box = mailboxes.create(s, services.box, {
+            "name": "Reports", "kind": "imap", "secret": server.password_for_tests,
+            "config": {"host": "127.0.0.1", "port": server.port, "user": USER}}, theirs).id
+    assert mailbox.poll(services, box)["imported"] == 1
+    with transaction(services.sessions) as s:
+        imported = s.scalars(select(Submission).where(Submission.mailbox_id == box)).one()
+        assert imported.workspace_id == theirs and s.get(Message, imported.message_id).workspace_id == theirs
+        submitted = s.scalars(select(AuditRecord).where(AuditRecord.actor == "mailbox:Reports")).one()
+        assert submitted.workspace_id == theirs

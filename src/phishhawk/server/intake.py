@@ -1,5 +1,5 @@
-"""Accepting a message: size and type checks, deduplication by SHA-256,
-sealing the raw bytes, and queueing the analysis."""
+"""Accepting a message: size and type checks, deduplication by SHA-256 within
+its workspace, sealing the raw bytes, and queueing the analysis."""
 
 from __future__ import annotations
 
@@ -33,8 +33,8 @@ def kind_of(raw: bytes) -> str:
     return ""
 
 
-def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: int | None, actor: str,
-           offline: bool, max_bytes: int, batch_id: int | None = None, position: int = 0,
+def accept(db: Session, store: BlobStore, raw: bytes, *, workspace_id: int, source: str, user_id: int | None,
+           actor: str, offline: bool, max_bytes: int, batch_id: int | None = None, position: int = 0,
            known_message: bool = False, mailbox_id: int | None = None) -> Submission:
     """known_message: batches.split() found it as a message (an mbox says where each one starts), so its type is
     not checked again."""
@@ -45,15 +45,16 @@ def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: i
     if not known_message and not kind_of(raw):
         raise IntakeError(415, "this is not an .eml or .msg message")
     sha256 = hashlib.sha256(raw).hexdigest()
-    message = db.scalars(select(Message).where(Message.sha256 == sha256)).first()
+    message = db.scalars(select(Message).where(Message.workspace_id == workspace_id,
+                                               Message.sha256 == sha256)).first()
     if message is None:
-        message = Message(sha256=sha256, size=len(raw), raw_blob=store.put(raw))
+        message = Message(workspace_id=workspace_id, sha256=sha256, size=len(raw), raw_blob=store.put(raw))
         db.add(message)
         db.flush()
     elif message.raw_blob is None:  # submitted again after its tier 1 was deleted
         message.raw_blob, message.tier1_deleted_at, message.deletion_reason = store.put(raw), None, ""
-    submission = Submission(message_id=message.id, user_id=user_id, source=source, offline=offline,
-                            batch_id=batch_id, position=position, mailbox_id=mailbox_id)
+    submission = Submission(workspace_id=workspace_id, message_id=message.id, user_id=user_id, source=source,
+                            offline=offline, batch_id=batch_id, position=position, mailbox_id=mailbox_id)
     db.add(submission)
     db.flush()
     jobs.enqueue(db, "analyze", {"submission_id": submission.id})
@@ -62,5 +63,5 @@ def accept(db: Session, store: BlobStore, raw: bytes, *, source: str, user_id: i
         details["batch"] = batch_id
     if mailbox_id is not None:
         details["mailbox"] = mailbox_id
-    audit.record(db, actor, "submit", "submission", submission.id, details)
+    audit.record(db, actor, "submit", "submission", submission.id, details, workspace_id=workspace_id)
     return submission

@@ -10,6 +10,7 @@ from phishhawk.server.db import transaction
 from phishhawk.server.models import Analysis, AuditRecord, Message
 from phishhawk.server.store import BlobStore
 
+from .serverkit import home
 from conftest import sample
 
 
@@ -18,8 +19,8 @@ def _analysed(services):
         raw = handle.read()
     with transaction(services.sessions) as s:
         intake.accept(s, services.store, raw, source="upload", user_id=None, actor="alice", offline=True,
-                      max_bytes=25 * 1024 * 1024)
-        appsettings.set_secret(s, services.box, "key:virustotal", "vt-key-1234")
+                      workspace_id=home(s), max_bytes=25 * 1024 * 1024)
+        appsettings.set_secret(s, services.box, home(s), "key:virustotal", "vt-key-1234")
         appsettings.trait_key(s, services.box)
     assert worker.run_one(services)
 
@@ -42,9 +43,9 @@ def test_rotation_moves_every_blob_and_secret_to_the_new_key(services):
             moved.get(blob_id)
             with pytest.raises(DecryptError):
                 services.store.get(blob_id)
-        assert appsettings.get_secret(s, new_box, "key:virustotal") == "vt-key-1234"
+        assert appsettings.get_secret(s, new_box, home(s), "key:virustotal") == "vt-key-1234"
         with pytest.raises(DecryptError):
-            appsettings.get_secret(s, services.box, "key:virustotal")
+            appsettings.get_secret(s, services.box, home(s), "key:virustotal")
         entry = s.scalars(select(AuditRecord).where(AuditRecord.action == "rotate_key")).one()
         assert entry.actor == "cli" and entry.details == {"blobs": 10, "secrets": 2}
         assert audit.verify(s) == []
@@ -78,7 +79,7 @@ def test_rotation_moves_a_batchs_combined_exports_too(services):
 
     blob = services.store.put(b"combined report")
     with transaction(services.sessions) as s:
-        s.add(Batch(total=2, files=[{"name": "r.html", "kind": "html", "blob": blob}]))
+        s.add(Batch(workspace_id=home(s), total=2, files=[{"name": "r.html", "kind": "html", "blob": blob}]))
     new_box = Box.from_b64(new_key())
     with transaction(services.sessions) as s:
         assert rotation.rotate(s, services.store, new_box, actor="cli")["blobs"] == 1
@@ -94,7 +95,8 @@ def test_rotation_moves_mailbox_secrets_too(services):
     password = secrets.token_hex(8)
     with transaction(services.sessions) as s:
         made = mailboxes.create(s, services.box, {"name": "Reports", "kind": "imap", "secret": password,
-                                                  "config": {"host": "imap.example-corp.co.uk", "user": "soc"}})
+                                                  "config": {"host": "imap.example-corp.co.uk", "user": "soc"}},
+                                home(s))
         mailbox_id = made.id
     new_box = Box.from_b64(new_key())
     with transaction(services.sessions) as s:

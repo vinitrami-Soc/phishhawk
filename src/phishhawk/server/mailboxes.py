@@ -148,22 +148,24 @@ def secret_of(box: Box, mailbox: Mailbox) -> str:
     return box.open(base64.b64decode(mailbox.secret), _bound_to(mailbox)).decode("utf-8")
 
 
-def _unique(db: Session, name: str, mailbox_id: int | None = None) -> None:
-    taken = db.scalars(select(Mailbox.id).where(Mailbox.name == name)).first()
+def _unique(db: Session, workspace_id: int, name: str, mailbox_id: int | None = None) -> None:
+    """Names are unique within a workspace."""
+    taken = db.scalars(select(Mailbox.id).where(Mailbox.workspace_id == workspace_id,
+                                                Mailbox.name == name)).first()
     if taken is not None and taken != mailbox_id:
         raise MailboxError(409, "a mailbox called %r exists" % name)
 
 
-def create(db: Session, box: Box, data: dict[str, Any]) -> Mailbox:
+def create(db: Session, box: Box, data: dict[str, Any], workspace_id: int) -> Mailbox:
     name, kind = _name(data.get("name")), str(data.get("kind") or "")
     if kind not in KINDS:
         raise MailboxError(422, "kind must be imap, graph or gmail")
     interval = _interval(data.get("interval_minutes", MIN_INTERVAL))
     config = _config(kind, dict(data.get("config") or {}))
     secret, learnt = _secret(kind, str(data.get("secret") or ""))
-    _unique(db, name)
-    mailbox = Mailbox(name=name, kind=kind, enabled=bool(data.get("enabled", True)), interval_minutes=interval,
-                      config=config | learnt, cursor={}, last_counts={})
+    _unique(db, workspace_id, name)
+    mailbox = Mailbox(workspace_id=workspace_id, name=name, kind=kind, enabled=bool(data.get("enabled", True)),
+                      interval_minutes=interval, config=config | learnt, cursor={}, last_counts={})
     db.add(mailbox)
     db.flush()  # its ID, which the sealed secret is bound to
     _seal(box, mailbox, secret)
@@ -176,7 +178,7 @@ def update(db: Session, box: Box, mailbox: Mailbox, data: dict[str, Any]) -> lis
         raise MailboxError(422, "a mailbox keeps its kind: add another mailbox for another kind")
     changed: list[str] = []
     if data.get("name") is not None and _name(data["name"]) != mailbox.name:
-        _unique(db, _name(data["name"]), mailbox.id)
+        _unique(db, mailbox.workspace_id, _name(data["name"]), mailbox.id)
         mailbox.name = _name(data["name"])
         changed.append("name")
     if data.get("interval_minutes") is not None:

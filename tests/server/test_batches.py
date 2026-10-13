@@ -11,6 +11,7 @@ import pytest
 from phishhawk.server import batches, worker
 from phishhawk.server.security import REPORT_CSP
 
+from .serverkit import home
 from conftest import build_eml, sample
 
 MB = 1024 * 1024
@@ -244,7 +245,7 @@ def test_combined_exports_are_deleted_after_the_retention_period(alice, services
         for message in s.query(Message):
             message.hold = True  # the messages stay; the combined exports still go
     with transaction(services.sessions) as s:
-        retention.sweep(s, services.store, days=30)
+        retention.sweep(s, services.store, 30, home(s))
     assert _batch(alice, created["batch_id"])["files_deleted_at"]
 
 

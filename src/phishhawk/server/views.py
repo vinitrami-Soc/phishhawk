@@ -1,4 +1,4 @@
-"""Queries the API and the pages share."""
+"""Queries the API and the pages share. Every listing is of one workspace."""
 
 from __future__ import annotations
 
@@ -44,22 +44,13 @@ def summary(store: BlobStore, analysis: Analysis, message: Message, submission: 
     return view
 
 
-def find(db: Session, analysis_id: int) -> tuple[Analysis, Message, Submission] | None:
-    analysis = db.get(Analysis, analysis_id)
-    if analysis is None:
-        return None
-    message, submission = db.get(Message, analysis.message_id), db.get(Submission, analysis.submission_id)
-    if message is None or submission is None:
-        return None
-    return analysis, message, submission
-
-
-def listing(db: Session, store: BlobStore, q: str = "", verdict: str = "", offset: int = 0, source: str = "",
-            user: int | None = None, since: dt.date | None = None,
+def listing(db: Session, store: BlobStore, workspace_id: int, q: str = "", verdict: str = "", offset: int = 0,
+            source: str = "", user: int | None = None, since: dt.date | None = None,
             until: dt.date | None = None) -> list[dict[str, Any]]:
     """Newest first. since and until are days (UTC), both included."""
     query = (select(Analysis, Message, Submission).join(Message, Analysis.message_id == Message.id)
-             .join(Submission, Analysis.submission_id == Submission.id).order_by(Analysis.id.desc()))
+             .join(Submission, Analysis.submission_id == Submission.id)
+             .where(Analysis.workspace_id == workspace_id).order_by(Analysis.id.desc()))
     if verdict:
         query = query.where(Analysis.verdict == verdict)
     if source:
@@ -78,7 +69,7 @@ def listing(db: Session, store: BlobStore, q: str = "", verdict: str = "", offse
                                 Analysis.id.in_(select(Indicator.analysis_id)
                                                 .where(Indicator.value.contains(q, autoescape=True)))))
     rows = db.execute(query.offset(max(0, offset)).limit(PAGE)).all()
-    names, boxes = usernames(db), mailbox_names(db)
+    names, boxes = usernames(db, workspace_id), mailbox_names(db, workspace_id)
     return [summary(store, a, m, s, submitter=submitter(s, names, boxes)) for a, m, s in rows]
 
 
@@ -87,12 +78,12 @@ def is_owner(db: Session, message_id: int, user_id: int) -> bool:
                                                   Submission.user_id == user_id).limit(1)).first() is not None
 
 
-def usernames(db: Session) -> dict[int, str]:
-    return {u.id: u.username for u in db.scalars(select(User))}
+def usernames(db: Session, workspace_id: int) -> dict[int, str]:
+    return {u.id: u.username for u in db.scalars(select(User).where(User.workspace_id == workspace_id))}
 
 
-def mailbox_names(db: Session) -> dict[int, str]:
-    return {m.id: m.name for m in db.scalars(select(Mailbox))}
+def mailbox_names(db: Session, workspace_id: int) -> dict[int, str]:
+    return {m.id: m.name for m in db.scalars(select(Mailbox).where(Mailbox.workspace_id == workspace_id))}
 
 
 def submitter(submission: Submission, names: dict[int, str], boxes: dict[int, str]) -> str | None:
@@ -103,4 +94,5 @@ def submitter(submission: Submission, names: dict[int, str], boxes: dict[int, st
 
 
 def submitter_of(db: Session, submission: Submission) -> str | None:
-    return submitter(submission, usernames(db), mailbox_names(db))
+    workspace_id = submission.workspace_id
+    return submitter(submission, usernames(db, workspace_id), mailbox_names(db, workspace_id))

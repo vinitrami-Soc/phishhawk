@@ -10,9 +10,9 @@ from phishhawk.server.models import AuditHead, AuditRecord
 
 def _three(db):
     with transaction(db) as s:
-        audit.record(s, "admin", "login")
-        audit.record(s, "admin", "submit", "submission", 1, {"source": "upload"})
-        audit.record(s, "system", "analyze", "analysis", 1, {"providers": []})
+        audit.record(s, "admin", "login", workspace_id=1)
+        audit.record(s, "admin", "submit", "submission", 1, {"source": "upload"}, workspace_id=1)
+        audit.record(s, "system", "analyze", "analysis", 1, {"providers": []}, workspace_id=1)
 
 
 def test_an_untouched_log_verifies(db):

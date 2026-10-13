@@ -12,9 +12,10 @@ from sqlalchemy import select
 
 from phishhawk.server import appsettings, mailbox, mailboxes
 from phishhawk.server.db import transaction
-from phishhawk.server.models import AuditRecord, Mailbox, Submission
+from phishhawk.server.models import SERVER, AuditRecord, Mailbox, Submission
 
 from .fakehttp import GMAIL, GOOGLE_TOKEN, READONLY, FakeGmail
+from .serverkit import home
 from .test_mailbox_imap import report
 from .test_mailboxes import service_account_key
 
@@ -35,7 +36,7 @@ def gmail():
 def _mailbox(services, fake, name="Workspace reports", key=None, **config):
     with transaction(services.sessions) as s:
         return mailboxes.create(s, services.box, {"name": name, "kind": "gmail", "secret": key or fake.key,
-                                                  "config": {"address": ADDRESS, **config}}).id
+                                                  "config": {"address": ADDRESS, **config}}, home(s)).id
 
 
 def _state(services, mailbox_id):
@@ -117,7 +118,7 @@ def test_more_than_a_poll_takes_waits_for_the_next_poll(services, gmail):
     box = _mailbox(services, gmail)
     mailbox.poll(services, box, session=gmail)
     with transaction(services.sessions) as s:
-        appsettings.set_value(s, "max_batch_messages", 2)
+        appsettings.set_value(s, SERVER, "max_batch_messages", 2)
     for number in range(5):
         gmail.add(report(number))
     assert [mailbox.poll(services, box, session=gmail)["imported"] for _ in range(4)] == [2, 2, 1, 0]
@@ -126,7 +127,7 @@ def test_more_than_a_poll_takes_waits_for_the_next_poll(services, gmail):
 
 def test_a_message_over_the_limit_is_skipped_before_it_is_downloaded(services, gmail):
     with transaction(services.sessions) as s:
-        appsettings.set_value(s, "max_upload_mb", 1)
+        appsettings.set_value(s, SERVER, "max_upload_mb", 1)
     from conftest import build_eml
 
     gmail.add(build_eml(subject="Large", text="x" * (2 * 1024 * 1024)))
