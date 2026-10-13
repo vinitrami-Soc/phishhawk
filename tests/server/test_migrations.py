@@ -193,3 +193,24 @@ def test_going_back_below_workspaces_needs_a_single_workspace(settings):
         assert c.execute(text("SELECT key FROM settings ORDER BY key")).scalars().all() == [
             "max_batch_messages", "max_upload_mb", "providers", "retention_days", "secret:trait_key"]
         assert c.execute(text("SELECT count(*) FROM messages")).scalar() == 1
+
+
+def test_a_workspaces_database_gains_profiles_and_invites(settings):
+    from alembic import command
+    from sqlalchemy import inspect, text
+
+    from phishhawk.server.db import alembic_config
+
+    command.upgrade(alembic_config(settings.db_url), "0004")
+    engine = make_engine(settings.db_url)
+    with engine.begin() as c:
+        c.execute(text("INSERT INTO users (id, workspace_id, username, password_hash, role, disabled, owner, "
+                       "created_at) VALUES (1, 1, 'root', 'x', 'admin', false, true, '2026-10-01 00:00:00')"))
+    migrate(settings.db_url)
+    with engine.connect() as c:
+        row = c.execute(text("SELECT username, first_name, last_name, location, job_title FROM users")).one()
+        assert tuple(row) == ("root", "", "", "", "")
+    assert "invites" in inspect(engine).get_table_names()
+    command.downgrade(alembic_config(settings.db_url), "0004")
+    assert "invites" not in inspect(engine).get_table_names()
+    assert "first_name" not in {column["name"] for column in inspect(engine).get_columns("users")}

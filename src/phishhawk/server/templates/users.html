@@ -27,6 +27,30 @@
   {% endfor %}
   </tbody>
 </table>
+{% if can_invite %}
+<h2>Invitations</h2>
+<p>An invitation is a link that lets one person make their own account in {{ workspace_name }}, with the role you
+choose. It works once, for 7 days. Send it however you like.</p>
+{% if new_invite %}<div class="card ok" role="status"><p>New invitation link, shown once: copy it now.</p><p class="mono">{{ new_invite }}</p></div>{% endif %}
+{% if invites %}
+<table class="list">
+  <caption class="sr-only">Invitations not used yet</caption>
+  <thead><tr><th scope="col">Note</th><th scope="col">Role</th><th scope="col">Until</th><th scope="col">Withdraw</th></tr></thead>
+  <tbody>
+  {% for i in invites %}
+  <tr><td data-label="Note">{{ i.note or '(no note)' }}</td><td data-label="Role">{{ i.role }}</td><td data-label="Until">{{ i.expires_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+    <td data-label="Withdraw"><form method="post" action="/invites/{{ i.id }}/revoke" class="inline"><input type="hidden" name="csrf_token" value="{{ actor.csrf }}"><button type="submit" class="danger">Withdraw</button></form></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<form method="post" action="/invites" class="card">
+  <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">
+  <label for="ir">Role</label><select id="ir" name="role">{% for r in roles %}<option value="{{ r }}"{% if r == 'analyst' %} selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+  <label for="in">Note (optional, for you: who it is for)</label><input id="in" name="note" maxlength="120">
+  <button type="submit">Make an invitation link</button>
+</form>
+{% endif %}
 <h2>Add a user</h2>
 <form method="post" action="/users" class="card">
   <input type="hidden" name="csrf_token" value="{{ actor.csrf }}">

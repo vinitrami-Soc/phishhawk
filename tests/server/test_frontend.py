@@ -62,5 +62,7 @@ def test_the_session_endpoint_says_who_is_calling(alice, admin, anon):
     assert alice.get("/api/v1/session").json() == {"user_id": alice_id, "username": "alice", "role": "analyst",
                                                    "via": "session", "scope": "full",
                                                    "csrf": alice.headers["X-CSRF-Token"], "owner": False,
+                                                   "profile": {"first_name": "", "last_name": "", "location": "",
+                                                               "job_title": ""},
                                                    "workspace": {"id": 1, "name": "Default organization",
                                                                  "kind": "organization"}}

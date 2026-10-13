@@ -13,7 +13,7 @@ from types import FrameType
 
 from pydantic import ValidationError
 
-from . import audit, auth, rotation
+from . import accounts, audit, auth, rotation
 from .app import build_services
 from .config import ServerSettings, load_settings
 from .crypto import Box, DecryptError
@@ -38,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
     admin = actions.add_parser("create-admin", help="create an admin user (the first one, or another)")
     admin.add_argument("username")
     admin.add_argument("--password-stdin", action="store_true", help="read the password from standard input")
+    actions.add_parser("setup-code", help="print the one-time code that sets up a server no one has an account "
+                                          "on yet (it is also in the log at start)")
     actions.add_parser("rotate-key", help="re-encrypt everything under PHISHHAWK_NEW_ENCRYPTION_KEY "
                                           "(stop the server first)")
     log = actions.add_parser("audit", help="audit log tasks")
@@ -82,6 +84,22 @@ def create_admin(settings: ServerSettings, username: str, from_stdin: bool) -> i
         audit.record(db, "cli", "user_create", "user", user.id, {"username": user.username, "role": "admin"},
                      workspace_id=user.workspace_id)
     print("created admin %s" % username)
+    return 0
+
+
+def _setup_code(settings: ServerSettings) -> str | None:
+    services = build_services(settings)
+    with transaction(services.sessions) as db:
+        return accounts.setup_code(db, services.box)
+
+
+def setup_code(settings: ServerSettings) -> int:
+    code = _setup_code(settings)
+    if code is None:
+        print("phishhawk server: this server is set up already; an admin adds people from Users", file=sys.stderr)
+        return EXIT_FAILED
+    print("Open /app/setup in a browser and enter this code (it works once):")
+    print(code)
     return 0
 
 
@@ -144,6 +162,10 @@ def serve(settings: ServerSettings) -> int:
     import uvicorn
 
     migrate(settings.db_url)
+    code = _setup_code(settings)
+    if code is not None:
+        print("phishhawk: no one has an account yet. Open /app/setup in a browser and enter the setup code %s "
+              "(it works once)" % code, file=sys.stderr, flush=True)
     # uvicorn raises the signal again once it has shut down; this turns it into
     # an exception, so the finally block below stops the worker
     signal.signal(signal.SIGTERM, _exit_cleanly)
@@ -173,6 +195,8 @@ def main(argv: list[str]) -> int:
             return 0
         if args.action == "create-admin":
             return create_admin(settings, args.username, args.password_stdin)
+        if args.action == "setup-code":
+            return setup_code(settings)
         if args.action == "rotate-key":
             return rotate_key(settings)
         if args.action == "audit":

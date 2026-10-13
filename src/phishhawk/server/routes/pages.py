@@ -11,10 +11,11 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from .. import appsettings, audit, auth, mailboxes, scope, views
+from .. import accounts, appsettings, audit, auth, mailboxes, scope, views
 from ..app import html_response
-from ..deps import COOKIE, DB, Admin, CurrentActor, optional_actor, services
-from ..models import Analysis, ApiToken, AuditRecord, Mailbox, User
+from ..deps import COOKIE, DB, Admin, CurrentActor, optional_actor, secret, services
+from ..models import Analysis, ApiToken, AuditRecord, Mailbox, User, Workspace
+from . import accounts as account_routes
 from . import api
 
 router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
@@ -30,7 +31,8 @@ def _see_other(url: str) -> RedirectResponse:
 def login_page(request: Request, db: DB) -> Response:
     if optional_actor(request, db) is not None:
         return _see_other("/")
-    return html_response(request, "login.html", {"actor": None, "error": ""})
+    return html_response(request, "login.html", {"actor": None, "error": "",
+                                                 "signup_open": accounts.signup_open(db)})
 
 
 @router.post("/login")
@@ -40,7 +42,8 @@ def login(request: Request, db: DB, username: Annotated[str, Form()],
     if not isinstance(outcome, tuple):
         detail = ("Wrong username or password." if outcome.status_code == 401
                   else "Too many attempts: wait a little.")
-        return html_response(request, "login.html", {"actor": None, "error": detail}, outcome.status_code)
+        return html_response(request, "login.html", {"actor": None, "error": detail,
+                                                     "signup_open": accounts.signup_open(db)}, outcome.status_code)
     response = _see_other("/")
     api.set_cookie(request, response, outcome[0])
     return response
@@ -202,15 +205,20 @@ async def save_settings(request: Request, db: DB, actor: Admin) -> Response:
 
 
 def _users_page(request: Request, db: DB, actor: Any, new_token: str = "", error: str = "",
-                status: int = 200) -> Response:
+                status: int = 200, new_invite: str = "") -> Response:
     users = db.scalars(select(User).where(User.workspace_id == actor.workspace_id).order_by(User.username)).all()
+    workspace = db.get(Workspace, actor.workspace_id)
+    organization = workspace is not None and workspace.kind == "organization"  # an individual works alone
     tokens = db.scalars(select(ApiToken).join(User, ApiToken.user_id == User.id)
                         .where(User.workspace_id == actor.workspace_id).order_by(ApiToken.id)).all()
     return html_response(request, "users.html", {"actor": actor, "users": users, "tokens": tokens,
                                                  "names": views.usernames(db, actor.workspace_id),
                                                  "new_token": new_token,
                                                  "error": error, "roles": auth.ROLES,
-                                                 "scopes": auth.TOKEN_SCOPES}, status)
+                                                 "scopes": auth.TOKEN_SCOPES, "new_invite": new_invite,
+                                                 "invites": accounts.pending(db, actor.workspace_id),
+                                                 "can_invite": organization,
+                                                 "workspace_name": workspace.name if workspace else ""}, status)
 
 
 @router.get("/users")
@@ -327,3 +335,145 @@ def audit_page(request: Request, db: DB, actor: CurrentActor, offset: Annotated[
         query = query.where(AuditRecord.actor == actor.label)
     rows = db.scalars(query.offset(offset).limit(100)).all()
     return html_response(request, "audit.html", {"actor": actor, "rows": rows, "offset": offset})
+
+
+# getting in: setup, sign-up, invitations, joining and the profile (the rules are in accounts.py)
+
+
+def _fields(form: Any) -> dict[str, Any]:
+    return {name: str(value) for name, value in form.items() if name != "csrf_token"}
+
+
+def _entered(fields: dict[str, Any]) -> dict[str, Any]:
+    """What a refused form shows again: never a password or a code."""
+    return {name: value for name, value in fields.items() if name not in ("password", "current_password", "code")}
+
+
+def _signed_in_page(request: Request, db: DB, user: User) -> Response:
+    cookie, _ = auth.open_session(db, user, secret(request))
+    response = _see_other("/")
+    api.set_cookie(request, response, cookie)
+    return response
+
+
+@router.get("/setup")
+def setup_page(request: Request, db: DB) -> Response:
+    if accounts.setup_code(db, services(request).box) is None:
+        raise HTTPException(404, "this server is set up already: log in")
+    return html_response(request, "setup.html", {"actor": None, "error": "", "f": {}})
+
+
+@router.post("/setup")
+async def setup(request: Request, db: DB) -> Response:
+    fields = _fields(await request.form())
+    fields["signup_open"] = fields.get("signup_open") == "true"
+    try:
+        user = account_routes.setup_user(request, db, fields)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise
+        return html_response(request, "setup.html", {"actor": None, "error": exc.detail, "f": _entered(fields)},
+                             exc.status_code)
+    return _signed_in_page(request, db, user)
+
+
+@router.get("/signup")
+def signup_page(request: Request, db: DB) -> Response:
+    if not accounts.signup_open(db):
+        raise HTTPException(404, "sign-up is closed: ask an admin for an invitation")
+    return html_response(request, "signup.html", {"actor": None, "error": "", "f": {}})
+
+
+@router.post("/signup")
+async def signup(request: Request, db: DB) -> Response:
+    fields = _fields(await request.form())
+    try:
+        user = account_routes.signup_user(request, db, fields)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise
+        return html_response(request, "signup.html", {"actor": None, "error": exc.detail, "f": _entered(fields)},
+                             exc.status_code)
+    return _signed_in_page(request, db, user)
+
+
+def _invitation(db: DB, token: str) -> dict[str, Any]:
+    try:
+        row = accounts.open_invite(db, token)
+    except accounts.AccountError as exc:
+        raise HTTPException(exc.status, exc.detail) from None
+    workspace = db.get(Workspace, row.workspace_id)
+    return {"organization": workspace.name if workspace else "", "role": row.role, "token": token}
+
+
+@router.get("/join/{token}")
+def join_page(request: Request, db: DB, token: str) -> Response:
+    return html_response(request, "join.html", {"actor": None, "error": "", "f": {}} | _invitation(db, token))
+
+
+@router.post("/join/{token}")
+async def join(request: Request, db: DB, token: str) -> Response:
+    invitation = _invitation(db, token)
+    fields = _fields(await request.form())
+    try:
+        user = accounts.join(db, token, fields)
+    except accounts.AccountError as exc:
+        return html_response(request, "join.html", {"actor": None, "error": exc.detail, "f": _entered(fields)}
+                             | invitation, exc.status)
+    return _signed_in_page(request, db, user)
+
+
+@router.post("/invites")
+def add_invite(request: Request, db: DB, actor: Admin, role: Annotated[str, Form()],
+               note: Annotated[str, Form()] = "") -> Response:
+    try:
+        _, token = accounts.invite(db, actor, role, note)
+    except accounts.AccountError as exc:
+        return _users_page(request, db, actor, error=exc.detail, status=exc.status)
+    return _users_page(request, db, actor, new_invite=str(request.base_url) + "join/" + token)
+
+
+@router.post("/invites/{invite_id}/revoke")
+def revoke_invite(db: DB, actor: Admin, invite_id: int) -> Response:
+    try:
+        accounts.revoke(db, actor, scope.invite(db, actor, invite_id))
+    except accounts.AccountError as exc:
+        raise HTTPException(exc.status, exc.detail) from None
+    return _see_other("/users")
+
+
+def _profile_page(request: Request, db: DB, actor: Any, error: str = "", status: int = 200, saved: bool = False,
+                  entered: dict[str, Any] | None = None) -> Response:
+    user, workspace = db.get(User, actor.user_id), db.get(Workspace, actor.workspace_id)
+    assert user is not None and workspace is not None
+    shown = entered if entered is not None else accounts.profile_view(user) | {"organization": workspace.name}
+    return html_response(request, "profile.html", {
+        "actor": actor, "f": shown, "workspace": workspace, "error": error, "saved": saved,
+        "can_rename": actor.is_admin and workspace.kind == "organization"}, status)
+
+
+@router.get("/profile")
+def profile_page(request: Request, db: DB, actor: CurrentActor, saved: bool = False) -> Response:
+    return _profile_page(request, db, actor, saved=saved)
+
+
+@router.post("/profile")
+async def save_profile(request: Request, db: DB, actor: CurrentActor) -> Response:
+    api._session_only(actor, "change a profile")
+    fields = _fields(await request.form())
+    user = db.get(User, actor.user_id)
+    assert user is not None
+    data = {name: fields.get(name) for name in (*accounts.PROFILE, "organization")}
+    try:  # everything is checked before anything is changed: all of it is saved, or none
+        values = accounts.check_profile(db, actor, user, data)
+        if fields.get("password"):
+            account_routes.change_password(request, db, actor, user, fields["password"],
+                                           fields.get("current_password", ""))
+    except accounts.AccountError as exc:
+        return _profile_page(request, db, actor, exc.detail, exc.status, entered=_entered(fields))
+    except HTTPException as exc:
+        return _profile_page(request, db, actor, str(exc.detail), exc.status_code, entered=_entered(fields))
+    changed = accounts.apply_profile(db, user, values)
+    if changed:
+        api._audit(db, actor, "profile", "user", user.id, {"changed": changed})
+    return _see_other("/profile?saved=1")

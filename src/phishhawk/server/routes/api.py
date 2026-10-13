@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, mailboxes, retention, scope, views
 from .. import mailbox as polling
+from ..accounts import profile_view
 from ..bodylimit import BATCH_FACTOR
 from ..deps import COOKIE, DB, Admin, CurrentActor, secret, services
 from ..models import SERVER, Analysis, ApiToken, AuditRecord, Mailbox, Submission, User, Workspace, utcnow
@@ -75,9 +76,10 @@ def create_session(request: Request, db: DB, body: Login) -> Response:
 def current_session(db: DB, actor: CurrentActor) -> dict[str, Any]:
     """Who is calling, for a frontend after a reload: their workspace, whether they own the server, and the CSRF
     token."""
-    workspace = db.get(Workspace, actor.workspace_id)
+    workspace, user = db.get(Workspace, actor.workspace_id), db.get(User, actor.user_id)
     return {"user_id": actor.user_id, "username": actor.username, "role": actor.role, "via": actor.via,
             "scope": actor.scope, "csrf": actor.csrf, "owner": actor.owner,
+            "profile": profile_view(user) if user else None,
             "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}
             if workspace else None}
 

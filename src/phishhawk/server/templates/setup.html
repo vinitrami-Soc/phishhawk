@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Set up · PhishHawk{% endblock %}
+{% block main %}
+<h1>Set up PhishHawk</h1>
+<p>No one has an account on this server yet. Enter the setup code from the server's log (or from
+<code>phishhawk server setup-code</code>), then make your account: you will own this server.</p>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/setup" class="card narrow">
+  <label for="code">Setup code</label>
+  <input id="code" name="code" autocomplete="off" spellcheck="false" required>
+  {% include "_account_fields.html" %}
+  {% include "_profile_fields.html" %}
+  <label for="organization">Organization</label>
+  <input id="organization" name="organization" value="{{ f.organization or '' }}" autocomplete="organization" maxlength="80" required>
+  <label class="check"><input type="checkbox" name="signup_open" value="true"{% if f.signup_open %} checked{% endif %}> Let people create their own accounts (you can change this later)</label>
+  <button type="submit">Set up</button>
+</form>
+{% endblock %}
