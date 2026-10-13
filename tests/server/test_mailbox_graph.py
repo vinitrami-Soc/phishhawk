@@ -10,9 +10,10 @@ from sqlalchemy import select
 
 from phishhawk.server import appsettings, mailbox, mailboxes
 from phishhawk.server.db import transaction
-from phishhawk.server.models import AuditRecord, Mailbox, Submission
+from phishhawk.server.models import SERVER, AuditRecord, Mailbox, Submission
 
 from .fakehttp import GRAPH, LOGIN, FakeGraph
+from .serverkit import home
 from .test_mailbox_imap import report
 from .test_mailboxes import CLIENT, TENANT
 
@@ -30,7 +31,7 @@ def _mailbox(services, fake, name="M365 reports", secret=None, **config):
     with transaction(services.sessions) as s:
         return mailboxes.create(s, services.box, {
             "name": name, "kind": "graph", "secret": secret or fake.secret,
-            "config": {"tenant_id": TENANT, "client_id": CLIENT, "address": ADDRESS, **config}}).id
+            "config": {"tenant_id": TENANT, "client_id": CLIENT, "address": ADDRESS, **config}}, home(s)).id
 
 
 def _state(services, mailbox_id):
@@ -81,7 +82,7 @@ def test_more_than_a_poll_takes_waits_for_the_next_poll_without_downloading_twic
     box = _mailbox(services, graph)
     mailbox.poll(services, box, session=graph)  # an empty folder: the cursor is set
     with transaction(services.sessions) as s:
-        appsettings.set_value(s, "max_batch_messages", 2)
+        appsettings.set_value(s, SERVER, "max_batch_messages", 2)
     for number in range(5):
         graph.add(report(number))
     assert [mailbox.poll(services, box, session=graph)["imported"] for _ in range(4)] == [2, 2, 1, 0]

@@ -10,39 +10,39 @@ from phishhawk.server import appsettings
 from phishhawk.server.db import transaction
 from phishhawk.server.models import Setting
 
-from .serverkit import TEST_DATABASE
+from .serverkit import TEST_DATABASE, home
 
 
 def test_a_fresh_install_is_offline(db, box, settings):
     with transaction(db) as s:
-        options = appsettings.analysis_options(s, box, settings, offline=False)
+        options = appsettings.analysis_options(s, box, settings, False, home(s))
     assert options.providers == frozenset() and options.keys == {}
 
 
 def test_enabled_providers_and_keys_reach_the_analysis_unless_offline(db, box, settings):
     with transaction(db) as s:
-        appsettings.set_value(s, "providers", ["virustotal", "rdap", "not-a-provider"])
-        appsettings.set_secret(s, box, "key:virustotal", "vt-key-1234")
+        appsettings.set_value(s, home(s), "providers", ["virustotal", "rdap", "not-a-provider"])
+        appsettings.set_secret(s, box, home(s), "key:virustotal", "vt-key-1234")
     with transaction(db) as s:
-        options = appsettings.analysis_options(s, box, settings, offline=False)
+        options = appsettings.analysis_options(s, box, settings, False, home(s))
         assert options.providers == frozenset({"virustotal", "rdap"})
         assert options.keys == {"virustotal": "vt-key-1234"}
-        assert appsettings.analysis_options(s, box, settings, offline=True).providers == frozenset()
+        assert appsettings.analysis_options(s, box, settings, True, home(s)).providers == frozenset()
 
 
 def test_keys_are_sealed_and_shown_masked(db, box, settings):
     with transaction(db) as s:
-        appsettings.set_secret(s, box, "key:abuseipdb", "abuse-secret-9876")
+        appsettings.set_secret(s, box, home(s), "key:abuseipdb", "abuse-secret-9876")
     with transaction(db) as s:
-        assert "abuse-secret" not in str(s.get(Setting, "secret:key:abuseipdb").value)
-        assert appsettings.public_view(s, box, settings)["keys"]["abuseipdb"] == "...9876"
+        assert "abuse-secret" not in str(s.get(Setting, (home(s), "secret:key:abuseipdb")).value)
+        assert appsettings.public_view(s, box, settings, home(s))["keys"]["abuseipdb"] == "...9876"
 
 
 def test_a_limit_set_by_an_admin_wins_over_the_environment(db, settings):
     with transaction(db) as s:
-        assert appsettings.limit(s, settings, "retention_days") == 30
-        appsettings.set_value(s, "retention_days", 7)
-        assert appsettings.limit(s, settings, "retention_days") == 7
+        assert appsettings.limit(s, settings, "retention_days", home(s)) == 30
+        appsettings.set_value(s, home(s), "retention_days", 7)
+        assert appsettings.limit(s, settings, "retention_days", home(s)) == 7
 
 
 def test_the_trait_key_is_made_once_and_kept(db, box):

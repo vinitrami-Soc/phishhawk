@@ -438,18 +438,22 @@ def _handle(services: Services, mailbox_id: int, name: str, config: dict[str, An
             db.add(MailboxItem(mailbox_id=mailbox_id, remote_id=item.remote_id, outcome="skipped"))
         else:
             sha256, mid = hashlib.sha256(item.raw).hexdigest(), _message_id_hmac(item.raw, key)
-            message = db.scalars(select(Message).where(Message.sha256 == sha256)).first()
-            known = mid and db.scalars(select(MailboxItem.id).where(
-                MailboxItem.message_id_hmac == mid, MailboxItem.outcome.in_(("imported", "duplicate")))).first()
+            # duplicates are looked for in the mailbox's own workspace only
+            message = db.scalars(select(Message).where(Message.workspace_id == mailbox.workspace_id,
+                                                       Message.sha256 == sha256)).first()
+            seen = (select(MailboxItem.id).join(Mailbox, MailboxItem.mailbox_id == Mailbox.id)
+                    .where(Mailbox.workspace_id == mailbox.workspace_id, MailboxItem.message_id_hmac == mid,
+                           MailboxItem.outcome.in_(("imported", "duplicate"))))
+            known = mid and db.scalars(seen).first()
             if message is not None or known:
                 db.add(MailboxItem(mailbox_id=mailbox_id, remote_id=item.remote_id, outcome="duplicate",
                                    message_id=message.id if message is not None else None, message_id_hmac=mid))
                 outcome = "duplicates"
             else:
                 try:
-                    submission = intake.accept(db, services.store, item.raw, source="mailbox", user_id=None,
-                                               actor="mailbox:" + name, offline=False, max_bytes=max_bytes,
-                                               mailbox_id=mailbox_id)
+                    submission = intake.accept(db, services.store, item.raw, workspace_id=mailbox.workspace_id,
+                                               source="mailbox", user_id=None, actor="mailbox:" + name,
+                                               offline=False, max_bytes=max_bytes, mailbox_id=mailbox_id)
                 except intake.IntakeError:
                     db.add(MailboxItem(mailbox_id=mailbox_id, remote_id=item.remote_id, outcome="skipped"))
                 else:
@@ -473,7 +477,8 @@ def _failed(db: Session, mailbox: Mailbox, reason: str, counts: dict[str, int]) 
     wait = dt.timedelta(minutes=mailbox.interval_minutes) * 2 ** min(mailbox.failures, 12)
     mailbox.next_poll_at = now + min(wait, BACKOFF_CAP)
     audit.record(db, "system", "mailbox_poll_failed", "mailbox", mailbox.id,
-                 {"name": mailbox.name, "reason": reason, "imported": counts.get("imported", 0)})
+                 {"name": mailbox.name, "reason": reason, "imported": counts.get("imported", 0)},
+                 workspace_id=mailbox.workspace_id)
 
 
 def poll(services: Services, mailbox_id: int, heartbeat: Callable[[], None] | None = None,

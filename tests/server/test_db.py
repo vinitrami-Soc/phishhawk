@@ -19,9 +19,9 @@ def test_sqlite_uses_wal_and_enforces_foreign_keys(settings, db):
 
 def test_a_transaction_commits_on_success_and_rolls_back_on_error(db):
     with transaction(db) as s:
-        s.add(Setting(key="kept", value=1))
+        s.add(Setting(workspace_id=0, key="kept", value=1))
     with pytest.raises(RuntimeError), transaction(db) as s:
-        s.add(Setting(key="lost", value=2))
+        s.add(Setting(workspace_id=0, key="lost", value=2))
         s.flush()
         raise RuntimeError("stop")
     with transaction(db) as s:

@@ -1,5 +1,7 @@
 """The JSON API under /api/v1: what the pages use and what IntelPulse will
-call. Every route is in the role matrix test (tests/server/test_rbac.py)."""
+call. Every route is in the role matrix test (tests/server/test_rbac.py).
+Everything is of the caller's workspace: a row named in the URL goes through
+scope.py, and a row of another workspace is 404 (tests/server/test_workspaces.py)."""
 
 from __future__ import annotations
 
@@ -12,15 +14,21 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, mailboxes, retention, views
+from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, mailboxes, retention, scope, views
 from .. import mailbox as polling
 from ..bodylimit import BATCH_FACTOR
 from ..deps import COOKIE, DB, Admin, CurrentActor, secret, services
-from ..models import Analysis, ApiToken, AuditRecord, Batch, Campaign, Mailbox, Message, Submission, User, utcnow
+from ..models import SERVER, Analysis, ApiToken, AuditRecord, Mailbox, Submission, User, Workspace, utcnow
 from .files import serve_file
 
 router = APIRouter(prefix="/api/v1")
 MB = 1024 * 1024
+
+
+def _audit(db: DB, actor: Any, action: str, object_type: str = "", object_id: object = "",
+           details: dict[str, Any] | None = None) -> None:
+    """An audit record in the caller's workspace, under the caller's name."""
+    audit.record(db, actor.label, action, object_type, object_id, details, workspace_id=actor.workspace_id)
 
 
 class Login(BaseModel):
@@ -39,11 +47,11 @@ def login_response(request: Request, db: DB, username: str, password: str) -> tu
     user = auth.check_login(db, username, password)
     if user is None:
         throttle.failed(*keys)
-        audit.record(db, username[:64] or "?", "login_failed")
+        audit.record(db, username[:64] or "?", "login_failed", workspace_id=SERVER)  # whose, nobody knows
         return JSONResponse({"error": "unauthorized", "detail": "wrong username or password"}, status_code=401)
     throttle.succeeded(*keys)
     cookie, session = auth.open_session(db, user, secret(request))
-    audit.record(db, user.username, "login")
+    audit.record(db, user.username, "login", workspace_id=user.workspace_id)
     return cookie, session.csrf_token
 
 
@@ -64,16 +72,20 @@ def create_session(request: Request, db: DB, body: Login) -> Response:
 
 
 @router.get("/session")
-def current_session(actor: CurrentActor) -> dict[str, Any]:
-    """Who is calling, for a frontend after a reload; the CSRF token too."""
+def current_session(db: DB, actor: CurrentActor) -> dict[str, Any]:
+    """Who is calling, for a frontend after a reload: their workspace, whether they own the server, and the CSRF
+    token."""
+    workspace = db.get(Workspace, actor.workspace_id)
     return {"user_id": actor.user_id, "username": actor.username, "role": actor.role, "via": actor.via,
-            "scope": actor.scope, "csrf": actor.csrf}
+            "scope": actor.scope, "csrf": actor.csrf, "owner": actor.owner,
+            "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}
+            if workspace else None}
 
 
 @router.delete("/session", status_code=204)
 def delete_session(request: Request, db: DB, actor: CurrentActor) -> Response:
     auth.close_session(db, request.cookies.get(COOKIE, ""), secret(request))
-    audit.record(db, actor.label, "logout")
+    _audit(db, actor, "logout")
     response = Response(status_code=204)
     response.delete_cookie(COOKIE, path="/")
     return response
@@ -99,7 +111,8 @@ def accept_upload(request: Request, db: DB, actor: Any, uploads: list[bytes], ra
                   offline: bool) -> dict[str, Any]:
     s = services(request)
     limit = appsettings.limit(db, s.settings, "max_upload_mb") * MB
-    common = {"user_id": actor.user_id, "actor": actor.label, "offline": offline, "max_bytes": limit}
+    common = {"workspace_id": actor.workspace_id, "user_id": actor.user_id, "actor": actor.label,
+              "offline": offline, "max_bytes": limit}
     try:
         if not uploads:
             return submission_view(db, intake.accept(db, s.store, raw.encode(), source="paste", **common))
@@ -122,27 +135,20 @@ def submission_view(db: DB, submission: Submission) -> dict[str, Any]:
 
 @router.get("/submissions/{submission_id}")
 def get_submission(db: DB, actor: CurrentActor, submission_id: int) -> dict[str, Any]:
-    submission = db.get(Submission, submission_id)
-    if submission is None:
-        raise HTTPException(404, "no such submission")
-    return submission_view(db, submission)
+    return submission_view(db, scope.submission(db, actor, submission_id))
 
 
 @router.get("/batches/{batch_id}")
 def get_batch(db: DB, actor: CurrentActor, batch_id: int) -> dict[str, Any]:
-    batch = db.get(Batch, batch_id)
-    if batch is None:
-        raise HTTPException(404, "no such batch")
-    return batches.view(db, batch, views.usernames(db).get(batch.user_id or 0))
+    batch = scope.batch(db, actor, batch_id)
+    return batches.view(db, batch, views.usernames(db, actor.workspace_id).get(batch.user_id or 0))
 
 
 @router.get("/batches/{batch_id}/files/{name}")
 def get_batch_file(request: Request, db: DB, actor: CurrentActor, batch_id: int, name: str,
                    download: bool = False) -> Response:
-    batch = db.get(Batch, batch_id)
-    if batch is None:
-        raise HTTPException(404, "no such batch")
-    audit.record(db, actor.label, "download", "batch", batch_id, {"file": name})
+    batch = scope.batch(db, actor, batch_id)
+    _audit(db, actor, "download", "batch", batch_id, {"file": name})
     return serve_file(services(request).store, batch.files, name, download)
 
 
@@ -150,14 +156,12 @@ def get_batch_file(request: Request, db: DB, actor: CurrentActor, batch_id: int,
 def list_campaigns(db: DB, actor: CurrentActor) -> list[dict[str, Any]]:
     """Largest first. A shared subject or display name has the value null here: the campaign itself shows it,
     while one of its messages' content still exists."""
-    return campaigns.listing(db)
+    return campaigns.listing(db, actor.workspace_id)
 
 
 @router.get("/campaigns/{campaign_id}")
 def get_campaign(request: Request, db: DB, actor: CurrentActor, campaign_id: int) -> dict[str, Any]:
-    campaign = db.get(Campaign, campaign_id)
-    if campaign is None:
-        raise HTTPException(404, "no such campaign")
+    campaign = scope.campaign(db, actor, campaign_id)
     s = services(request)
     return campaigns.detail(db, s.store, campaign, appsettings.trait_key(db, s.box))
 
@@ -168,19 +172,13 @@ def list_analyses(request: Request, db: DB, actor: CurrentActor, q: str = "", ve
                   since: dt.date | None = None, until: dt.date | None = None) -> list[dict[str, Any]]:
     """Newest first, 50 at a time. q searches SHA-256, report ID and indicators; source is upload, paste or
     batch; user a user's ID; since and until are days (UTC), both included."""
-    return views.listing(db, services(request).store, q, verdict, offset, source, user, since, until)
-
-
-def _found(db: DB, analysis_id: int) -> tuple[Any, Message, Submission]:
-    found = views.find(db, analysis_id)
-    if found is None:
-        raise HTTPException(404, "no such analysis")
-    return found
+    return views.listing(db, services(request).store, actor.workspace_id, q, verdict, offset, source, user, since,
+                         until)
 
 
 @router.get("/analyses/{analysis_id}")
 def get_analysis(request: Request, db: DB, actor: CurrentActor, analysis_id: int) -> dict[str, Any]:
-    analysis, message, submission = _found(db, analysis_id)
+    analysis, message, submission = scope.analysis(db, actor, analysis_id)
     return views.summary(services(request).store, analysis, message, submission, with_report=True,
                          submitter=views.submitter_of(db, submission))
 
@@ -188,21 +186,22 @@ def get_analysis(request: Request, db: DB, actor: CurrentActor, analysis_id: int
 @router.get("/analyses/{analysis_id}/files/{name}")
 def get_file(request: Request, db: DB, actor: CurrentActor, analysis_id: int, name: str,
              download: bool = False) -> Response:
-    analysis, _, _ = _found(db, analysis_id)
-    audit.record(db, actor.label, "download", "analysis", analysis_id, {"file": name})
+    analysis, _, _ = scope.analysis(db, actor, analysis_id)
+    _audit(db, actor, "download", "analysis", analysis_id, {"file": name})
     return serve_file(services(request).store, analysis.files, name, download)
 
 
 @router.post("/analyses/{analysis_id}/reanalyze", status_code=202)
 def reanalyze(db: DB, actor: CurrentActor, analysis_id: int) -> dict[str, Any]:
-    _, message, old = _found(db, analysis_id)
+    _, message, old = scope.analysis(db, actor, analysis_id)
     if message.raw_blob is None:
         raise HTTPException(410, "the message was deleted after the retention period")
-    submission = Submission(message_id=message.id, user_id=actor.user_id, source=old.source, offline=old.offline)
+    submission = Submission(workspace_id=message.workspace_id, message_id=message.id, user_id=actor.user_id,
+                            source=old.source, offline=old.offline)
     db.add(submission)
     db.flush()
     jobs.enqueue(db, "analyze", {"submission_id": submission.id})
-    audit.record(db, actor.label, "reanalyze", "analysis", analysis_id, {"submission": submission.id})
+    _audit(db, actor, "reanalyze", "analysis", analysis_id, {"submission": submission.id})
     return submission_view(db, submission)
 
 
@@ -212,58 +211,52 @@ def _session_only(actor: Any, what: str) -> None:
         raise HTTPException(403, "an API token cannot %s" % what)
 
 
-def _message(db: DB, message_id: int) -> Message:
-    message = db.get(Message, message_id)
-    if message is None:
-        raise HTTPException(404, "no such message")
-    return message
-
-
 @router.get("/messages/{message_id}/raw")
 def get_raw(request: Request, db: DB, actor: CurrentActor, message_id: int) -> Response:
     _session_only(actor, "download a raw message")
-    message = _message(db, message_id)
+    message = scope.message(db, actor, message_id)
     if not actor.is_admin and not views.is_owner(db, message_id, actor.user_id):
         raise HTTPException(403, "only the submitter or an admin can download the raw message")
     if message.raw_blob is None:
         raise HTTPException(410, "deleted after the retention period")
-    audit.record(db, actor.label, "download_raw", "message", message_id)
+    _audit(db, actor, "download_raw", "message", message_id)
     return Response(services(request).store.get(message.raw_blob), media_type="application/octet-stream",
                     headers={"Content-Disposition": 'attachment; filename="%s.eml"' % message.sha256[:16]})
 
 
 @router.delete("/messages/{message_id}")
 def delete_message(request: Request, db: DB, actor: CurrentActor, message_id: int,
-                   scope: Annotated[str, Query(pattern="^(tier1|all)$")] = "tier1") -> dict[str, Any]:
+                   extent: Annotated[str, Query(alias="scope", pattern="^(tier1|all)$")] = "tier1",
+                   ) -> dict[str, Any]:
     _session_only(actor, "delete messages")
-    message, store = _message(db, message_id), services(request).store
+    message, store = scope.message(db, actor, message_id), services(request).store
     if message.hold:
         raise HTTPException(409, "this message is on hold; an admin must release it first")
-    if scope == "all":
+    if extent == "all":
         if not actor.is_admin:
             raise HTTPException(403, "only an admin can delete completely")
         sha256 = retention.delete_completely(db, store, message)
-        campaigns.queue_rebuild(db)  # its record is gone
-        audit.record(db, actor.label, "delete_completely", "message", message_id, {"sha256": sha256})
+        campaigns.queue_rebuild(db, message.workspace_id)  # its record is gone
+        _audit(db, actor, "delete_completely", "message", message_id, {"sha256": sha256})
         return {"deleted": "all"}
     if not actor.is_admin and not views.is_owner(db, message_id, actor.user_id):
         raise HTTPException(403, "only the submitter or an admin can delete this message")
     retention.delete_tier1(db, store, message, "manual")
-    audit.record(db, actor.label, "delete_tier1", "message", message_id, {"sha256": message.sha256})
+    _audit(db, actor, "delete_tier1", "message", message_id, {"sha256": message.sha256})
     return {"deleted": "tier1"}
 
 
 @router.post("/messages/{message_id}/hold")
 def hold(db: DB, actor: Admin, message_id: int) -> dict[str, Any]:
-    _message(db, message_id).hold = True
-    audit.record(db, actor.label, "hold", "message", message_id)
+    scope.message(db, actor, message_id).hold = True
+    _audit(db, actor, "hold", "message", message_id)
     return {"hold": True}
 
 
 @router.delete("/messages/{message_id}/hold")
 def release(db: DB, actor: Admin, message_id: int) -> dict[str, Any]:
-    _message(db, message_id).hold = False
-    audit.record(db, actor.label, "release", "message", message_id)
+    scope.message(db, actor, message_id).hold = False
+    _audit(db, actor, "release", "message", message_id)
     return {"hold": False}
 
 
@@ -283,15 +276,15 @@ class SettingsPatch(BaseModel):
 @router.get("/settings")
 def get_settings(request: Request, db: DB, actor: Admin) -> dict[str, Any]:
     s = services(request)
-    return appsettings.public_view(db, s.box, s.settings)
+    return appsettings.public_view(db, s.box, s.settings, actor.workspace_id)
 
 
 @router.patch("/settings")
 def patch_settings(request: Request, db: DB, actor: Admin, body: SettingsPatch) -> dict[str, Any]:
     s = services(request)
-    changed = apply_settings(db, s, body)
-    audit.record(db, actor.label, "settings", details={"changed": changed})
-    return appsettings.public_view(db, s.box, s.settings)
+    changed = apply_settings(db, s, body, actor)
+    _audit(db, actor, "settings", details={"changed": changed})
+    return appsettings.public_view(db, s.box, s.settings, actor.workspace_id)
 
 
 DOMAIN = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]")
@@ -309,8 +302,9 @@ def domain(value: str) -> str:
     return name
 
 
-def apply_settings(db: DB, s: Any, body: SettingsPatch) -> list[str]:
-    """Checks everything first, so a rejected value leaves every setting as it was."""
+def apply_settings(db: DB, s: Any, body: SettingsPatch, actor: Any) -> list[str]:
+    """The caller's workspace's settings, and the server's limits for its owner. Checks everything first, so a
+    rejected value leaves every setting as it was."""
     lists: dict[str, list[str]] = {}
     for name in appsettings.LISTS:
         value = getattr(body, name)
@@ -321,18 +315,24 @@ def apply_settings(db: DB, s: Any, body: SettingsPatch) -> list[str]:
     for name, number in limits.items():
         if not 1 <= number <= 100000:
             raise HTTPException(422, "%s must be between 1 and 100000" % name)
+    for name in appsettings.SERVER_LIMITS:
+        if name in limits and not actor.owner:
+            if limits[name] != appsettings.limit(db, s.settings, name):  # the form sends every limit
+                raise HTTPException(403, "%s is the whole server's: only its owner can change it" % name)
+            del limits[name]
     for provider in body.keys or {}:
         if provider not in appsettings.KEYED:
             raise HTTPException(422, "no API key for %s" % provider)
     changed: list[str] = []
     for name, values in lists.items():
-        appsettings.set_value(db, name, values)
+        appsettings.set_value(db, actor.workspace_id, name, values)
         changed.append(name)
     for name, number in limits.items():
-        appsettings.set_value(db, name, number)
+        whose = SERVER if name in appsettings.SERVER_LIMITS else actor.workspace_id
+        appsettings.set_value(db, whose, name, number)
         changed.append(name)
     for provider, key in (body.keys or {}).items():
-        appsettings.set_secret(db, s.box, "key:" + provider, key.strip())
+        appsettings.set_secret(db, s.box, actor.workspace_id, "key:" + provider, key.strip())
         changed.append("key:" + provider)  # the key itself is never audited
     return changed
 
@@ -356,24 +356,23 @@ def _user_view(user: User) -> dict[str, Any]:
 
 @router.get("/users")
 def list_users(db: DB, actor: Admin) -> list[dict[str, Any]]:
-    return [_user_view(u) for u in db.scalars(select(User).order_by(User.username))]
+    return [_user_view(u) for u in db.scalars(select(User).where(User.workspace_id == actor.workspace_id)
+                                              .order_by(User.username))]
 
 
 @router.post("/users", status_code=201)
 def create_user(db: DB, actor: Admin, body: NewUser) -> dict[str, Any]:
     try:
-        user = auth.create_user(db, body.username, body.password, body.role)
+        user = auth.create_user(db, body.username, body.password, body.role, workspace_id=actor.workspace_id)
     except auth.AuthError as exc:
         raise HTTPException(422, str(exc)) from exc
-    audit.record(db, actor.label, "user_create", "user", user.id, {"username": user.username, "role": user.role})
+    _audit(db, actor, "user_create", "user", user.id, {"username": user.username, "role": user.role})
     return _user_view(user)
 
 
 @router.patch("/users/{user_id}")
 def patch_user(db: DB, actor: Admin, user_id: int, body: UserPatch) -> dict[str, Any]:
-    user = db.get(User, user_id)
-    if user is None:
-        raise HTTPException(404, "no such user")
+    user = scope.user(db, actor, user_id)
     if user.id == actor.user_id and (body.disabled or (body.role and body.role != "admin")):
         raise HTTPException(422, "you cannot disable yourself or remove your own admin role")
     if body.role is not None:
@@ -391,8 +390,8 @@ def patch_user(db: DB, actor: Admin, user_id: int, body: UserPatch) -> dict[str,
             raise HTTPException(422, str(exc)) from exc
         # whoever else holds a session of this account is out; an admin changing their own password stays in
         auth.end_sessions(db, user.id, keep=actor.session if user.id == actor.user_id else "")
-    audit.record(db, actor.label, "user_change", "user", user.id,
-                 {"role": body.role, "disabled": body.disabled, "password_changed": bool(body.password)})
+    _audit(db, actor, "user_change", "user", user.id,
+           {"role": body.role, "disabled": body.disabled, "password_changed": bool(body.password)})
     return _user_view(user)
 
 
@@ -406,29 +405,26 @@ class NewToken(BaseModel):
 def list_tokens(db: DB, actor: Admin) -> list[dict[str, Any]]:
     return [{"id": t.id, "name": t.name, "scope": t.scope, "user_id": t.user_id,
              "created_at": t.created_at.isoformat(), "revoked": t.revoked_at is not None}
-            for t in db.scalars(select(ApiToken).order_by(ApiToken.id))]
+            for t in db.scalars(select(ApiToken).join(User, ApiToken.user_id == User.id)
+                                .where(User.workspace_id == actor.workspace_id).order_by(ApiToken.id))]
 
 
 @router.post("/tokens", status_code=201)
 def create_token(db: DB, actor: Admin, body: NewToken) -> dict[str, Any]:
-    user = db.get(User, body.user_id)
-    if user is None:
-        raise HTTPException(404, "no such user")
+    user = scope.user(db, actor, body.user_id)
     try:
         token = auth.create_token(db, user, body.name, body.scope)
     except auth.AuthError as exc:
         raise HTTPException(422, str(exc)) from exc
-    audit.record(db, actor.label, "token_create", "user", user.id, {"name": body.name, "scope": body.scope})
+    _audit(db, actor, "token_create", "user", user.id, {"name": body.name, "scope": body.scope})
     return {"token": token, "note": "shown once: store it now"}
 
 
 @router.delete("/tokens/{token_id}")
 def revoke_token(db: DB, actor: Admin, token_id: int) -> dict[str, Any]:
-    token = db.get(ApiToken, token_id)
-    if token is None:
-        raise HTTPException(404, "no such token")
+    token = scope.token(db, actor, token_id)
     token.revoked_at = token.revoked_at or utcnow()
-    audit.record(db, actor.label, "token_revoke", "token", token_id, {"name": token.name})
+    _audit(db, actor, "token_revoke", "token", token_id, {"name": token.name})
     return {"revoked": True}
 
 
@@ -450,51 +446,45 @@ class MailboxPatch(BaseModel):
     secret: str | None = None  # empty or left out: kept
 
 
-def _mailbox(db: DB, mailbox_id: int) -> Mailbox:
-    mailbox = db.get(Mailbox, mailbox_id)
-    if mailbox is None:
-        raise HTTPException(404, "no such mailbox")
-    return mailbox
-
-
 @router.get("/mailboxes")
 def list_mailboxes(db: DB, actor: Admin) -> list[dict[str, Any]]:
-    return [mailboxes.view(m) for m in db.scalars(select(Mailbox).order_by(Mailbox.name))]
+    return [mailboxes.view(m) for m in db.scalars(select(Mailbox).where(Mailbox.workspace_id == actor.workspace_id)
+                                                  .order_by(Mailbox.name))]
 
 
 @router.post("/mailboxes", status_code=201)
 def create_mailbox(request: Request, db: DB, actor: Admin, body: NewMailbox) -> dict[str, Any]:
     try:
-        mailbox = mailboxes.create(db, services(request).box, body.model_dump())
+        mailbox = mailboxes.create(db, services(request).box, body.model_dump(), actor.workspace_id)
     except mailboxes.MailboxError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    audit.record(db, actor.label, "mailbox_create", "mailbox", mailbox.id,
-                 {"name": mailbox.name, "kind": mailbox.kind, "config": mailbox.config})  # never the secret
+    _audit(db, actor, "mailbox_create", "mailbox", mailbox.id,
+           {"name": mailbox.name, "kind": mailbox.kind, "config": mailbox.config})  # never the secret
     return mailboxes.view(mailbox)
 
 
 @router.get("/mailboxes/{mailbox_id}")
 def get_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
-    return mailboxes.view(_mailbox(db, mailbox_id))
+    return mailboxes.view(scope.mailbox(db, actor, mailbox_id))
 
 
 @router.patch("/mailboxes/{mailbox_id}")
 def patch_mailbox(request: Request, db: DB, actor: Admin, mailbox_id: int, body: MailboxPatch) -> dict[str, Any]:
-    mailbox = _mailbox(db, mailbox_id)
+    mailbox = scope.mailbox(db, actor, mailbox_id)
     try:
         changed = mailboxes.update(db, services(request).box, mailbox, body.model_dump(exclude_none=True))
     except mailboxes.MailboxError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
-    audit.record(db, actor.label, "mailbox_change", "mailbox", mailbox.id,
-                 {"name": mailbox.name, "changed": changed})
+    _audit(db, actor, "mailbox_change", "mailbox", mailbox.id,
+           {"name": mailbox.name, "changed": changed})
     return mailboxes.view(mailbox)
 
 
 @router.delete("/mailboxes/{mailbox_id}")
 def delete_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
     """Its settings, credential, cursor and what it has seen; the messages it imported stay."""
-    mailbox = _mailbox(db, mailbox_id)
-    audit.record(db, actor.label, "mailbox_delete", "mailbox", mailbox.id, {"name": mailbox.name})
+    mailbox = scope.mailbox(db, actor, mailbox_id)
+    _audit(db, actor, "mailbox_delete", "mailbox", mailbox.id, {"name": mailbox.name})
     db.delete(mailbox)
     return {"deleted": True}
 
@@ -502,18 +492,18 @@ def delete_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
 @router.post("/mailboxes/{mailbox_id}/poll", status_code=202)
 def poll_mailbox(db: DB, actor: Admin, mailbox_id: int) -> dict[str, Any]:
     """Poll now: queued unless a poll is already waiting."""
-    mailbox = _mailbox(db, mailbox_id)
+    mailbox = scope.mailbox(db, actor, mailbox_id)
     if not mailbox.enabled:
         raise HTTPException(409, "the mailbox is switched off: switch it on first")
     queued = polling.queue_poll(db, mailbox.id)
-    audit.record(db, actor.label, "mailbox_poll_now", "mailbox", mailbox.id,
-                 {"name": mailbox.name, "queued": queued})
+    _audit(db, actor, "mailbox_poll_now", "mailbox", mailbox.id,
+           {"name": mailbox.name, "queued": queued})
     return {"queued": queued}
 
 
 @router.get("/audit")
 def list_audit(db: DB, actor: CurrentActor, offset: Annotated[int, Query(ge=0)] = 0) -> list[dict[str, Any]]:
-    query = select(AuditRecord).order_by(AuditRecord.id.desc())
+    query = select(AuditRecord).where(audit.visible_to(db, actor)).order_by(AuditRecord.id.desc())
     if not actor.is_admin:
         query = query.where(AuditRecord.actor == actor.label)
     return [{"id": r.id, "at": r.at.isoformat(), "actor": r.actor, "action": r.action,

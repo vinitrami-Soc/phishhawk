@@ -18,7 +18,7 @@ from argon2.exceptions import InvalidHashError, VerificationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session as DbSession
 
-from .models import ApiToken, Session, User, utcnow
+from .models import ApiToken, Session, User, Workspace, utcnow
 
 ROLES = ("admin", "analyst")
 TOKEN_SCOPES = ("read", "submit")
@@ -41,6 +41,8 @@ class Actor:
     csrf: str = ""
     label: str = ""  # how the audit log names this actor
     session: str = ""  # the session's stored ID, when via is "session"
+    workspace_id: int = 0  # everything this actor reads or changes is in this workspace
+    owner: bool = False  # runs the server
 
     @property
     def is_admin(self) -> bool:
@@ -56,7 +58,23 @@ def session_id(secret: str, cookie: str) -> str:
     return hmac.new(secret.encode("utf-8"), cookie.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def create_user(db: DbSession, username: str, password: str, role: str) -> User:
+DEFAULT_WORKSPACE = "Default organization"
+
+
+def default_workspace(db: DbSession) -> int:
+    """The organization an upgraded server's data went to (migration 0004), made here if there is none yet: users
+    created without a workspace (the CLI's create-admin, tests) join it."""
+    found = db.scalars(select(Workspace.id).where(Workspace.kind == "organization").order_by(Workspace.id)).first()
+    if found is not None:
+        return found
+    workspace = Workspace(name=DEFAULT_WORKSPACE, kind="organization")
+    db.add(workspace)
+    db.flush()
+    return workspace.id
+
+
+def create_user(db: DbSession, username: str, password: str, role: str, workspace_id: int | None = None) -> User:
+    """The server's first admin becomes its owner."""
     if not USERNAME_RE.match(username):
         raise AuthError("usernames are 3 to 64 lowercase letters, digits, dots, dashes or underscores")
     if len(password) < MIN_PASSWORD:
@@ -65,7 +83,10 @@ def create_user(db: DbSession, username: str, password: str, role: str) -> User:
         raise AuthError("role must be admin or analyst")
     if db.scalars(select(User).where(User.username == username)).first() is not None:
         raise AuthError("that username is taken")
-    user = User(username=username, password_hash=_hasher.hash(password), role=role)
+    owned = db.scalars(select(User.id).where(User.owner.is_(True)).limit(1)).first() is not None
+    user = User(username=username, password_hash=_hasher.hash(password), role=role,
+                workspace_id=default_workspace(db) if workspace_id is None else workspace_id,
+                owner=role == "admin" and not owned)
     db.add(user)
     db.flush()
     return user
@@ -108,7 +129,7 @@ def find_session(db: DbSession, cookie: str, secret: str, idle_minutes: int) -> 
         return None
     session.last_seen_at = now
     return Actor(user.id, user.username, user.role, "session", "full", session.csrf_token, user.username,
-                 session.id)
+                 session.id, user.workspace_id, user.owner)
 
 
 def close_session(db: DbSession, cookie: str, secret: str) -> None:
@@ -144,7 +165,8 @@ def find_token(db: DbSession, token: str) -> Actor | None:
     if user is None or user.disabled:
         return None
     row.last_used_at = utcnow()
-    return Actor(user.id, user.username, user.role, "token", row.scope, "", "token:%s" % row.name)
+    return Actor(user.id, user.username, user.role, "token", row.scope, "", "token:%s" % row.name,
+                 workspace_id=user.workspace_id, owner=user.owner)
 
 
 class LoginThrottle:

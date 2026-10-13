@@ -7,8 +7,9 @@ from sqlalchemy import select
 
 from phishhawk.server import intake, jobs, worker
 from phishhawk.server.db import transaction
-from phishhawk.server.models import Analysis, AuditRecord, Job, Message
+from phishhawk.server.models import SERVER, Analysis, AuditRecord, Job, Message
 
+from .serverkit import home
 from conftest import sample
 
 
@@ -17,7 +18,7 @@ def _submit(services):
         raw = handle.read()
     with transaction(services.sessions) as s:
         return intake.accept(s, services.store, raw, source="upload", user_id=None, actor="alice", offline=True,
-                             max_bytes=25 * 1024 * 1024).id
+                             workspace_id=home(s), max_bytes=25 * 1024 * 1024).id
 
 
 def _sweeps(services):
@@ -49,8 +50,13 @@ def test_the_sweep_deletes_tier1_after_the_retention_period_and_audits_the_count
     with transaction(services.sessions) as s:
         assert s.scalars(select(Message)).one().raw_blob is None
         assert s.scalars(select(Analysis)).one().verdict == "LIKELY PHISHING"  # tier 2 stays
-        entry = s.scalars(select(AuditRecord).where(AuditRecord.action == "retention_sweep")).one()
+        # the workspace's own record, which its admins see, and the server's
+        entry = s.scalars(select(AuditRecord).where(AuditRecord.action == "retention_sweep",
+                                                    AuditRecord.workspace_id != SERVER)).one()
         assert (entry.actor, entry.details) == ("system", {"deleted": 1, "days": 30})
+        server = s.scalars(select(AuditRecord).where(AuditRecord.action == "retention_sweep",
+                                                     AuditRecord.workspace_id == SERVER)).one()
+        assert server.details == {"deleted": 1}
 
 
 def test_a_job_whose_worker_stopped_is_queued_again_by_the_schedule(services):

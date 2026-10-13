@@ -1340,7 +1340,7 @@
         "summary": "Delete Session"
       },
       "get": {
-        "description": "Who is calling, for a frontend after a reload; the CSRF token too.",
+        "description": "Who is calling, for a frontend after a reload: their workspace, whether they own the server, and the CSRF\ntoken.",
         "operationId": "current_session_api_v1_session_get",
         "responses": {
           "200": {

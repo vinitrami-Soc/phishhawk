@@ -61,4 +61,6 @@ def test_the_session_endpoint_says_who_is_calling(alice, admin, anon):
     alice_id = next(u["id"] for u in admin.get("/api/v1/users").json() if u["username"] == "alice")
     assert alice.get("/api/v1/session").json() == {"user_id": alice_id, "username": "alice", "role": "analyst",
                                                    "via": "session", "scope": "full",
-                                                   "csrf": alice.headers["X-CSRF-Token"]}
+                                                   "csrf": alice.headers["X-CSRF-Token"], "owner": False,
+                                                   "workspace": {"id": 1, "name": "Default organization",
+                                                                 "kind": "organization"}}

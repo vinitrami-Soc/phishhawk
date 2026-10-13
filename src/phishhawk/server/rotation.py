@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from . import audit
 from .crypto import Box, DecryptError
-from .models import Analysis, Batch, Mailbox, Message, Setting
+from .models import SERVER, Analysis, Batch, Mailbox, Message, Setting
 from .store import BlobStore
 
 
@@ -60,5 +60,5 @@ def rotate(db: Session, store: BlobStore, new_box: Box, actor: str) -> dict[str,
     resealed += sum(_reseal_mailbox(m, store.box, new_box) for m in db.scalars(select(Mailbox)) if m.secret)
     counts = {"blobs": blobs, "secrets": resealed}
     if blobs or resealed:
-        audit.record(db, actor, "rotate_key", details=counts)
+        audit.record(db, actor, "rotate_key", details=counts, workspace_id=SERVER)
     return counts

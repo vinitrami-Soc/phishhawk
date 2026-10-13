@@ -8,11 +8,12 @@ import datetime as dt
 import time
 from collections.abc import Callable
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import appsettings, audit, auth, batches, campaigns, jobs, mailbox
 from .db import transaction
-from .models import Job, Submission, utcnow
+from .models import SERVER, Campaign, Job, Submission, Workspace, utcnow
 from .processing import Services, process_submission
 from .retention import sweep
 
@@ -34,9 +35,11 @@ def schedule(services: Services) -> None:
         last = jobs.last_finished(db, "retention_sweep")
         if not jobs.pending(db, "retention_sweep") and (last is None or utcnow() - last >= SWEEP_EVERY):
             jobs.enqueue(db, "retention_sweep")
-        last = jobs.last_finished(db, "campaign_rebuild")
-        if last is not None and utcnow() - last >= SWEEP_EVERY:  # messages leave the window as time passes
-            campaigns.queue_rebuild(db)
+        # messages leave the window as time passes: a workspace's campaigns are made again hourly
+        stale = (select(Campaign.workspace_id).group_by(Campaign.workspace_id)
+                 .having(func.max(Campaign.rebuilt_at) <= utcnow() - SWEEP_EVERY))
+        for workspace_id in db.scalars(stale).all():
+            campaigns.queue_rebuild(db, workspace_id)
         for mailbox_id in mailbox.due(db):
             mailbox.queue_poll(db, mailbox_id)
 
@@ -63,13 +66,24 @@ def run_one(services: Services) -> bool:
             mailbox.poll(services, int(payload["mailbox_id"]), beat)
         elif kind == "campaign_rebuild":
             with transaction(services.sessions) as db:
-                campaigns.rebuild(db, appsettings.limit(db, services.settings, "campaign_window_days"))
+                # a job queued before workspaces names none: every workspace is rebuilt
+                targets = ([payload["workspace_id"]] if "workspace_id" in payload
+                           else list(db.scalars(select(Workspace.id))))
+                for workspace_id in targets:
+                    campaigns.rebuild(db, workspace_id, appsettings.limit(db, services.settings,
+                                                                          "campaign_window_days", workspace_id))
         elif kind == "retention_sweep":
             with transaction(services.sessions) as db:
-                days = appsettings.limit(db, services.settings, "retention_days")
-                count = sweep(db, services.store, days)
+                total = 0
+                for workspace_id in db.scalars(select(Workspace.id)).all():
+                    days = appsettings.limit(db, services.settings, "retention_days", workspace_id)
+                    count = sweep(db, services.store, days, workspace_id)
+                    total += count
+                    if count:  # the workspace's admins see what went
+                        audit.record(db, "system", "retention_sweep", details={"deleted": count, "days": days},
+                                     workspace_id=workspace_id)
                 auth.end_idle_sessions(db, services.settings.session_idle_minutes)
-                audit.record(db, "system", "retention_sweep", details={"deleted": count, "days": days})
+                audit.record(db, "system", "retention_sweep", details={"deleted": total}, workspace_id=SERVER)
     except Exception as exc:  # a bug in a handler must not stop the worker
         error = "%s: %s" % (type(exc).__name__, exc)
         stopped = "the analysis stopped: %s" % type(exc).__name__  # its text may quote the message

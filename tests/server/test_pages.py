@@ -11,6 +11,7 @@ from phishhawk.server.db import transaction
 from phishhawk.server.models import AuditRecord, Message
 from phishhawk.server.security import REPORT_CSP
 
+from .serverkit import home
 from conftest import sample
 
 
@@ -78,9 +79,9 @@ def test_the_settings_form_enables_providers_keeps_keys_masked_and_sets_limits(a
     page = admin.get("/settings").text
     assert "...1234" in page and key not in page
     with transaction(services.sessions) as s:
-        assert appsettings.get_value(s, "providers") == ["virustotal"]
-        assert appsettings.get_value(s, "protected_domains") == ["example-corp.co.uk", "example.org"]
-        assert appsettings.limit(s, services.settings, "retention_days") == 7
+        assert appsettings.get_value(s, home(s), "providers") == ["virustotal"]
+        assert appsettings.get_value(s, home(s), "protected_domains") == ["example-corp.co.uk", "example.org"]
+        assert appsettings.limit(s, services.settings, "retention_days", home(s)) == 7
         assert s.scalars(select(AuditRecord).where(AuditRecord.action == "settings")).one()
 
 

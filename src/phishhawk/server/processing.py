@@ -62,7 +62,8 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
             submission.status, submission.error = "failed", "the message was deleted before it was analysed"
             return
         raw = s.store.get(message.raw_blob)
-        options = appsettings.analysis_options(db, s.box, s.settings, submission.offline)
+        options = appsettings.analysis_options(db, s.box, s.settings, submission.offline, submission.workspace_id)
+        workspace_id = submission.workspace_id
         submission.status = "running"
     try:
         result = run_limited(child_analyze, (raw, "submission %d" % submission_id, options),
@@ -74,7 +75,8 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
             submission = db.get(Submission, submission_id)
             if submission is not None:
                 submission.status, submission.error = "failed", reason
-            audit.record(db, "system", "analyze_failed", "submission", submission_id, {"reason": reason})
+            audit.record(db, "system", "analyze_failed", "submission", submission_id, {"reason": reason},
+                         workspace_id=workspace_id)
         return
     data_blob = s.store.put(json.dumps(result["data"], ensure_ascii=False).encode("utf-8"))
     state_blob = s.store.put(result["state"])
@@ -87,7 +89,8 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
             for blob in [data_blob, state_blob] + [f["blob"] for f in files]:
                 s.store.delete(blob)
             return
-        analysis = Analysis(message_id=message.id, submission_id=submission.id,
+        analysis = Analysis(workspace_id=submission.workspace_id, message_id=message.id,
+                            submission_id=submission.id,
                             engine_version=summary["engine_version"], report_id=summary["report_id"],
                             verdict=summary["verdict"], score=summary["score"], providers=result["providers"],
                             lookups=result["lookups"], techniques=summary["techniques"],
@@ -100,7 +103,8 @@ def process_submission(services: Services, submission_id: int, heartbeat: Any = 
         message.sender, message.sender_domain = summary["sender"], summary["sender_domain"]
         message.recipient_count = summary["recipient_count"]
         submission.status, submission.error = "done", ""
-        campaigns.queue_rebuild(db)
+        campaigns.queue_rebuild(db, submission.workspace_id)
         audit.record(db, "system", "analyze", "analysis", analysis.id,
                      {"submission": submission.id, "verdict": analysis.verdict,
-                      "providers": result["providers"], "lookups": len(result["lookups"])})
+                      "providers": result["providers"], "lookups": len(result["lookups"])},
+                     workspace_id=submission.workspace_id)

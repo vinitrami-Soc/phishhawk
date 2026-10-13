@@ -11,10 +11,10 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
-from .. import appsettings, auth, mailboxes, views
+from .. import appsettings, audit, auth, mailboxes, scope, views
 from ..app import html_response
 from ..deps import COOKIE, DB, Admin, CurrentActor, optional_actor, services
-from ..models import Analysis, ApiToken, AuditRecord, Mailbox, Submission, User
+from ..models import Analysis, ApiToken, AuditRecord, Mailbox, User
 from . import api
 
 router = APIRouter(include_in_schema=False)  # the API is documented; pages are not
@@ -56,7 +56,7 @@ def logout(request: Request, db: DB, actor: CurrentActor) -> Response:
 
 @router.get("/")
 def home(request: Request, db: DB, actor: CurrentActor) -> Response:
-    recent = views.listing(db, services(request).store)[:10]
+    recent = views.listing(db, services(request).store, actor.workspace_id)[:10]
     return html_response(request, "home.html", {"actor": actor, "recent": recent, "error": ""})
 
 
@@ -68,7 +68,7 @@ async def submit(request: Request, db: DB, actor: CurrentActor,
         outcome = api.accept_upload(request, db, actor, await api.read_uploads(request, db, list(files or [])),
                                     raw, offline)
     except HTTPException as exc:
-        recent = views.listing(db, services(request).store)[:10]
+        recent = views.listing(db, services(request).store, actor.workspace_id)[:10]
         return html_response(request, "home.html", {"actor": actor, "recent": recent, "error": exc.detail},
                              exc.status_code)
     if "submission_ids" in outcome:
@@ -89,10 +89,7 @@ def batch_file(request: Request, db: DB, actor: CurrentActor, batch_id: int, nam
 
 @router.get("/submissions/{submission_id}")
 def submission_page(request: Request, db: DB, actor: CurrentActor, submission_id: int) -> Response:
-    submission = db.get(Submission, submission_id)
-    if submission is None:
-        raise HTTPException(404, "no such submission")
-    view = api.submission_view(db, submission)
+    view = api.submission_view(db, scope.submission(db, actor, submission_id))
     if view["analysis_id"]:
         return _see_other("/analyses/%d" % view["analysis_id"])
     return html_response(request, "submission.html", {"actor": actor, "submission": view})
@@ -111,10 +108,12 @@ def queue(request: Request, db: DB, actor: CurrentActor, q: str = "", verdict: s
           offset: Annotated[int, Query(ge=0)] = 0, source: str = "", user: str = "", since: str = "",
           until: str = "") -> Response:
     chosen = int(user) if user.isdigit() else None
-    rows = views.listing(db, services(request).store, q, verdict, offset, source, chosen, _day(since), _day(until))
+    rows = views.listing(db, services(request).store, actor.workspace_id, q, verdict, offset, source, chosen,
+                         _day(since), _day(until))
     filters = {"q": q, "verdict": verdict, "source": source, "user": user, "since": since, "until": until}
     return html_response(request, "queue.html", {"actor": actor, "rows": rows, "verdicts": VERDICTS,
-                                                 "sources": SOURCES, "users": views.usernames(db),
+                                                 "sources": SOURCES,
+                                                 "users": views.usernames(db, actor.workspace_id),
                                                  "offset": offset, "page": views.PAGE, "f": filters,
                                                  "query": urlencode({k: v for k, v in filters.items() if v})})
 
@@ -132,10 +131,7 @@ def campaign_page(request: Request, db: DB, actor: CurrentActor, campaign_id: in
 
 @router.get("/analyses/{analysis_id}")
 def analysis_page(request: Request, db: DB, actor: CurrentActor, analysis_id: int) -> Response:
-    found = views.find(db, analysis_id)
-    if found is None:
-        raise HTTPException(404, "no such analysis")
-    analysis, message, submission = found
+    analysis, message, submission = scope.analysis(db, actor, analysis_id)
     view = views.summary(services(request).store, analysis, message, submission)
     report = next((f for f in view["files"] if f["kind"] == "html"), None)
     can_delete = actor.is_admin or views.is_owner(db, message.id, actor.user_id)
@@ -157,11 +153,11 @@ def reanalyze(db: DB, actor: CurrentActor, analysis_id: int) -> Response:
 
 @router.post("/messages/{message_id}/delete")
 def delete(request: Request, db: DB, actor: CurrentActor, message_id: int,
-           scope: Annotated[str, Form(pattern="^(tier1|all)$")] = "tier1") -> Response:
+           extent: Annotated[str, Form(alias="scope", pattern="^(tier1|all)$")] = "tier1") -> Response:
+    api.delete_message(request, db, actor, message_id, extent)
     analysis_id = db.scalars(select(Analysis.id).where(Analysis.message_id == message_id)
                              .order_by(Analysis.id.desc())).first()
-    api.delete_message(request, db, actor, message_id, scope)
-    return _see_other("/queue" if scope == "all" or analysis_id is None else "/analyses/%d" % analysis_id)
+    return _see_other("/queue" if extent == "all" or analysis_id is None else "/analyses/%d" % analysis_id)
 
 
 @router.post("/messages/{message_id}/hold")
@@ -179,7 +175,7 @@ def _lines(text: str) -> list[str]:
 @router.get("/settings")
 def settings_page(request: Request, db: DB, actor: Admin, saved: bool = False) -> Response:
     s = services(request)
-    view = appsettings.public_view(db, s.box, s.settings)
+    view = appsettings.public_view(db, s.box, s.settings, actor.workspace_id)
     return html_response(request, "settings.html", {"actor": actor, "s": view, "saved": saved, "error": "",
                                                     "providers": appsettings.PROVIDERS_ALL})
 
@@ -198,18 +194,21 @@ async def save_settings(request: Request, db: DB, actor: Admin) -> Response:
         api.patch_settings(request, db, actor, body)
     except HTTPException as exc:
         s = services(request)
+        view = appsettings.public_view(db, s.box, s.settings, actor.workspace_id)
         return html_response(request, "settings.html", {"actor": actor, "providers": appsettings.PROVIDERS_ALL,
-                                                        "s": appsettings.public_view(db, s.box, s.settings),
-                                                        "saved": False, "error": exc.detail}, exc.status_code)
+                                                        "s": view, "saved": False, "error": exc.detail},
+                             exc.status_code)
     return _see_other("/settings?saved=1")
 
 
 def _users_page(request: Request, db: DB, actor: Any, new_token: str = "", error: str = "",
                 status: int = 200) -> Response:
-    users = db.scalars(select(User).order_by(User.username)).all()
-    tokens = db.scalars(select(ApiToken).order_by(ApiToken.id)).all()
+    users = db.scalars(select(User).where(User.workspace_id == actor.workspace_id).order_by(User.username)).all()
+    tokens = db.scalars(select(ApiToken).join(User, ApiToken.user_id == User.id)
+                        .where(User.workspace_id == actor.workspace_id).order_by(ApiToken.id)).all()
     return html_response(request, "users.html", {"actor": actor, "users": users, "tokens": tokens,
-                                                 "names": views.usernames(db), "new_token": new_token,
+                                                 "names": views.usernames(db, actor.workspace_id),
+                                                 "new_token": new_token,
                                                  "error": error, "roles": auth.ROLES,
                                                  "scopes": auth.TOKEN_SCOPES}, status)
 
@@ -257,7 +256,8 @@ def revoke(db: DB, actor: Admin, token_id: int) -> Response:
 
 
 def _mailboxes_page(request: Request, db: DB, actor: Any, error: str = "", status: int = 200) -> Response:
-    rows = [mailboxes.view(m) for m in db.scalars(select(Mailbox).order_by(Mailbox.name))]
+    rows = [mailboxes.view(m) for m in db.scalars(select(Mailbox).where(Mailbox.workspace_id == actor.workspace_id)
+                                                  .order_by(Mailbox.name))]
     return html_response(request, "mailboxes.html", {"actor": actor, "rows": rows, "error": error}, status)
 
 
@@ -296,9 +296,7 @@ async def add_mailbox(request: Request, db: DB, actor: Admin) -> Response:
 @router.post("/mailboxes/{mailbox_id}")
 async def change_mailbox(request: Request, db: DB, actor: Admin, mailbox_id: int) -> Response:
     form = await request.form()
-    mailbox = db.get(Mailbox, mailbox_id)
-    if mailbox is None:
-        raise HTTPException(404, "no such mailbox")
+    mailbox = scope.mailbox(db, actor, mailbox_id)
     try:
         api.patch_mailbox(request, db, actor, mailbox_id,
                           api.MailboxPatch.model_validate(_mailbox_form(form, mailbox.kind)))
@@ -324,7 +322,7 @@ def delete_mailbox(db: DB, actor: Admin, mailbox_id: int) -> Response:
 
 @router.get("/audit")
 def audit_page(request: Request, db: DB, actor: CurrentActor, offset: Annotated[int, Query(ge=0)] = 0) -> Response:
-    query = select(AuditRecord).order_by(AuditRecord.id.desc())
+    query = select(AuditRecord).where(audit.visible_to(db, actor)).order_by(AuditRecord.id.desc())
     if not actor.is_admin:
         query = query.where(AuditRecord.actor == actor.label)
     rows = db.scalars(query.offset(offset).limit(100)).all()

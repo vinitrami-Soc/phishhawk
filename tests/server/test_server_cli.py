@@ -12,7 +12,7 @@ from phishhawk.server.crypto import Box, new_key
 from phishhawk.server.db import make_engine, make_sessionmaker, transaction
 from phishhawk.server.models import AuditRecord, User
 
-from .serverkit import PASSWORD
+from .serverkit import PASSWORD, home
 
 KEY = new_key()
 
@@ -67,7 +67,7 @@ def test_audit_verify_exits_1_after_tampering(env, monkeypatch, capsys):
 def test_rotate_key_needs_the_new_key_and_moves_secrets(env, monkeypatch, capsys):
     cli.main(["migrate"])
     with transaction(env) as s:
-        appsettings.set_secret(s, Box.from_b64(KEY), "key:urlscan", "us-key-9876")
+        appsettings.set_secret(s, Box.from_b64(KEY), home(s), "key:urlscan", "us-key-9876")
     assert cli.main(["rotate-key"]) == 3
     assert "PHISHHAWK_NEW_ENCRYPTION_KEY" in capsys.readouterr().err
     new = new_key()
@@ -75,7 +75,7 @@ def test_rotate_key_needs_the_new_key_and_moves_secrets(env, monkeypatch, capsys
     assert cli.main(["rotate-key"]) == 0
     assert "0 blobs and 1 secret" in capsys.readouterr().out
     with transaction(env) as s:
-        assert appsettings.get_secret(s, Box.from_b64(new), "key:urlscan") == "us-key-9876"
+        assert appsettings.get_secret(s, Box.from_b64(new), home(s), "key:urlscan") == "us-key-9876"
 
 
 def test_the_main_cli_hands_server_commands_over(env, capsys):

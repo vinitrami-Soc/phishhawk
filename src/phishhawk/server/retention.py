@@ -50,13 +50,16 @@ def delete_completely(db: Session, store: BlobStore, message: Message) -> str:
     return sha256
 
 
-def sweep(db: Session, store: BlobStore, days: int, now: dt.datetime | None = None) -> int:
+def sweep(db: Session, store: BlobStore, days: int, workspace_id: int, now: dt.datetime | None = None) -> int:
+    """One workspace, with its own retention period."""
     cutoff = (now or utcnow()) - dt.timedelta(days=days)
-    due = db.scalars(select(Message).where(Message.tier1_deleted_at.is_(None), Message.hold.is_(False),
+    due = db.scalars(select(Message).where(Message.workspace_id == workspace_id,
+                                           Message.tier1_deleted_at.is_(None), Message.hold.is_(False),
                                            Message.first_seen_at < cutoff)).all()
     for message in due:
         delete_tier1(db, store, message, "retention")
     # a batch's combined exports go with the retention period, even when a message in it is on hold
-    for batch in db.scalars(select(Batch).where(Batch.files_deleted_at.is_(None), Batch.created_at < cutoff)):
+    for batch in db.scalars(select(Batch).where(Batch.workspace_id == workspace_id,
+                                                Batch.files_deleted_at.is_(None), Batch.created_at < cutoff)):
         delete_batch_files(store, batch)
     return len(due)
