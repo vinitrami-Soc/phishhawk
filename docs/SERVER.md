@@ -15,6 +15,7 @@ import (see the [design](superpowers/specs/2026-10-06-phishhawk-v3-web-design.md
 - [Start it without Docker](#start-it-without-docker)
 - [Settings](#settings)
 - [Users, roles and API tokens](#users-roles-and-api-tokens)
+- [Workspaces](#workspaces)
 - [Reputation lookups](#reputation-lookups)
 - [Batches](#batches)
 - [Campaigns](#campaigns)
@@ -133,9 +134,10 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
 | `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
 
-An admin can change the retention period, the upload and batch limits and the
-campaign window on the Settings page; the value set there wins over the
-variable.
+An admin can change the retention period and the campaign window of their
+workspace on the Settings page. The upload and batch limits are the whole
+server's: only its owner (see [Workspaces](#workspaces)) can change them there.
+A value set there wins over the variable.
 
 ## Users, roles and API tokens
 
@@ -162,6 +164,32 @@ a token cannot do them, whoever it belongs to.
 The API is described in [docs/api/openapi.json](api/openapi.json). To build
 your own frontend on it (for example in Google AI Studio) and serve it from
 this server at `/app/`, see [FRONTEND.md](FRONTEND.md).
+
+## Workspaces
+
+Everything the web app keeps belongs to a workspace: users, messages,
+analyses, batches, campaigns, mailboxes, settings, provider keys and audit
+records. No one sees or changes another workspace's data. A message, batch,
+campaign, mailbox, user or token of another workspace answers 404, exactly as
+one that does not exist. The same message reported in two workspaces is two
+messages, and a campaign never mixes workspaces.
+
+Each workspace has its own:
+
+- reputation providers, their API keys and lookup cache;
+- domain lists;
+- retention period and campaign window.
+
+The upload and batch limits are the whole server's. The first admin is the
+server's **owner**: they alone change those limits, and they also see the
+server's own audit records (failed logins, key rotation, the hourly retention
+run's total).
+
+An upgraded server keeps all its data in one workspace, "Default
+organization", and works as before. Its first admin becomes the owner. Sign-up
+for individuals and other organizations, and inviting people into a
+workspace, come in the next release; until then `create-admin` adds users to
+Default organization.
 
 ## Reputation lookups
 
@@ -359,9 +387,12 @@ then replace `secrets/phishhawk_encryption_key` and `docker compose up -d`.
 Logins (and failed ones), submissions, analyses, downloads, re-analyses,
 deletions, holds, settings changes, user and token changes, mailbox changes
 and failed polls, key rotation and each retention run are recorded with who
-did it and when (a mailbox's imports are submitted by `mailbox:<its name>`). Each record holds the
-hash of the one before it, so an edited, removed, reordered or cut-off record
-is detected:
+did it and when (a mailbox's imports are submitted by `mailbox:<its name>`).
+Each record holds the hash of the one before it, so an edited, removed,
+reordered or cut-off record is detected. The log is one chain for the server;
+each record also says whose it is. An admin sees their workspace's records
+(Default organization's admins also see those written before workspaces), the
+owner also sees the server's own, and an analyst sees their own.
 
 ```bash
 phishhawk server audit verify      # exit code 0 when intact, 1 otherwise
@@ -377,6 +408,11 @@ git pull && docker compose up -d --build --wait
 `run` applies database migrations on start. Without Docker:
 `pip install -U "phishhawk[server]"`, then restart; `phishhawk server migrate`
 does the same step on its own.
+
+Upgrading to workspaces (migration 0004) moves everything into "Default
+organization" and makes the first admin the owner; audit records written
+before still verify. Back up first (see [Backups](#backups)). Going back below
+0004 works only while the server has one workspace.
 
 ## Health and troubleshooting
 
