@@ -38,6 +38,11 @@ PAST_EDGE = """(scope = 'main') => {
   }).slice(0, 3).map((e) => e.tagName + '.' + String(e.className).slice(0, 60));
 }"""
 
+# Table headings too narrow for their own words, at this width.
+HEADINGS_CUT = """() => [...document.querySelectorAll('main th')]
+  .filter((th) => th.getBoundingClientRect().width && th.scrollWidth > th.clientWidth + 1)
+  .map((th) => th.textContent.trim())"""
+
 # The light and dark switch in the command bar: as tall as Sign out beside it, and on the same line
 # (differences in height and in middle, in pixels).
 TOGGLE_BESIDE_SIGN_OUT = """() => {
@@ -169,13 +174,23 @@ def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_
 
         for width in WIDTHS:
             page.set_viewport_size({"width": width, "height": 900})
-            for url in (server.base + "/app/", analysis, server.base + "/app/help"):
+            for url in (server.base + "/app/", analysis, server.base + "/app/analyses", server.base + "/app/audit",
+                        server.base + "/app/help"):
                 page.goto(url)
                 if url.endswith("/app/"):  # with a file chosen, its name and Remove share the row
                     page.set_input_files("input[type=file]", sample("sample_phish.eml"))
                 page.wait_for_timeout(600)
-                assert page.evaluate(PAST_EDGE) == [], (width, url)
+                # the whole page, the top bar included: nine pages, the user and Sign out fit at every width
+                assert page.evaluate(PAST_EDGE, "body") == [], (width, url)
+                assert page.evaluate(HEADINGS_CUT) == [], (width, url)
             assert page.evaluate(TOGGLE_BESIDE_SIGN_OUT) == [0, 0], width
+            # the admin pages and who is signed in are in More, whatever the width
+            page.get_by_role("button", name="More").click()
+            menu = page.locator(".ph-commandbar__menu")
+            sync_api.expect(menu.get_by_role("link", name="Settings")).to_be_visible()
+            sync_api.expect(menu.get_by_text("root")).to_be_visible()
+            sync_api.expect(menu.get_by_text("Admin")).to_be_visible()
+            page.get_by_role("button", name="More").click()
         assert errors == []
 
 

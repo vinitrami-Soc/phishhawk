@@ -278,6 +278,42 @@ html:not([data-theme]) body {
     gap: 4px;
   }
 }
+/* ---- More holds the pages past the first four, at every width ----
+   Nine pages, the user and Sign out no longer fit one bar: on a 1024 px screen
+   Sign out and the theme switch were past its right edge. More also says who
+   is signed in, for the screens where the bar has no room for it. */
+[data-theme] .ph-commandbar .atd-modern__item[data-overflow='true'] {
+  display: none;
+}
+[data-theme] .ph-commandbar .ph-commandbar__more {
+  display: inline-flex;
+  align-items: center;
+}
+[data-theme] .ph-commandbar__menu-user {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 4px;
+  padding: 8px 12px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.3;
+}
+[data-theme] .ph-commandbar__menu-user strong {
+  color: var(--text);
+  font-weight: 600;
+}
+/* the logo alone, on phones, is still a comfortable target */
+@media (max-width: 600px) {
+  [data-theme] .ph-commandbar .atd-modern__brand {
+    min-width: 36px;
+    min-height: 36px;
+    justify-content: center;
+  }
+}
+
 [data-theme] .ph-commandbar__toggle {
   position: relative;
   display: inline-flex;

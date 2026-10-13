@@ -60,7 +60,7 @@ function DomainList({ label, hint, values, onChange }: { label: string; hint: st
         {values.map((v) => (
           <span key={v} className="inline-flex items-center gap-1 rounded-full border border-line bg-raised py-1 pl-3 pr-1 font-mono text-xs text-ink">
             {v}
-            <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))} className="grid h-5 w-5 place-items-center rounded-full text-ink-muted hover:bg-hover hover:text-ink">
+            <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(values.filter((x) => x !== v))} className="grid h-6 w-6 place-items-center rounded-full text-ink-muted hover:bg-hover hover:text-ink">
               <X className="h-3 w-3" strokeWidth={2} />
             </button>
           </span>

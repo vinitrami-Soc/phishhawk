@@ -54,10 +54,10 @@ function SiteFooter() {
     <footer className="mt-16 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line pt-6 text-[13px] text-ink-muted print:hidden">
       <p>PhishHawk, run by your organisation.</p>
       <nav aria-label="About PhishHawk" className="flex gap-5">
-        <Link href="/app/help" className="transition-colors hover:text-ink">
+        <Link href="/app/help" className="inline-flex min-h-8 items-center transition-colors hover:text-ink">
           Help
         </Link>
-        <Link href="/app/privacy" className="transition-colors hover:text-ink">
+        <Link href="/app/privacy" className="inline-flex min-h-8 items-center transition-colors hover:text-ink">
           Privacy and terms
         </Link>
       </nav>
