@@ -32,8 +32,10 @@ product page a visitor sees first, signing in from it and signing out back to
 it; one message from paste to report and files; a batch of two from upload to its
 combined reports, its campaign and the queue's filters; a mailbox added on
 the Mailboxes screen, polled from a test IMAP server, its reports in the queue;
-an organization that signs up, invites a second person and sees them join; and
-someone who signs up alone, goes through the setup and analyses a first message.
+an organization that signs up, invites a second person and sees them join;
+someone who signs up alone, goes through the setup and analyses a first message;
+and an answer on a verdict, found by the Queue's Disputed filter, with feedback
+sent from the footer and read on the owner's Feedback page.
 
 Signed out, `/app/` is the product page: what PhishHawk does and checks, the
 measured results, the verdicts, the ways to use it and common questions, with
@@ -59,6 +61,15 @@ skipped (`session.onboarded`). An organization's admin invites the team,
 connects a report mailbox and chooses reputation providers; someone on their
 own chooses providers; everyone gets a short tour. Every step can be skipped,
 and so can all of it.
+
+Feedback: every analysis asks "Was this verdict right?" (Right, It was
+phishing, It was not phishing, with an optional note), and the Queue's
+Disputed filter shows the analyses someone said were wrong. Feedback, in the
+footer, sends the people who run the server a note with the page it came from;
+More > Feedback (`/app/feedback`) lists what you sent. The owner sees
+everyone's there and marks it done; admins also see their workspace's answers
+on verdicts, and the owner downloads every workspace's disputed verdicts as
+CSV.
 
 To bring in a change made in Google AI Studio, export the project as a ZIP and
 replace `frontend/` with it, keeping `public/brand/report-*.webp`, then run the

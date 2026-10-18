@@ -18,7 +18,7 @@
    organization. A new workspace starts empty and sees nothing of the others. */
 
 import fixtures from './fixtures.json';
-import type { Analysis, AnalysisFile, AuditEntry, Batch, Invite, Mailbox, MailboxConfig, MailboxKind, Profile, ServerSettings, Settings, Submission, Token, User, Workspace } from '../api/types';
+import type { Analysis, AnalysisFile, AuditEntry, Batch, Feedback, Invite, Mailbox, MailboxConfig, MailboxKind, Opinion, Profile, ServerSettings, Settings, Submission, Token, User, VerdictAnswer, Workspace } from '../api/types';
 
 const CSRF_DETAIL = 'the form is out of date: reload the page and try again';
 const THROTTLE_MS = 8_000;
@@ -68,6 +68,22 @@ const workspaceOf = (a: Analysis) => analysisWorkspace.get(a.id) ?? 1;
 const serverSettings: ServerSettings = { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500 };
 type MockInvite = Invite & { token: string; workspace_id: number; used: boolean };
 const invites: MockInvite[] = [];
+/* Feedback: notes to the owner, and each person's answer on a verdict, as the server keeps them. */
+const feedbackRows: (Feedback & { user_id: number })[] = [];
+const answers: (VerdictAnswer & { analysis_id: number })[] = [];
+let lastFeedbackId = 0;
+let lastAnswerId = 0;
+const OPINIONS: Opinion[] = ['right', 'missed', 'false_alarm'];
+const disputedIds = () => new Set(answers.filter((a) => a.opinion !== 'right').map((a) => a.analysis_id));
+const countsOf = (rows: { opinion: Opinion }[]) => Object.fromEntries(OPINIONS.map((o) => [o, rows.filter((r) => r.opinion === o).length])) as Record<Opinion, number>;
+/** Free text as the server takes it: trimmed, at most `most` characters, lines but no other control characters. */
+function freeText(field: string, value: unknown, most: number, required = true): string {
+  const written = typeof value === 'string' ? value.trim() : '';
+  if (required && !written) throw `${field}: required`;
+  if (written.length > most) throw `${field}: ${most} characters at most`;
+  if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(written)) throw `${field}: control characters are not allowed`;
+  return written;
+}
 const PROFILE_FIELDS = ['first_name', 'last_name', 'location', 'job_title'] as const;
 
 /** A profile field as the server checks it: trimmed, at most 80 characters, no control characters. */
@@ -441,6 +457,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
       .filter((a) => !verdict || a.verdict === verdict)
       .filter((a) => !source || a.source === source)
       .filter((a) => user === null || a.submitted_by === Number(user))
+      .filter((a) => searchParams.get('disputed') !== 'true' || disputedIds().has(a.id))
       .filter((a) => (!since || a.created_at.slice(0, 10) >= since) && (!until || a.created_at.slice(0, 10) <= until))
       .filter((a) => !q || a.sha256.startsWith(q) || a.report_id.toLowerCase() === q || JSON.stringify(a.report?.iocs ?? []).toLowerCase().includes(q))
       .slice(offset, offset + 50)
@@ -501,6 +518,83 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     const names = new Set(users.filter((u) => memberOf(u.id).workspace_id === me.workspace_id).map((u) => u.username));
     const rows = admin ? audit.filter((e) => names.has(e.actor) || (me.workspace_id === 1 && e.actor === 'system')) : audit.filter((e) => e.actor === me.username);
     return json(200, rows.slice(offset, offset + 100));
+  }
+
+  // feedback: to the owner, and on verdicts
+  if (pathname === '/api/v1/feedback') {
+    if (method === 'GET') return json(200, feedbackRows.filter((f) => me.owner || f.user_id === me.user_id).slice().reverse().map(({ user_id: _u, ...f }) => f));
+    const sent = (body ?? {}) as Record<string, unknown>;
+    try {
+      if (!['bug', 'idea', 'question', 'other'].includes(String(sent.kind))) throw 'kind: bug, idea, question or other';
+      const message = freeText('message', sent.message, 4000);
+      const page = typeof sent.page === 'string' ? sent.page : '';
+      if (page && !/^\/(?!\/)[\x21-\x7e]{0,199}$/.test(page)) throw 'page: a path in this app, such as /app/analyses/3';
+      const row = { id: ++lastFeedbackId, kind: sent.kind as Feedback['kind'], message, page, status: 'open' as const, created_at: new Date().toISOString(), username: me.username, workspace: { id: workspace.id, name: workspace.name }, user_id: me.user_id };
+      feedbackRows.push(row);
+      const { user_id: _u, ...view } = row;
+      return json(201, view);
+    } catch (refusal) {
+      return error(422, 'invalid', String(refusal));
+    }
+  }
+  if (pathname === '/api/v1/feedback/verdicts' && method === 'GET') {
+    if (!admin) return error(403, 'forbidden', 'only an admin can do that');
+    const mine = answers.filter((a) => workspaceOf(analyses.find((x) => x.id === a.analysis_id)!) === me.workspace_id);
+    const disputed = [...new Set(mine.map((a) => a.analysis_id))]
+      .map((id) => ({ id, rows: mine.filter((a) => a.analysis_id === id) }))
+      .filter(({ rows }) => rows.some((r) => r.opinion !== 'right'))
+      .map(({ id, rows }) => {
+        const a = analyses.find((x) => x.id === id)!;
+        return { analysis_id: id, report_id: a.report_id, verdict: a.verdict, score: a.score, ...countsOf(rows), last_answer_at: rows.map((r) => r.updated_at).sort().at(-1)! };
+      });
+    return json(200, { counts: countsOf(mine), disputed });
+  }
+  m = pathname.match(/^\/api\/v1\/feedback\/(\d+)$/);
+  if (m) {
+    const row = feedbackRows.find((f) => f.id === Number(m![1]) && (me.owner || f.user_id === me.user_id));
+    if (!row) return error(404, 'not_found', 'no such feedback');
+    if (method === 'DELETE') {
+      feedbackRows.splice(feedbackRows.indexOf(row), 1);
+      return json(204, null);
+    }
+    if (!me.owner) return error(403, 'forbidden', "only the server's owner marks feedback done");
+    const status = (body as { status?: string } | undefined)?.status;
+    if (status !== 'open' && status !== 'done') return error(422, 'invalid', 'status: open or done');
+    row.status = status;
+    const { user_id: _u, ...view } = row;
+    return json(200, view);
+  }
+  m = pathname.match(/^\/api\/v1\/analyses\/(\d+)\/feedback(?:\/(\d+))?$/);
+  if (m) {
+    const analysis = analyses.find((a) => a.id === Number(m![1]) && home(a));
+    if (!analysis) return error(404, 'not_found', 'no such analysis');
+    const here = answers.filter((a) => a.analysis_id === analysis.id);
+    const strip = ({ analysis_id: _a, ...view }: VerdictAnswer & { analysis_id: number }) => view;
+    if (m[2]) {
+      const row = here.find((a) => a.id === Number(m![2]));
+      if (!row || method !== 'DELETE') return error(404, 'not_found', 'no such answer');
+      if (row.user_id !== me.user_id && !admin) return error(403, 'forbidden', 'only its author or an admin removes an answer');
+      answers.splice(answers.indexOf(row), 1);
+      return json(204, null);
+    }
+    const mine = here.find((a) => a.user_id === me.user_id);
+    if (method === 'GET') return json(200, { mine: mine ? strip(mine) : null, answers: here.map(strip), counts: countsOf(here) });
+    if (method === 'DELETE') {
+      if (mine) answers.splice(answers.indexOf(mine), 1);
+      return json(204, null);
+    }
+    const sent = (body ?? {}) as Record<string, unknown>;
+    try {
+      if (!OPINIONS.includes(sent.opinion as Opinion)) throw 'opinion: right, missed or false_alarm';
+      const note = freeText('note', sent.note, 1000, false);
+      const now = new Date().toISOString();
+      const row = mine ?? { id: ++lastAnswerId, analysis_id: analysis.id, user_id: me.user_id, username: me.username, opinion: 'right' as Opinion, note: '', created_at: now, updated_at: now };
+      Object.assign(row, { opinion: sent.opinion as Opinion, note, updated_at: now });
+      if (!mine) answers.push(row);
+      return json(200, strip(row));
+    } catch (refusal) {
+      return error(422, 'invalid', String(refusal));
+    }
   }
 
   // the profile: everyone's own

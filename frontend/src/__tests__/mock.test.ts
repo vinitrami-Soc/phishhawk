@@ -233,3 +233,38 @@ test('the setup after sign-up opens once: a new account has it, the preview acco
   assert.equal((await call('POST', '/api/v1/me/onboarded')).status, 204);
   assert.equal((await call('GET', '/api/v1/session')).body.onboarded, true);
 });
+
+test('feedback: anyone sends it, the owner reads all of it and marks it done', async () => {
+  await call('DELETE', '/api/v1/session');
+  csrf = (await signIn('boss', 'x')).body.csrf;
+  const bad = await call('POST', '/api/v1/feedback', { kind: 'idea', message: ' ', page: '/app/' });
+  assert.equal(bad.status, 422);
+  assert.match(bad.body.detail, /^message: /);
+  const sent = await call('POST', '/api/v1/feedback', { kind: 'bug', message: 'The queue jumps.', page: '/app/analyses' });
+  assert.equal(sent.status, 201);
+  assert.deepEqual([sent.body.kind, sent.body.status, sent.body.username, sent.body.page], ['bug', 'open', 'boss', '/app/analyses']);
+  assert.deepEqual((await call('GET', '/api/v1/feedback')).body.map((f: { id: number }) => f.id), [sent.body.id]);
+  const done = await call('PATCH', `/api/v1/feedback/${sent.body.id}`, { status: 'done' });
+  assert.equal(done.body.status, 'done');
+  assert.equal((await call('DELETE', `/api/v1/feedback/${sent.body.id}`)).status, 204);
+  assert.deepEqual((await call('GET', '/api/v1/feedback')).body, []);
+});
+
+test('verdict feedback: one answer each, the Disputed filter and the summary', async () => {
+  const [first] = (await call('GET', '/api/v1/analyses')).body as { id: number }[];
+  const url = `/api/v1/analyses/${first.id}/feedback`;
+  assert.deepEqual((await call('GET', url)).body, { mine: null, answers: [], counts: { right: 0, missed: 0, false_alarm: 0 } });
+  assert.equal((await call('PUT', url, { opinion: 'maybe' })).status, 422);
+  assert.equal((await call('PUT', url, { opinion: 'right' })).status, 200);
+  const changed = await call('PUT', url, { opinion: 'false_alarm', note: 'Our newsletter.' });
+  assert.deepEqual([changed.body.opinion, changed.body.note, changed.body.username], ['false_alarm', 'Our newsletter.', 'boss']);
+  const seen = (await call('GET', url)).body;
+  assert.deepEqual(seen.counts, { right: 0, missed: 0, false_alarm: 1 });
+  assert.equal(seen.mine.opinion, 'false_alarm');
+  assert.deepEqual((await call('GET', '/api/v1/analyses?disputed=true')).body.map((a: { id: number }) => a.id), [first.id]);
+  const summary = (await call('GET', '/api/v1/feedback/verdicts')).body;
+  assert.deepEqual(summary.counts, { right: 0, missed: 0, false_alarm: 1 });
+  assert.deepEqual(summary.disputed.map((d: { analysis_id: number }) => d.analysis_id), [first.id]);
+  assert.equal((await call('DELETE', url)).status, 204);
+  assert.deepEqual((await call('GET', '/api/v1/analyses?disputed=true')).body, []);
+});

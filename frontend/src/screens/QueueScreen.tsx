@@ -1,5 +1,5 @@
 /* The queue: every analysis, newest first, 50 at a time, with search and
-   filters for verdict, source, who submitted and days. One state at a time:
+   filters for verdict, source, who submitted, disputed and days. One state at a time:
    loading, error, empty or rows. */
 
 import { useEffect, useRef, useState } from 'react';
@@ -43,6 +43,7 @@ export default function QueueScreen({ session }: { session: Session }) {
   const [verdict, setVerdict] = useState<Verdict | ''>('');
   const [source, setSource] = useState<Source>('');
   const [mine, setMine] = useState(false);
+  const [disputed, setDisputed] = useState(false);
   const [since, setSince] = useState('');
   const [until, setUntil] = useState('');
   const [state, setState] = useState<State>({ rows: [], phase: 'loading', end: false });
@@ -56,7 +57,7 @@ export default function QueueScreen({ session }: { session: Session }) {
   }, [query]);
 
   const user = mine ? session.user_id : null;
-  const filters: AnalysisQuery = { q: search, verdict, source, user, since, until };
+  const filters: AnalysisQuery = { q: search, verdict, source, user, since, until, disputed };
 
   // first page whenever the search or a filter changes
   useEffect(() => {
@@ -64,13 +65,13 @@ export default function QueueScreen({ session }: { session: Session }) {
     const controller = new AbortController();
     current.current = controller;
     setState({ rows: [], phase: 'loading', end: false });
-    listAnalyses({ q: search, verdict, source, user, since, until }, controller.signal)
+    listAnalyses({ q: search, verdict, source, user, since, until, disputed }, controller.signal)
       .then((rows) => setState({ rows, phase: 'ready', end: rows.length < PAGE }))
       .catch((e) => {
         if (!isAbort(e)) setState({ rows: [], phase: 'error', end: false, error: e instanceof ApiError ? e.detail : NETWORK_MESSAGE });
       });
     return () => controller.abort();
-  }, [search, verdict, source, user, since, until, attempt]);
+  }, [search, verdict, source, user, since, until, disputed, attempt]);
 
   async function loadMore() {
     const controller = new AbortController();
@@ -84,12 +85,13 @@ export default function QueueScreen({ session }: { session: Session }) {
     }
   }
 
-  const filtered = Boolean(search || verdict || source || mine || since || until);
+  const filtered = Boolean(search || verdict || source || mine || disputed || since || until);
   const clear = () => {
     setQuery('');
     setVerdict('');
     setSource('');
     setMine(false);
+    setDisputed(false);
     setSince('');
     setUntil('');
   };
@@ -154,6 +156,9 @@ export default function QueueScreen({ session }: { session: Session }) {
             Only mine
           </button>
         )}
+        <button type="button" aria-pressed={disputed} onClick={() => setDisputed((d) => !d)} className={pill(disputed)} title="Someone said the verdict was wrong">
+          Disputed
+        </button>
         <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           <label className="flex items-center gap-2">
             From

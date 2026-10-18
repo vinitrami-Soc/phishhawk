@@ -27,6 +27,7 @@ import { Link, navigate } from '@/app/router';
 import { SEVERITY_ORDER, SOURCE_LABEL, VERDICT_GLOW, verdictTone } from '@/app/vocabulary';
 import { attackUrl, defangDomain, defangUrl, showIndicator } from '@/security/safe';
 import { Button, Card, Chip, ConfirmDialog, CopyButton, ErrorState, Panel, SectionTitle, SeverityBadge, Skeleton, Time, middle } from '@/components/ui/ui';
+import { VerdictQuestion } from '@/components/phishhawk/VerdictQuestion';
 import { useToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 
@@ -673,6 +674,8 @@ export default function AnalysisScreen({ id, session }: { id: number; session: S
           )}
         </Panel>
       </div>
+
+      <VerdictQuestion analysisId={analysis.id} session={session} />
 
       {/* tabs */}
       {/* Stuck under the command bar, the tabs get a solid band from the top of the window down, so the page

@@ -7,13 +7,14 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
-import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, UserRound, Users } from 'lucide-react';
+import { Activity, Inbox, KeyRound, ListChecks, Mailbox, MessageSquare, Network, ScrollText, Settings, UserRound, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
 import { ProgressiveBlur } from '@/components/core/progressive-blur';
 import { TextShimmerWave } from '@/components/core/text-shimmer-wave';
 import { BackToTop } from '@/components/phishhawk/BackToTop';
 import { PublicFooter, PublicHeader } from '@/components/phishhawk/PublicChrome';
 import { ThemeToggle } from '@/components/phishhawk/ThemeToggle';
+import { FeedbackDialog } from '@/components/phishhawk/FeedbackDialog';
 import { ToastProvider } from '@/components/ui/toast';
 import { Skeleton } from '@/components/ui/ui';
 import { useAuth } from '@/app/useAuth';
@@ -44,6 +45,7 @@ const SignupScreen = lazy(() => import('@/screens/SignupScreen'));
 const JoinScreen = lazy(() => import('@/screens/JoinScreen'));
 const ProfileScreen = lazy(() => import('@/screens/ProfileScreen'));
 const WelcomeScreen = lazy(() => import('@/screens/WelcomeScreen'));
+const FeedbackScreen = lazy(() => import('@/screens/FeedbackScreen'));
 
 const icon = 'h-4 w-4';
 
@@ -57,11 +59,14 @@ function PageFallback() {
   );
 }
 
-function SiteFooter() {
+function SiteFooter({ onFeedback }: { onFeedback: () => void }) {
   return (
     <footer className="mt-16 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line pt-6 text-[13px] text-ink-muted print:hidden">
       <p>PhishHawk, run by your organisation.</p>
       <nav aria-label="About PhishHawk" className="flex gap-5">
+        <button type="button" onClick={onFeedback} className="inline-flex min-h-8 items-center transition-colors hover:text-ink">
+          Feedback
+        </button>
         <Link href="/app/help" className="inline-flex min-h-8 items-center transition-colors hover:text-ink">
           Help
         </Link>
@@ -116,6 +121,7 @@ export default function App() {
 
   // the setup after sign-up opens once, at the start page, until it is finished or skipped
   const [setupDone, setSetupDone] = useState(false);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
   const needsSetup = session?.onboarded === false && !setupDone;
   useEffect(() => {
     if (needsSetup && route.name === 'triage') navigate('/app/welcome', { replace: true });
@@ -147,7 +153,10 @@ export default function App() {
         { href: '/app/mailboxes', label: 'Mailboxes', icon: <Mailbox className={icon} strokeWidth={1.5} /> },
       );
     }
-    if (session) list.push({ href: '/app/profile', label: 'Profile', icon: <UserRound className={icon} strokeWidth={1.5} /> });
+    if (session) {
+      list.push({ href: '/app/profile', label: 'Profile', icon: <UserRound className={icon} strokeWidth={1.5} /> });
+      list.push({ href: '/app/feedback', label: 'Feedback', icon: <MessageSquare className={icon} strokeWidth={1.5} /> });
+    }
     return list;
   }, [session]);
 
@@ -242,6 +251,7 @@ export default function App() {
     else if (route.name === 'mailboxes') screen = <MailboxesScreen />;
     else if (route.name === 'privacy') screen = <PrivacyScreen />;
     else if (route.name === 'help') screen = <HelpScreen />;
+    else if (route.name === 'feedback') screen = <FeedbackScreen session={session} />;
     else if (route.name === 'profile') screen = <ProfileScreen session={session} onChanged={() => void refresh()} />;
     else if (route.name === 'join') screen = <SignedInInvitationState username={session.username} />;
     else screen = <NotFoundState />;
@@ -276,7 +286,8 @@ export default function App() {
           </AnimatePresence>
         </main>
         <div className="mx-auto w-full max-w-[1280px] px-4 pb-28 md:px-6 lg:px-8">
-          <SiteFooter />
+          <SiteFooter onFeedback={() => setSendingFeedback(true)} />
+          <FeedbackDialog open={sendingFeedback} onOpenChange={setSendingFeedback} />
         </div>
         <BackToTop raised={route.name === 'analysis'} />
       </>
