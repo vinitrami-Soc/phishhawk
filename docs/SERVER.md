@@ -240,7 +240,17 @@ it, finished or skipped. Accounts made with `create-admin` or by an admin's
 Add a user, and every account of an upgraded server, have nothing to set up.
 
 **Server settings (owner only).** Whether sign-up is on, the daily sign-up
-cap, and the upload and batch limits: `GET/PATCH /api/v1/server-settings`.
+cap, the upload and batch limits, and the messages each workspace may submit a
+day: `GET/PATCH /api/v1/server-settings`.
+
+**Messages a day.** Each workspace submits at most 500 messages a day if it is
+an organization and 100 if it is one person, unless the owner sets other
+numbers (`daily_messages_organization`, `daily_messages_individual`, or
+Settings > Sign-up and daily messages). Every upload, paste, message of a
+batch, new analysis and mailbox import counts; the day is UTC. Past it, an
+upload answers 429 with the seconds until midnight UTC (a batch that does not
+fit is refused whole), and a mailbox poll stops: what it left in the mailbox
+comes at a poll the next day.
 
 ## Feedback
 

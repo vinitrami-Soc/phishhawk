@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from . import appsettings, audit, auth
+from . import appsettings, audit, auth, daily
 from .crypto import Box
 from .models import SERVER, Invite, User, Workspace, utcnow
 
@@ -252,7 +252,7 @@ def update_profile(db: Session, actor: auth.Actor, user: User, data: Mapping[str
     return apply_profile(db, user, check_profile(db, actor, user, data))
 
 
-SERVER_LIMITS = ("signup_daily_cap", "max_upload_mb", "max_batch_messages")
+SERVER_LIMITS = ("signup_daily_cap", "max_upload_mb", "max_batch_messages", *daily.SETTINGS.values())
 
 
 def server_view(db: Session, settings: Any) -> dict[str, Any]:
@@ -260,7 +260,8 @@ def server_view(db: Session, settings: Any) -> dict[str, Any]:
     return {"signup_open": signup_open(db),
             "signup_daily_cap": appsettings.get_value(db, SERVER, "signup_daily_cap", DAILY_CAP),
             "max_upload_mb": appsettings.limit(db, settings, "max_upload_mb"),
-            "max_batch_messages": appsettings.limit(db, settings, "max_batch_messages")}
+            "max_batch_messages": appsettings.limit(db, settings, "max_batch_messages"),
+            **{name: daily.limit(db, kind) for kind, name in daily.SETTINGS.items()}}
 
 
 def update_server(db: Session, data: Mapping[str, Any]) -> list[str]:

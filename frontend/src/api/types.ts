@@ -330,7 +330,15 @@ export type Me = { username: string; role: Role; owner: boolean; profile: Profil
 export type ProfilePatch = Partial<Profile> & { organization?: string; password?: string; current_password?: string };
 
 /** GET /api/v1/server-settings (the owner only) */
-export type ServerSettings = { signup_open: boolean; signup_daily_cap: number; max_upload_mb: number; max_batch_messages: number };
+export type ServerSettings = {
+  signup_open: boolean;
+  signup_daily_cap: number;
+  max_upload_mb: number;
+  max_batch_messages: number;
+  /** messages each workspace may submit a day (UTC); past it an upload answers 429 until midnight UTC */
+  daily_messages_organization: number;
+  daily_messages_individual: number;
+};
 
 /* ---- feedback ---- */
 

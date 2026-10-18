@@ -400,6 +400,28 @@
       },
       "ServerSettingsPatch": {
         "properties": {
+          "daily_messages_individual": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Messages Individual"
+          },
+          "daily_messages_organization": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Messages Organization"
+          },
           "max_batch_messages": {
             "anyOf": [
               {

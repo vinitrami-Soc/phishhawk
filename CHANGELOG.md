@@ -9,6 +9,11 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **A daily limit on each workspace's messages.** 500 a day for an
+  organization and 100 for someone on their own, unless the owner sets others
+  in Settings. Uploads, pastes, batch messages, new analyses and mailbox
+  imports all count; past the limit an upload answers 429 until midnight UTC
+  and a mailbox poll leaves the rest for the next day.
 - **Workspaces take turns at the queue.** The workspace served longest ago
   goes first, and within it the oldest job, so one busy workspace cannot hold
   up the others, even with a single worker; at most 2 jobs of one workspace

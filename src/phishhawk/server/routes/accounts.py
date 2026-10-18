@@ -272,6 +272,8 @@ class ServerSettingsPatch(BaseModel):
     signup_daily_cap: int | None = None
     max_upload_mb: int | None = None
     max_batch_messages: int | None = None
+    daily_messages_organization: int | None = None
+    daily_messages_individual: int | None = None
 
 
 def _owner(actor: auth.Actor) -> None:
