@@ -44,6 +44,17 @@
         "title": "Body_submit_api_v1_submissions_post",
         "type": "object"
       },
+      "Farewell": {
+        "properties": {
+          "password": {
+            "default": "",
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "title": "Farewell",
+        "type": "object"
+      },
       "FeedbackPatch": {
         "properties": {
           "status": {
@@ -2060,6 +2071,36 @@
       }
     },
     "/api/v1/me": {
+      "delete": {
+        "description": "An individual deletes their own account, and with it their workspace and everything in it, with their\npassword (403 otherwise, throttled as logins are). In an organization its admins delete accounts.",
+        "operationId": "delete_me_api_v1_me_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Farewell"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Me"
+      },
       "get": {
         "description": "The caller's account, profile and workspace.",
         "operationId": "get_me_api_v1_me_get",
@@ -2839,6 +2880,37 @@
       }
     },
     "/api/v1/users/{user_id}": {
+      "delete": {
+        "description": "A member of the caller's workspace, never the caller or the server's owner. What they submitted stays the\nworkspace's; their sessions, tokens, feedback and answers on verdicts go with them.",
+        "operationId": "delete_user_api_v1_users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete User"
+      },
       "patch": {
         "operationId": "patch_user_api_v1_users__user_id__patch",
         "parameters": [
@@ -2887,6 +2959,63 @@
           }
         },
         "summary": "Patch User"
+      }
+    },
+    "/api/v1/workspaces": {
+      "get": {
+        "description": "For the owner: every workspace's name, kind and member count, and no one's profile.",
+        "operationId": "list_workspaces_api_v1_workspaces_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Workspaces Api V1 Workspaces Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Workspaces"
+      }
+    },
+    "/api/v1/workspaces/{workspace_id}": {
+      "delete": {
+        "description": "The owner deletes a workspace with everything in it, its blobs too, but never their own. To anyone else\nthere is no workspace here (404).",
+        "operationId": "delete_workspace_api_v1_workspaces__workspace_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "title": "Workspace Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Workspace"
       }
     },
     "/healthz": {

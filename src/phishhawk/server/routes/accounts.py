@@ -9,8 +9,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from .. import accounts, audit, auth, scope, views
-from ..deps import DB, Admin, CurrentActor, secret, services
+from .. import accounts, audit, auth, deletion, scope, views
+from ..deps import COOKIE, DB, Admin, CurrentActor, secret, services
 from ..models import SERVER, Invite, User, Workspace, utcnow
 from . import api
 
@@ -213,11 +213,8 @@ def _me(db: DB, actor: auth.Actor) -> dict[str, Any]:
             "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}}
 
 
-def change_password(request: Request, db: DB, actor: auth.Actor, user: User, password: str, current: str) -> None:
-    """A new password, with the current one (403 otherwise, throttled as logins are); the account's other
-    sessions end."""
-    if len(password) < auth.MIN_PASSWORD:
-        raise HTTPException(422, "password: at least %d characters" % auth.MIN_PASSWORD)
+def confirm_password(request: Request, db: DB, user: User, current: str) -> None:
+    """The account's password, typed again: 403 otherwise, throttled as logins are."""
     throttle, key = request.app.state.throttle, "user:" + user.username
     wait = throttle.wait(key)
     if wait > 0:
@@ -226,6 +223,14 @@ def change_password(request: Request, db: DB, actor: auth.Actor, user: User, pas
         throttle.failed(key)
         raise HTTPException(403, "the current password is not right")
     throttle.succeeded(key)
+
+
+def change_password(request: Request, db: DB, actor: auth.Actor, user: User, password: str, current: str) -> None:
+    """A new password, with the current one (403 otherwise, throttled as logins are); the account's other
+    sessions end."""
+    if len(password) < auth.MIN_PASSWORD:
+        raise HTTPException(422, "password: at least %d characters" % auth.MIN_PASSWORD)
+    confirm_password(request, db, user, current)
     auth.set_password(user, password)
     auth.end_sessions(db, user.id, keep=actor.session)  # whoever else is signed in as them is out
     api._audit(db, actor, "password_change", "user", user.id)
@@ -254,6 +259,31 @@ def patch_me(request: Request, db: DB, actor: CurrentActor, body: ProfilePatch) 
     if changed:
         api._audit(db, actor, "profile", "user", user.id, {"changed": changed})
     return _me(db, actor)
+
+
+class Farewell(BaseModel):
+    password: str = ""
+
+
+@router.delete("/me", status_code=204)
+def delete_me(request: Request, db: DB, actor: CurrentActor, body: Farewell) -> Response:
+    """An individual deletes their own account, and with it their workspace and everything in it, with their
+    password (403 otherwise, throttled as logins are). In an organization its admins delete accounts."""
+    api._session_only(actor, "delete an account")
+    user, workspace = db.get(User, actor.user_id), db.get(Workspace, actor.workspace_id)
+    assert user is not None and workspace is not None
+    if user.owner:
+        raise HTTPException(403, "the server's owner cannot delete their own account")
+    if workspace.kind != "individual":
+        raise HTTPException(403, "in an organization its admins delete accounts: ask an admin of %s"
+                                 % workspace.name)
+    confirm_password(request, db, user, body.password)
+    gone = deletion.delete_workspace(db, services(request).store, workspace)
+    audit.record(db, actor.label, "account_delete", "workspace", workspace.id,
+                 {key: gone[key] for key in ("workspace", "kind", "messages")}, workspace_id=SERVER)
+    response = Response(status_code=204)
+    response.delete_cookie(COOKIE, path="/")
+    return response
 
 
 @router.post("/me/onboarded", status_code=204)
@@ -297,3 +327,24 @@ def patch_server_settings(request: Request, db: DB, actor: Admin, body: ServerSe
         raise _refused(exc) from None
     audit.record(db, actor.label, "server_settings", details={"changed": changed}, workspace_id=SERVER)
     return accounts.server_view(db, services(request).settings)
+
+
+@router.get("/workspaces")
+def list_workspaces(db: DB, actor: Admin) -> list[dict[str, Any]]:
+    """For the owner: every workspace's name, kind and member count, and no one's profile."""
+    _owner(actor)
+    return deletion.workspaces(db)
+
+
+@router.delete("/workspaces/{workspace_id}", status_code=204)
+def delete_workspace(request: Request, db: DB, actor: Admin, workspace_id: int) -> Response:
+    """The owner deletes a workspace with everything in it, its blobs too, but never their own. To anyone else
+    there is no workspace here (404)."""
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None or not actor.owner:
+        raise HTTPException(404, "no such workspace")
+    if workspace.id == actor.workspace_id:
+        raise HTTPException(409, "this is your own workspace: it holds your account")
+    gone = deletion.delete_workspace(db, services(request).store, workspace)
+    audit.record(db, actor.label, "workspace_delete", "workspace", workspace_id, gone, workspace_id=SERVER)
+    return Response(status_code=204)

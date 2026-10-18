@@ -9,6 +9,13 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Deleting accounts and workspaces, in the API.** An admin deletes a member:
+  what they submitted stays the workspace's, their feedback and answers on
+  verdicts go. The owner lists the workspaces by name, kind and number of
+  members, and deletes one with everything in it, encrypted files included.
+  Someone on their own deletes their account and workspace with their
+  password. The audit log keeps its records
+  ([docs/SERVER.md](docs/SERVER.md#deleting-accounts-and-workspaces)).
 - **A daily limit on each workspace's messages.** 500 a day for an
   organization and 100 for someone on their own, unless the owner sets others
   in Settings. Uploads, pastes, batch messages, new analyses and mailbox

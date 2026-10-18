@@ -430,6 +430,20 @@ def patch_user(db: DB, actor: Admin, user_id: int, body: UserPatch) -> dict[str,
     return _user_view(user)
 
 
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(db: DB, actor: Admin, user_id: int) -> Response:
+    """A member of the caller's workspace, never the caller or the server's owner. What they submitted stays the
+    workspace's; their sessions, tokens, feedback and answers on verdicts go with them."""
+    user = scope.user(db, actor, user_id)
+    if user.id == actor.user_id:
+        raise HTTPException(422, "you cannot delete yourself")
+    if user.owner:
+        raise HTTPException(403, "the server's owner cannot be deleted")
+    _audit(db, actor, "user_delete", "user", user.id, {"username": user.username, "role": user.role})
+    db.delete(user)
+    return Response(status_code=204)
+
+
 class NewToken(BaseModel):
     name: str
     scope: str

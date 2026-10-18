@@ -435,6 +435,25 @@ On a message's page:
 
 The same message submitted twice is one message with two submissions.
 
+## Deleting accounts and workspaces
+
+- **A member.** An admin deletes a member of their workspace
+  (`DELETE /api/v1/users/{id}`), but never themselves or the server's owner.
+  What the member submitted stays the workspace's; their sessions, API tokens,
+  profile, feedback and answers on verdicts go.
+- **A workspace.** The owner sees every workspace by name, kind and number of
+  members, and no one's profile (`GET /api/v1/workspaces`). They delete one
+  with everything in it: its people, messages, analyses, batches, campaigns,
+  mailboxes, settings, provider keys and encrypted files
+  (`DELETE /api/v1/workspaces/{id}`). Never their own.
+- **Your own account.** Someone on their own deletes their account, and with
+  it their workspace and everything in it, with their password
+  (`DELETE /api/v1/me`). In an organization its admins delete accounts.
+
+Each needs a person signed in, never an API token. The audit log keeps its
+records, which name who did what, so its chain still verifies; each deletion
+is recorded there too.
+
 ## Backups
 
 Back up the data folder (or the `phishhawk-data` volume) and, with Postgres,
