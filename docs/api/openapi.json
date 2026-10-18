@@ -1687,6 +1687,18 @@
         "summary": "Patch Me"
       }
     },
+    "/api/v1/me/onboarded": {
+      "post": {
+        "description": "The setup after sign-up is finished or skipped: the frontend stops opening it.",
+        "operationId": "finish_onboarding_api_v1_me_onboarded_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Finish Onboarding"
+      }
+    },
     "/api/v1/messages/{message_id}": {
       "delete": {
         "operationId": "delete_message_api_v1_messages__message_id__delete",
@@ -1926,7 +1938,7 @@
         "summary": "Delete Session"
       },
       "get": {
-        "description": "Who is calling, for a frontend after a reload: their workspace, whether they own the server, and the CSRF\ntoken.",
+        "description": "Who is calling, for a frontend after a reload: their workspace, whether they own the server, whether they\nfinished the setup after sign-up, and the CSRF token.",
         "operationId": "current_session_api_v1_session_get",
         "responses": {
           "200": {

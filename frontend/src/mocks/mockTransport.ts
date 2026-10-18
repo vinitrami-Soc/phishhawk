@@ -55,13 +55,13 @@ const tokens: Token[] = [];
 
 /* Workspaces: who is in which, with their profile. The users list stays the server's shape. */
 const workspaces: Workspace[] = [{ id: 1, name: 'Example Corp', kind: 'organization' }];
-type Member = { workspace_id: number; owner: boolean; profile: Profile };
+type Member = { workspace_id: number; owner: boolean; profile: Profile; onboarded: boolean };
 const blank: Profile = { first_name: '', last_name: '', location: '', job_title: '' };
 const members = new Map<number, Member>([
-  [1, { workspace_id: 1, owner: true, profile: { first_name: 'Sam', last_name: 'Boss', location: 'London', job_title: 'SOC lead' } }],
-  [2, { workspace_id: 1, owner: false, profile: { ...blank } }],
+  [1, { workspace_id: 1, owner: true, profile: { first_name: 'Sam', last_name: 'Boss', location: 'London', job_title: 'SOC lead' }, onboarded: true }],
+  [2, { workspace_id: 1, owner: false, profile: { ...blank }, onboarded: true }],
 ]);
-const memberOf = (userId: number): Member => members.get(userId) ?? { workspace_id: 1, owner: false, profile: { ...blank } };
+const memberOf = (userId: number): Member => members.get(userId) ?? { workspace_id: 1, owner: false, profile: { ...blank }, onboarded: true };
 /* Analyses made in the preview belong to the workspace that submitted them; the sample ones to Example Corp. */
 const analysisWorkspace = new Map<number, number>();
 const workspaceOf = (a: Analysis) => analysisWorkspace.get(a.id) ?? 1;
@@ -93,10 +93,11 @@ function newAccount(given: Record<string, unknown>): { username: string; profile
   }
 }
 
-function addMember(username: string, role: 'admin' | 'analyst', workspaceId: number, profile: Profile): User {
+/** Someone who signed up or joined (`signedUp`) sees the setup once; someone an admin added does not. */
+function addMember(username: string, role: 'admin' | 'analyst', workspaceId: number, profile: Profile, signedUp = true): User {
   const user: User = { id: Math.max(...users.map((u) => u.id)) + 1, username, role, disabled: false, last_login_at: new Date().toISOString() };
   users.push(user);
-  members.set(user.id, { workspace_id: workspaceId, owner: false, profile });
+  members.set(user.id, { workspace_id: workspaceId, owner: false, profile, onboarded: !signedUp });
   return user;
 }
 
@@ -365,7 +366,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
 
   if (pathname === '/api/v1/session') {
     if (method === 'GET') {
-      return json(200, { user_id: me.user_id, username: me.username, role: me.role, via: 'session', scope: 'full', csrf: me.csrf, owner: me.owner, workspace, profile: memberOf(me.user_id).profile });
+      return json(200, { user_id: me.user_id, username: me.username, role: me.role, via: 'session', scope: 'full', csrf: me.csrf, owner: me.owner, onboarded: memberOf(me.user_id).onboarded, workspace, profile: memberOf(me.user_id).profile });
     }
     if (method === 'DELETE') {
       record(me.username, 'logout');
@@ -503,6 +504,11 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
   }
 
   // the profile: everyone's own
+  if (pathname === '/api/v1/me/onboarded' && method === 'POST') {
+    const mine = members.get(me.user_id);
+    if (mine) mine.onboarded = true;
+    return json(204, null);
+  }
   if (pathname === '/api/v1/me') {
     const mine = memberOf(me.user_id);
     const view = () => ({ username: me.username, role: me.role, owner: me.owner, profile: mine.profile, workspace });
@@ -696,7 +702,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
       if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return error(422, 'invalid', 'usernames are 3 to 64 lowercase letters, digits, dots, dashes or underscores');
       if (!password || password.length < 12) return error(422, 'invalid', 'passwords need at least 12 characters');
       if (users.some((u) => u.username === username)) return error(422, 'invalid', 'that username is taken');
-      const user = addMember(username, role, me.workspace_id, { ...blank });
+      const user = addMember(username, role, me.workspace_id, { ...blank }, false);
       user.last_login_at = null;
       record(me.username, 'user_create', 'user', user.id, { username, role });
       return json(201, user);

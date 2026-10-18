@@ -231,6 +231,14 @@ entering the current one. A new password signs them out everywhere else. An
 organization's admin can also rename it. A profile is seen only inside its
 workspace.
 
+**The setup after sign-up.** An account made by setup, sign-up or an
+invitation starts with `onboarded` false in `GET /api/v1/session`, and the
+console opens a short setup once: an organization's admin invites the team,
+connects a report mailbox and chooses reputation providers; someone on their
+own chooses providers; everyone gets a tour. `POST /api/v1/me/onboarded` ends
+it, finished or skipped. Accounts made with `create-admin` or by an admin's
+Add a user, and every account of an upgraded server, have nothing to set up.
+
 **Server settings (owner only).** Whether sign-up is on, the daily sign-up
 cap, and the upload and batch limits: `GET/PATCH /api/v1/server-settings`.
 

@@ -9,6 +9,15 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **A short setup after sign-up.** The console opens it once (`/app/welcome`)
+  for an account made by setup, sign-up or an invitation. An organization's
+  admin invites the team with links, connects a report mailbox and chooses
+  reputation providers; someone on their own chooses providers; everyone gets
+  a five-card tour of Triage, the Queue, an analysis, Campaigns and Audit.
+  Every step can be skipped, and so can all of it. Migration 0006 adds
+  `users.onboarded_at`; accounts an upgraded server already has count as set
+  up. `GET /api/v1/session` says `onboarded`, and `POST /api/v1/me/onboarded`
+  ends it.
 - **Setup, sign-up, invitations and profiles in the frontend.** `/app/setup`,
   `/app/signup` (Just me or My organization), `/app/join/{token}` and
   `/app/profile`; Invite and pending invitations on Users, for an

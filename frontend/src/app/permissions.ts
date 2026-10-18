@@ -1,5 +1,6 @@
-/* Which analysis controls to show (frontend build brief, sections 6 and 7.5).
-   Presentation only: the server checks every request again. */
+/* Which analysis controls to show (frontend build brief, sections 6 and 7.5),
+   and which steps the setup after sign-up has. Presentation only: the server
+   checks every request again. */
 
 import type { AnalysisSummary, Session } from '@/api/types';
 
@@ -32,4 +33,12 @@ export function analysisActions(
     hold: present && admin && !analysis.hold,
     release: present && admin && analysis.hold,
   };
+}
+
+export type OnboardingStep = 'invite' | 'mailbox' | 'providers' | 'tour';
+
+/** An organization's admin sets it up; an individual chooses providers; anyone else is shown around. */
+export function onboardingSteps(session: Pick<Session, 'role' | 'workspace'>): OnboardingStep[] {
+  if (session.role !== 'admin') return ['tour'];
+  return session.workspace?.kind === 'individual' ? ['providers', 'tour'] : ['invite', 'mailbox', 'providers', 'tour'];
 }

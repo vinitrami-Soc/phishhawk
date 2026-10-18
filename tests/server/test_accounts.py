@@ -389,3 +389,22 @@ def test_an_individual_workspace_has_one_member(anon, services):
     refused = anon.post("/api/v1/users", json={"username": "friend", "password": PASSWORD, "role": "analyst"})
     assert refused.status_code == 403 and "individual" in refused.json()["detail"]
     assert [u["username"] for u in anon.get("/api/v1/users").json()] == ["sam"]
+
+
+def test_the_setup_after_sign_up_shows_until_it_is_finished_or_skipped(anon, services):
+    _open_signup(services)
+    _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}))
+    assert anon.get("/api/v1/session").json()["onboarded"] is False
+    assert anon.post("/api/v1/me/onboarded").status_code == 204
+    assert anon.get("/api/v1/session").json()["onboarded"] is True
+    assert anon.post("/api/v1/me/onboarded").status_code == 204  # finished already: nothing changes
+    assert anon.get("/api/v1/session").json()["onboarded"] is True
+
+
+def test_an_account_an_admin_adds_or_the_command_line_makes_has_no_setup_to_go_through(app, admin):
+    from .serverkit import login
+
+    assert admin.get("/api/v1/session").json()["onboarded"] is True  # made as the command line makes one
+    added = admin.post("/api/v1/users", json={"username": "kim", "password": PASSWORD, "role": "analyst"})
+    assert added.status_code == 201, added.text
+    assert login(app, "kim").get("/api/v1/session").json()["onboarded"] is True

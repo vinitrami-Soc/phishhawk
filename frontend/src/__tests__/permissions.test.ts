@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { analysisActions } from '../app/permissions';
+import { analysisActions, onboardingSteps } from '../app/permissions';
 
 const admin = { role: 'admin' as const, user_id: 1 };
 const alice = { role: 'analyst' as const, user_id: 2 };
@@ -54,4 +54,12 @@ test('a message with no submitter (token or system) is nobody\'s own', () => {
   const noOwner = { ...open, submitted_by: null };
   assert.equal(analysisActions({ role: 'analyst', user_id: null }, noOwner).rawMessage, false);
   assert.equal(analysisActions({ role: 'analyst', user_id: null }, noOwner).deleteNow, false);
+});
+
+test("the setup after sign-up: an organization's admin, an individual, and anyone else", () => {
+  const organization = { id: 1, name: 'Acme SOC', kind: 'organization' as const };
+  const individual = { id: 2, name: 'Sam Lee', kind: 'individual' as const };
+  assert.deepEqual(onboardingSteps({ role: 'admin', workspace: organization }), ['invite', 'mailbox', 'providers', 'tour']);
+  assert.deepEqual(onboardingSteps({ role: 'admin', workspace: individual }), ['providers', 'tour']);
+  assert.deepEqual(onboardingSteps({ role: 'analyst', workspace: organization }), ['tour']);
 });

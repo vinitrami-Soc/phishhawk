@@ -4,7 +4,8 @@
    page, Privacy and Help can be read signed out too, and so can the pages for
    getting in: setup, Create an account and an invitation's Join. */
 
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, UserRound, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
@@ -42,6 +43,7 @@ const SetupScreen = lazy(() => import('@/screens/SetupScreen'));
 const SignupScreen = lazy(() => import('@/screens/SignupScreen'));
 const JoinScreen = lazy(() => import('@/screens/JoinScreen'));
 const ProfileScreen = lazy(() => import('@/screens/ProfileScreen'));
+const WelcomeScreen = lazy(() => import('@/screens/WelcomeScreen'));
 
 const icon = 'h-4 w-4';
 
@@ -111,6 +113,13 @@ export default function App() {
   useEffect(() => {
     if (session && (route.name === 'login' || route.name === 'setup' || route.name === 'signup')) navigate('/app/', { replace: true });
   }, [session, route.name]);
+
+  // the setup after sign-up opens once, at the start page, until it is finished or skipped
+  const [setupDone, setSetupDone] = useState(false);
+  const needsSetup = session?.onboarded === false && !setupDone;
+  useEffect(() => {
+    if (needsSetup && route.name === 'triage') navigate('/app/welcome', { replace: true });
+  }, [needsSetup, route.name]);
 
   /** A new account is signed in already: open the console at its start. */
   const entered = (next: Session) => {
@@ -206,6 +215,19 @@ export default function App() {
     const isAdmin = session.role === 'admin';
     let screen;
     if (ADMIN_ONLY.includes(route.name) && !isAdmin) screen = <PermissionDeniedState />;
+    else if (route.name === 'triage' && needsSetup) screen = <PageFallback />; // on its way to /app/welcome
+    else if (route.name === 'welcome')
+      screen = (
+        <WelcomeScreen
+          session={session}
+          onDone={(href) => {
+            // committed first: the path changes in a render of its own, which must not send it back here
+            flushSync(() => setSetupDone(true));
+            void refresh();
+            navigate(href);
+          }}
+        />
+      );
     else if (route.name === 'triage' || route.name === 'login' || route.name === 'setup' || route.name === 'signup') screen = <TriageScreen />;
     else if (route.name === 'queue') screen = <QueueScreen session={session} />;
     else if (route.name === 'analysis') screen = <AnalysisScreen id={route.id} session={session} />;

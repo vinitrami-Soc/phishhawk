@@ -74,7 +74,8 @@ def default_workspace(db: DbSession) -> int:
 
 
 def create_user(db: DbSession, username: str, password: str, role: str, workspace_id: int | None = None) -> User:
-    """The server's first admin becomes its owner."""
+    """The server's first admin becomes its owner. An account made here (the command line, or an admin's Add
+    user) has no setup after sign-up to go through."""
     if not USERNAME_RE.match(username):
         raise AuthError("usernames are 3 to 64 lowercase letters, digits, dots, dashes or underscores")
     if len(password) < MIN_PASSWORD:
@@ -86,7 +87,7 @@ def create_user(db: DbSession, username: str, password: str, role: str, workspac
     owned = db.scalars(select(User.id).where(User.owner.is_(True)).limit(1)).first() is not None
     user = User(username=username, password_hash=_hasher.hash(password), role=role,
                 workspace_id=default_workspace(db) if workspace_id is None else workspace_id,
-                owner=role == "admin" and not owned)
+                owner=role == "admin" and not owned, onboarded_at=utcnow())
     db.add(user)
     db.flush()
     return user

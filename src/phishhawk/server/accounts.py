@@ -73,6 +73,7 @@ def _new_user(db: Session, data: Mapping[str, Any], role: str, workspace_id: int
     user = auth.create_user(db, username, password, role, workspace_id=workspace_id)
     for name, value in fields.items():
         setattr(user, name, value)
+    user.onboarded_at = None  # signed up: the console opens the setup once
     return user
 
 
