@@ -42,6 +42,15 @@ MATRIX = [
     ("GET", "/api/v1/me", (401, 200, 200, 200, 200)),
     ("PATCH", "/api/v1/me", (401, 200, 200, 403, 403)),
     ("POST", "/api/v1/me/onboarded", (401, 204, 204, 403, 403)),
+    ("POST", "/api/v1/feedback", (401, 201, 201, 403, 403)),
+    ("GET", "/api/v1/feedback", (401, 200, 200, 403, 403)),
+    ("PATCH", "/api/v1/feedback/{feedback}", (401, 404, 200, 403, 403)),
+    ("DELETE", "/api/v1/feedback/{feedback}", (401, 404, 204, 403, 403)),
+    ("GET", "/api/v1/feedback/verdicts", (401, 403, 200, 403, 403)),
+    ("PUT", "/api/v1/analyses/{analysis}/feedback", (401, 200, 200, 403, 403)),
+    ("GET", "/api/v1/analyses/{analysis}/feedback", (401, 200, 200, 200, 200)),
+    ("DELETE", "/api/v1/analyses/{analysis}/feedback/{answer}", (401, 403, 204, 403, 403)),
+    ("DELETE", "/api/v1/analyses/{analysis}/feedback", (401, 204, 204, 403, 403)),
     ("GET", "/api/v1/invites", (401, 403, 200, 403, 403)),
     ("POST", "/api/v1/invites", (401, 403, 201, 403, 403)),
     ("GET", "/api/v1/server-settings", (401, 403, 200, 403, 403)),
@@ -60,6 +69,9 @@ BODIES = {("PATCH", "/api/v1/settings"): {"retention_days": 20},
           ("PATCH", "/api/v1/mailboxes/{mailbox}"): {"interval_minutes": 10},
           ("PATCH", "/api/v1/me"): {"job_title": "Matrix"},
           ("POST", "/api/v1/invites"): {"role": "analyst"},
+          ("POST", "/api/v1/feedback"): {"kind": "bug", "message": "Matrix"},
+          ("PATCH", "/api/v1/feedback/{feedback}"): {"status": "done"},
+          ("PUT", "/api/v1/analyses/{analysis}/feedback"): {"opinion": "right"},
           ("PATCH", "/api/v1/server-settings"): {"signup_daily_cap": 50},
           ("POST", "/api/v1/users"): {"username": "carol", "password": "another long password", "role": "analyst"}}
 
@@ -88,8 +100,11 @@ def world(app, services, admin):
     mailbox = admin.post("/api/v1/mailboxes", json={"name": "Reports", "kind": "imap",
                                                     "secret": secrets.token_hex(8),
                                                     "config": {"host": "imap.example-corp.co.uk", "user": "soc"}})
+    feedback = admin.post("/api/v1/feedback", json={"kind": "idea", "message": "Matrix"}).json()["id"]
+    answer = admin.put("/api/v1/analyses/%d/feedback" % analysis, json={"opinion": "missed"}).json()["id"]
     return {"analysis": analysis, "message": message, "submission": submitted["id"], "tokens": tokens,
-            "batch": batch, "batch_file": batch_file, "campaign": campaign, "mailbox": mailbox.json()["id"]}
+            "batch": batch, "batch_file": batch_file, "campaign": campaign, "mailbox": mailbox.json()["id"],
+            "feedback": feedback, "answer": answer}
 
 
 @pytest.mark.parametrize("method, path, expected", MATRIX)

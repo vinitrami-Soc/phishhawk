@@ -134,7 +134,7 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
         return {"status": "ok", "version": __version__, "queue": queued,
                 "last_heartbeat": beat.isoformat() if beat else None, "disk_free_mb": disk.free // (1024 * 1024)}
 
-    from .routes import accounts, api, pages
+    from .routes import accounts, api, feedback, pages
 
     if services.settings.frontend_dir:
         @app.get("/", include_in_schema=False)
@@ -145,6 +145,7 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
 
     app.include_router(api.router)
     app.include_router(accounts.router)
+    app.include_router(feedback.router)
     app.include_router(pages.router)
     # files only: they hold no secret, so compressing them cannot leak one (BREACH); API answers stay as they are
     static = StaticFiles(directory=str(files("phishhawk.server") / "static"))

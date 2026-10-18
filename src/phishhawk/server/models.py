@@ -264,6 +264,34 @@ class Job(Base):
     finished_at: Mapped[dt.datetime | None] = mapped_column(default=None)
 
 
+class Feedback(Base):
+    """A bug, an idea or a question for the server's owner, from the page it was sent from. It goes with its
+    sender's account."""
+    __tablename__ = "feedback"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = workspace_column()
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))  # bug, idea, question or other
+    message: Mapped[str] = mapped_column(Text)
+    page: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(16), default="open")  # open or done (the owner's)
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
+class VerdictFeedback(Base):
+    """One person's word on one analysis's verdict: right, missed (it was phishing) or false_alarm (it was not)."""
+    __tablename__ = "verdict_feedback"
+    __table_args__ = (UniqueConstraint("analysis_id", "user_id", name="uq_verdict_feedback_analysis_user"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    workspace_id: Mapped[int] = workspace_column()
+    analysis_id: Mapped[int] = mapped_column(ForeignKey("analyses.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    opinion: Mapped[str] = mapped_column(String(16))
+    note: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+
+
 class Setting(Base):
     __tablename__ = "settings"
     # a workspace's own (providers and their keys, domains, retention), or SERVER's (sign-up, upload limits)
