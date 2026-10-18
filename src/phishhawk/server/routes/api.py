@@ -172,11 +172,13 @@ def get_campaign(request: Request, db: DB, actor: CurrentActor, campaign_id: int
 @router.get("/analyses")
 def list_analyses(request: Request, db: DB, actor: CurrentActor, q: str = "", verdict: str = "",
                   offset: Annotated[int, Query(ge=0)] = 0, source: str = "", user: int | None = None,
-                  since: dt.date | None = None, until: dt.date | None = None) -> list[dict[str, Any]]:
+                  since: dt.date | None = None, until: dt.date | None = None,
+                  disputed: bool = False) -> list[dict[str, Any]]:
     """Newest first, 50 at a time. q searches SHA-256, report ID and indicators; source is upload, paste or
-    batch; user a user's ID; since and until are days (UTC), both included."""
+    batch; user a user's ID; since and until are days (UTC), both included; disputed keeps the analyses someone
+    said were wrong (missed or false alarm)."""
     return views.listing(db, services(request).store, actor.workspace_id, q, verdict, offset, source, user, since,
-                         until)
+                         until, disputed)
 
 
 @router.get("/analyses/{analysis_id}")

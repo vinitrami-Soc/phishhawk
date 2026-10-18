@@ -242,6 +242,27 @@ Add a user, and every account of an upgraded server, have nothing to set up.
 **Server settings (owner only).** Whether sign-up is on, the daily sign-up
 cap, and the upload and batch limits: `GET/PATCH /api/v1/server-settings`.
 
+## Feedback
+
+**To the owner.** Anyone signed in sends a bug, an idea, a question or anything
+else, up to 4,000 characters, with the page it was sent from (`POST
+/api/v1/feedback`; at most 10 an hour for one person). Its sender and the
+server's owner read it; the owner marks it done; either deletes it.
+
+**On a verdict.** On any analysis, each person answers "Was this verdict
+right?" once: right, missed (it was phishing) or false alarm (it was not),
+with an optional note of up to 1,000 characters, and can change or withdraw
+it. Everyone in the workspace sees the answers, and an admin can remove any.
+The Queue's Disputed filter (`GET /api/v1/analyses?disputed=true`) shows the
+analyses someone said were wrong. Admins see a summary for their workspace
+(`GET /api/v1/feedback/verdicts`), and the owner can download every
+workspace's disputed verdicts as CSV (`?format=csv`), with the report ID,
+message SHA-256, verdict, score and the counts, and no message, note or
+person in it.
+
+Both kinds are in the audit log, and go when the account that wrote them is
+deleted. Migration 0007 adds them.
+
 ## Reputation lookups
 
 A new installation makes no outbound lookups. An admin turns providers on

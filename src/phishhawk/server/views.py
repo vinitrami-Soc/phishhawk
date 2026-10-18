@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from . import feedback
 from .models import Analysis, Indicator, Mailbox, Message, Submission, User
 from .store import BlobStore
 
@@ -46,8 +47,9 @@ def summary(store: BlobStore, analysis: Analysis, message: Message, submission: 
 
 def listing(db: Session, store: BlobStore, workspace_id: int, q: str = "", verdict: str = "", offset: int = 0,
             source: str = "", user: int | None = None, since: dt.date | None = None,
-            until: dt.date | None = None) -> list[dict[str, Any]]:
-    """Newest first. since and until are days (UTC), both included."""
+            until: dt.date | None = None, disputed: bool = False) -> list[dict[str, Any]]:
+    """Newest first. since and until are days (UTC), both included; disputed keeps the analyses someone said
+    were wrong."""
     query = (select(Analysis, Message, Submission).join(Message, Analysis.message_id == Message.id)
              .join(Submission, Analysis.submission_id == Submission.id)
              .where(Analysis.workspace_id == workspace_id).order_by(Analysis.id.desc()))
@@ -57,6 +59,8 @@ def listing(db: Session, store: BlobStore, workspace_id: int, q: str = "", verdi
         query = query.where(Submission.source == source)
     if user is not None:
         query = query.where(Submission.user_id == user)
+    if disputed:
+        query = query.where(Analysis.id.in_(feedback.disputed_ids()))
     if since is not None:
         query = query.where(Analysis.created_at >= dt.datetime.combine(since, dt.time(), dt.timezone.utc))
     if until is not None:

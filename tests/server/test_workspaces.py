@@ -309,7 +309,12 @@ def _ids(admin, theirs):
     invite = admin.post("/api/v1/invites", json={"role": "analyst", "note": "guard"})
     assert invite.status_code == 201, invite.text
     a = theirs["analysis"]
-    return {"invite_id": invite.json()["id"],
+    feedback = admin.post("/api/v1/feedback", json={"kind": "bug", "message": "guard"})
+    assert feedback.status_code == 201, feedback.text
+    answer = admin.put("/api/v1/analyses/%d/feedback" % a["id"], json={"opinion": "right"})
+    assert answer.status_code == 200, answer.text
+    return {"invite_id": invite.json()["id"], "feedback_id": feedback.json()["id"],
+            "answer_id": answer.json()["id"],
             "analysis_id": a["id"], "submission_id": theirs["submission"], "batch_id": theirs["batch"]["id"],
             "message_id": a["message_id"], "campaign_id": theirs["campaign"]["id"], "mailbox_id": box.json()["id"],
             "user_id": a["submitted_by"], "token_id": admin.get("/api/v1/tokens").json()[0]["id"],

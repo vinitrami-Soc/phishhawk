@@ -154,6 +154,20 @@ an account answers 201 `{"csrf"}` with the session cookie, as a login does; a
 | `GET /api/v1/me`, `PATCH /api/v1/me` | `{"username", "role", "owner", "profile", "workspace"}`. Send any of `first_name`, `last_name`, `location`, `job_title`; `organization` (an organization's admin renames it); `password` with `current_password` (403 when that is wrong). |
 | `GET /api/v1/server-settings`, `PATCH /api/v1/server-settings` | The owner's only (403 for anyone else): `signup_open`, `signup_daily_cap`, `max_upload_mb`, `max_batch_messages`. |
 
+Feedback. Signed in with a session (an API token gets 403); a 422 `detail`
+starts with the field it is about.
+
+| Call | Answer |
+|---|---|
+| `POST /api/v1/feedback` with `{"kind", "message", "page"}` | 201. `kind`: `bug`, `idea`, `question` or `other`; `message` up to 4,000 characters (lines allowed); `page` the app path it was sent from, or empty. 429 with `Retry-After` past 10 an hour for one person. |
+| `GET /api/v1/feedback` | Newest first: the owner gets everyone's, anyone else their own. Each is `{"id", "kind", "message", "page", "status", "created_at", "username", "workspace": {"id", "name"}}`; `status` is `open` or `done`. |
+| `PATCH /api/v1/feedback/{id}` with `{"status"}`, `DELETE /api/v1/feedback/{id}` | The owner marks it `open` or `done` (403 for its sender); its sender or the owner deletes it. Someone else's answers 404. |
+| `GET /api/v1/analyses/{id}/feedback` | `{"mine", "answers", "counts"}`: the caller's answer or null, everyone's (`id`, `user_id`, `username`, `opinion`, `note`, `created_at`, `updated_at`), and `{"right", "missed", "false_alarm"}`. |
+| `PUT /api/v1/analyses/{id}/feedback` with `{"opinion", "note"}`, `DELETE /api/v1/analyses/{id}/feedback` | "Was this verdict right?": `opinion` is `right`, `missed` (it was phishing) or `false_alarm` (it was not); `note` up to 1,000 characters, optional. One answer for each person: send another to change it; DELETE removes the caller's. |
+| `DELETE /api/v1/analyses/{id}/feedback/{answer_id}` | Anyone's answer: its author's, or an admin's (403 otherwise). |
+| `GET /api/v1/feedback/verdicts` | Admins: `{"counts", "disputed"}` for the workspace; each disputed analysis has `analysis_id`, `report_id`, `verdict`, `score`, the three counts and `last_answer_at`. With `?format=csv`, the owner's: every workspace's disputed verdicts as CSV, without messages, notes or people. |
+| `GET /api/v1/analyses?disputed=true` | The Queue's Disputed filter: analyses someone answered `missed` or `false_alarm` on. |
+
 Roles: analysts submit and read everything, and delete their own submissions;
 admins also hold, release and delete completely. Show only the buttons the
 user's `role` allows; the server refuses the rest (403) whatever the frontend

@@ -9,6 +9,15 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Feedback, in the API.** Anyone signed in sends the server's owner a bug,
+  an idea, a question or anything else, with the page it came from (10 an hour
+  at most); the owner reads all of it and marks it done. On any analysis, each
+  person answers "Was this verdict right?" (right, missed or false alarm, with
+  an optional note) and can change it. The Queue gains a Disputed filter
+  (`?disputed=true`), admins a summary of their workspace's answers, and the
+  owner a CSV of every workspace's disputed verdicts without messages, notes
+  or people. Migration 0007 adds the two tables
+  ([docs/SERVER.md](docs/SERVER.md#feedback)).
 - **A short setup after sign-up.** The console opens it once (`/app/welcome`)
   for an account made by setup, sign-up or an invitation. An organization's
   admin invites the team with links, connects a report mailbox and chooses

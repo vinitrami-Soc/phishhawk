@@ -44,6 +44,17 @@
         "title": "Body_submit_api_v1_submissions_post",
         "type": "object"
       },
+      "FeedbackPatch": {
+        "properties": {
+          "status": {
+            "default": "",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "FeedbackPatch",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -184,6 +195,27 @@
           }
         },
         "title": "MailboxPatch",
+        "type": "object"
+      },
+      "NewFeedback": {
+        "properties": {
+          "kind": {
+            "default": "",
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "default": "",
+            "title": "Message",
+            "type": "string"
+          },
+          "page": {
+            "default": "",
+            "title": "Page",
+            "type": "string"
+          }
+        },
+        "title": "NewFeedback",
         "type": "object"
       },
       "NewInvite": {
@@ -729,6 +761,22 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "VerdictAnswer": {
+        "properties": {
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "opinion": {
+            "default": "",
+            "title": "Opinion",
+            "type": "string"
+          }
+        },
+        "title": "VerdictAnswer",
+        "type": "object"
       }
     }
   },
@@ -740,7 +788,7 @@
   "paths": {
     "/api/v1/analyses": {
       "get": {
-        "description": "Newest first, 50 at a time. q searches SHA-256, report ID and indicators; source is upload, paste or\nbatch; user a user's ID; since and until are days (UTC), both included.",
+        "description": "Newest first, 50 at a time. q searches SHA-256, report ID and indicators; source is upload, paste or\nbatch; user a user's ID; since and until are days (UTC), both included; disputed keeps the analyses someone\nsaid were wrong (missed or false alarm).",
         "operationId": "list_analyses_api_v1_analyses_get",
         "parameters": [
           {
@@ -833,6 +881,16 @@
               ],
               "title": "Until"
             }
+          },
+          {
+            "in": "query",
+            "name": "disputed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Disputed",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -904,6 +962,171 @@
           }
         },
         "summary": "Get Analysis"
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/feedback": {
+      "delete": {
+        "description": "The caller's own answer on this analysis, if they gave one.",
+        "operationId": "withdraw_answer_api_v1_analyses__analysis_id__feedback_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "analysis_id",
+            "required": true,
+            "schema": {
+              "title": "Analysis Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Withdraw Answer"
+      },
+      "get": {
+        "description": "Everyone's answer on this analysis's verdict, the caller's own (`mine`), and how many of each.",
+        "operationId": "verdict_answers_api_v1_analyses__analysis_id__feedback_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "analysis_id",
+            "required": true,
+            "schema": {
+              "title": "Analysis Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verdict Answers Api V1 Analyses  Analysis Id  Feedback Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verdict Answers"
+      },
+      "put": {
+        "description": "Was the verdict right? `opinion` is right, missed (it was phishing) or false_alarm (it was not); `note`\nis optional. One answer for each person, changed by sending another.",
+        "operationId": "answer_verdict_api_v1_analyses__analysis_id__feedback_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "analysis_id",
+            "required": true,
+            "schema": {
+              "title": "Analysis Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerdictAnswer"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Answer Verdict Api V1 Analyses  Analysis Id  Feedback Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Verdict"
+      }
+    },
+    "/api/v1/analyses/{analysis_id}/feedback/{answer_id}": {
+      "delete": {
+        "description": "Anyone's answer on this analysis: its author's to remove, or a workspace admin's.",
+        "operationId": "remove_answer_api_v1_analyses__analysis_id__feedback__answer_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "analysis_id",
+            "required": true,
+            "schema": {
+              "title": "Analysis Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "answer_id",
+            "required": true,
+            "schema": {
+              "title": "Answer Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Answer"
       }
     },
     "/api/v1/analyses/{analysis_id}/files/{name}": {
@@ -1209,6 +1432,193 @@
           }
         },
         "summary": "Get Campaign"
+      }
+    },
+    "/api/v1/feedback": {
+      "get": {
+        "description": "The owner gets everyone's, with their workspace; anyone else what they sent. Newest first.",
+        "operationId": "list_feedback_api_v1_feedback_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Feedback Api V1 Feedback Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Feedback"
+      },
+      "post": {
+        "description": "A bug, an idea, a question or other, for the server's owner; `page` is where it was sent from. 10 an hour\nfor each person (429 with Retry-After past that).",
+        "operationId": "send_feedback_api_v1_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewFeedback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Send Feedback Api V1 Feedback Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Feedback"
+      }
+    },
+    "/api/v1/feedback/verdicts": {
+      "get": {
+        "description": "The workspace's answers on verdicts: how many of each and the disputed analyses. `format=csv` is the\nowner's: every workspace's disputed verdicts, without messages, notes or people.",
+        "operationId": "verdict_summary_api_v1_feedback_verdicts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "json",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Verdict Summary Api V1 Feedback Verdicts Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verdict Summary"
+      }
+    },
+    "/api/v1/feedback/{feedback_id}": {
+      "delete": {
+        "description": "Its sender or the owner deletes it.",
+        "operationId": "delete_feedback_api_v1_feedback__feedback_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "title": "Feedback Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Feedback"
+      },
+      "patch": {
+        "description": "The owner marks it open or done.",
+        "operationId": "mark_feedback_api_v1_feedback__feedback_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "feedback_id",
+            "required": true,
+            "schema": {
+              "title": "Feedback Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Mark Feedback Api V1 Feedback  Feedback Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Feedback"
       }
     },
     "/api/v1/invites": {
