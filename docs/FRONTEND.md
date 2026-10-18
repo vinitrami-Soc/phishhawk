@@ -164,6 +164,9 @@ an account answers 201 `{"csrf"}` with the session cookie, as a login does; a
 | `GET /api/v1/invites`, `POST /api/v1/invites` with `{"role", "note"}`, `DELETE /api/v1/invites/{id}` | Admins of an organization: the invitations still usable (`id`, `role`, `note`, `created_at`, `expires_at`, `created_by_name`); a new one adds `token` and `link` (`/join/<token>`, the built-in join page), shown once; 403 in an individual workspace. |
 | `GET /api/v1/me`, `PATCH /api/v1/me` | `{"username", "role", "owner", "profile", "workspace"}`. Send any of `first_name`, `last_name`, `location`, `job_title`; `organization` (an organization's admin renames it); `password` with `current_password` (403 when that is wrong). |
 | `GET /api/v1/server-settings`, `PATCH /api/v1/server-settings` | The owner's only (403 for anyone else): `signup_open`, `signup_daily_cap`, `max_upload_mb`, `max_batch_messages`, `daily_messages_organization`, `daily_messages_individual` (messages each workspace may submit a day; past it, a submission answers 429 with `Retry-After` until midnight UTC). |
+| `DELETE /api/v1/users/{id}` | An admin deletes a member of their workspace: 204. 422 for yourself, 403 for the server's owner. What they submitted stays. |
+| `DELETE /api/v1/me` with `{"password"}` | Someone on their own deletes their account and workspace: 204, and the session ends. 403 when the password is wrong (throttled; 429 with `Retry-After`) or in an organization, where its admins delete accounts. |
+| `GET /api/v1/workspaces`, `DELETE /api/v1/workspaces/{id}` | The owner's only: every workspace as `{"id", "name", "kind", "members", "created_at"}`, no one's profile; DELETE removes one with everything in it (204), 409 for the owner's own, 404 for anyone else. |
 
 Feedback. Signed in with a session (an API token gets 403); a 422 `detail`
 starts with the field it is about.

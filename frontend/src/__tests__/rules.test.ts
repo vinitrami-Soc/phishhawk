@@ -161,7 +161,7 @@ test('a skip link leads past the top bar to the main content', () => {
 test('the privacy page says what is kept and when it was last updated', () => {
   const page = readFileSync(root + 'src/screens/PrivacyScreen.tsx', 'utf8');
   assert.match(page, /Last updated <time dateTime="\d{4}-\d{2}-\d{2}">/);
-  for (const topic of ['What PhishHawk keeps', 'What leaves this server', 'Cookies and storage on your device', 'Terms of use']) {
+  for (const topic of ['What PhishHawk keeps', 'What leaves this server', 'Deleting your account', 'Cookies and storage on your device', 'Terms of use']) {
     assert.match(page, new RegExp(topic), topic);
   }
 });

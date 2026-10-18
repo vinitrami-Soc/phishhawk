@@ -520,3 +520,83 @@ def test_people_say_whether_a_verdict_was_right_and_send_the_owner_feedback(brow
                 page.wait_for_timeout(400)
                 assert page.evaluate(PAST_EDGE, "body") == [], (width, url)
         assert errors == []
+
+
+def test_an_admin_deletes_a_member_the_owner_a_workspace_and_someone_alone_their_account(browser, tmp_path):
+    import requests
+
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        _open_signup(server)
+        for kind, username, organization in (("organization", "ana", "Ana Labs"), ("individual", "noor", "")):
+            person = requests.Session()
+            made = person.post(server.base + "/api/v1/signup", json={
+                "kind": kind, "username": username, "password": PASSWORD, "first_name": username.capitalize(),
+                "last_name": "Example", "location": "Pune", "job_title": "", "organization": organization})
+            assert made.status_code == 201, made.text
+            person.post(server.base + "/api/v1/me/onboarded", headers={"X-CSRF-Token": made.json()["csrf"]})
+        root = requests.Session()
+        signed_in = root.post(server.base + "/api/v1/session", json={"username": "root", "password": PASSWORD})
+        kim = {"username": "kim", "password": PASSWORD, "role": "analyst"}
+        root.headers["X-CSRF-Token"] = signed_in.json()["csrf"]
+        added = root.post(server.base + "/api/v1/users", json=kim)
+        assert added.status_code == 201, added.text
+        page, errors = _signed_in(browser, server)  # root owns the server
+
+        # an admin deletes a member
+        page.goto(server.base + "/app/users")
+        page.get_by_role("button", name="Delete kim").click()
+        page.get_by_role("dialog").get_by_role("button", name="Delete", exact=True).click()
+        page.get_by_text("kim was deleted.").wait_for()
+        sync_api.expect(page.get_by_role("button", name="Delete kim")).to_have_count(0)
+        sync_api.expect(page.get_by_role("button", name="Delete root")).to_have_count(0)  # never yourself
+
+        # the owner sees every workspace by name, kind and members, and deletes one, never their own
+        page.goto(server.base + "/app/settings")
+        workspaces = page.get_by_role("region", name="Workspaces")
+        workspaces.get_by_text("Ana Labs").wait_for()
+        sync_api.expect(workspaces.get_by_text("Noor Example")).to_be_visible()
+        sync_api.expect(workspaces.get_by_role("button", name="Delete Default organization")).to_have_count(0)
+        workspaces.get_by_role("button", name="Delete Ana Labs").click()
+        page.get_by_role("dialog").get_by_role("button", name="Delete workspace").click()
+        page.get_by_text("Ana Labs was deleted.").wait_for()
+        sync_api.expect(workspaces.get_by_text("Ana Labs")).to_have_count(0)
+
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            for url, ready in ((server.base + "/app/users", "Last sign-in"),
+                               (server.base + "/app/settings", "Noor Example")):
+                page.goto(url)
+                page.get_by_text(ready).first.wait_for()
+                page.wait_for_timeout(400)
+                assert page.evaluate(PAST_EDGE, "body") == [], (width, url)
+
+        # someone on their own deletes their account, with their password, and is back on the product page
+        alone, alone_errors = _visitor(browser)
+        alone.goto(server.base + "/app/login")
+        alone.fill("#login-username", "noor")
+        alone.fill("#login-password", PASSWORD)
+        alone.locator("form [type=submit]").click()
+        alone.wait_for_selector(".ph-commandbar")
+        for width in WIDTHS:
+            alone.set_viewport_size({"width": width, "height": 900})
+            alone.goto(server.base + "/app/profile")
+            alone.get_by_role("heading", name="Delete your account").wait_for()
+            alone.wait_for_timeout(400)
+            assert alone.evaluate(PAST_EDGE, "body") == [], (width, "profile")
+        alone.set_viewport_size({"width": 1280, "height": 900})
+        section = alone.get_by_role("region", name="Delete your account")
+        section.get_by_label("Password", exact=True).fill("not the password")
+        section.get_by_role("button", name="Delete my account").click()
+        alone.get_by_role("dialog").get_by_role("button", name="Delete my account").click()
+        sync_api.expect(alone.get_by_role("dialog").get_by_role("alert")).to_contain_text("password")
+        alone.get_by_role("dialog").get_by_role("button", name="Cancel").click()
+        section.get_by_label("Password", exact=True).fill(PASSWORD)
+        section.get_by_role("button", name="Delete my account").click()
+        alone.get_by_role("dialog").get_by_role("button", name="Delete my account").click()
+        alone.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        assert alone.url == server.base + "/app/"
+        assert alone.evaluate("fetch('/api/v1/session').then((r) => r.status)") == 401
+        assert [w["name"] for w in page.evaluate("fetch('/api/v1/workspaces').then((r) => r.json())")] == [
+            "Default organization"]
+        alone_errors = [e for e in alone_errors if "status of 403" not in e]  # the wrong password
+        assert errors == [] and alone_errors == []

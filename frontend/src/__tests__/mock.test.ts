@@ -270,3 +270,38 @@ test('verdict feedback: one answer each, the Disputed filter and the summary', a
   assert.equal((await call('DELETE', url)).status, 204);
   assert.deepEqual((await call('GET', '/api/v1/analyses?disputed=true')).body, []);
 });
+
+test('deleting: an admin deletes a member, the owner a workspace, and someone on their own their account', async () => {
+  await call('DELETE', '/api/v1/session');
+  csrf = (await signIn('boss', 'x')).body.csrf;
+  type Row = { id: number; name: string; kind: string; members: number; created_at: string };
+  const listed = (await call('GET', '/api/v1/workspaces')).body as Row[];
+  assert.deepEqual(listed.map((w) => [w.kind, w.members]), [['organization', 4], ['individual', 1], ['individual', 1]]);
+  assert.ok(listed.every((w) => !Number.isNaN(Date.parse(w.created_at))));
+  const [mine, sams, noors] = listed;
+  assert.equal((await call('DELETE', `/api/v1/workspaces/${mine.id}`)).status, 409);
+  const people = (await call('GET', '/api/v1/users')).body as { id: number; username: string }[];
+  const priya = people.find((u) => u.username === 'priya')!;
+  assert.equal((await call('DELETE', `/api/v1/users/${people.find((u) => u.username === 'boss')!.id}`)).status, 422);
+  assert.equal((await call('DELETE', `/api/v1/users/${priya.id}`)).status, 204);
+  assert.ok(!(await call('GET', '/api/v1/users')).body.some((u: { username: string }) => u.username === 'priya'));
+  assert.equal((await call('DELETE', `/api/v1/workspaces/${sams.id}`)).status, 204);
+  assert.deepEqual((await call('GET', '/api/v1/workspaces')).body.map((w: Row) => w.id), [mine.id, noors.id]);
+  await call('DELETE', '/api/v1/session');
+  assert.equal((await signIn('sam', 'x')).status, 401); // gone with the workspace
+
+  csrf = (await signIn('alice', 'x')).body.csrf;
+  assert.equal((await call('GET', '/api/v1/workspaces')).status, 403);
+  assert.equal((await call('DELETE', `/api/v1/users/${priya.id}`)).status, 403);
+  const asked = await call('DELETE', '/api/v1/me', { password: 'x' });
+  assert.equal(asked.status, 403);
+  assert.match(asked.body.detail, /admin/);
+  await call('DELETE', '/api/v1/session');
+
+  csrf = (await signIn('noor', 'x')).body.csrf;
+  assert.equal((await call('DELETE', '/api/v1/me', { password: '' })).status, 403);
+  assert.equal((await call('DELETE', '/api/v1/me', { password: 'x' })).status, 204);
+  assert.equal((await call('GET', '/api/v1/session')).status, 401);
+  csrf = (await signIn('boss', 'x')).body.csrf;
+  assert.deepEqual((await call('GET', '/api/v1/workspaces')).body.map((w: Row) => w.id), [mine.id]);
+});

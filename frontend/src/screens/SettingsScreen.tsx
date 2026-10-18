@@ -2,17 +2,19 @@
    all of them the workspace's own. Keys are never shown or sent back: the server
    returns only their last four characters, and a key is sent only when the admin
    types a new one. The upload and batch limits are the whole server's: only its
-   owner changes them, and the owner also decides who may create an account. */
+   owner changes them, and the owner also decides who may create an account and
+   sees every workspace, by name only, to delete one. */
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Plus, X } from 'lucide-react';
 import { TextMorph } from '@/components/core/text-morph';
-import { getServerSettings, getSettings, patchServerSettings, patchSettings } from '@/api/client';
+import { deleteWorkspace, getServerSettings, getSettings, listWorkspaces, patchServerSettings, patchSettings } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
-import type { ServerSettings, Session, Settings, SettingsPatch } from '@/api/types';
+import type { ServerSettings, Session, Settings, SettingsPatch, WorkspaceSummary } from '@/api/types';
 import { normaliseDomain, parseLimit } from '@/lib/validate';
 import { ProviderFields, typedKeys } from '@/components/phishhawk/ProviderFields';
-import { Button, ConfirmDialog, ErrorState, PageHeader, Panel, SectionTitle, Skeleton, Switch, TextField } from '@/components/ui/ui';
+import { Button, ConfirmDialog, ErrorState, PageHeader, Panel, SectionTitle, Skeleton, Switch, TextField, Time } from '@/components/ui/ui';
+import { useToast } from '@/components/ui/toast';
 
 type SaveState = 'idle' | 'saving' | 'saved';
 
@@ -194,6 +196,103 @@ function SignupSection() {
   );
 }
 
+/** Every workspace on the server (the owner only): its name, kind and members, never anyone's profile. Deleting
+    one deletes everything in it; the owner's own cannot be. */
+function WorkspacesSection({ session }: { session: Session }) {
+  const toast = useToast();
+  const [rows, setRows] = useState<WorkspaceSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<WorkspaceSummary | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listWorkspaces(controller.signal)
+      .then(setRows)
+      .catch((e) => !isAbort(e) && setError(e instanceof ApiError ? e.detail : NETWORK_MESSAGE));
+    return () => controller.abort();
+  }, []);
+
+  async function remove() {
+    if (!removing) return;
+    setBusy(true);
+    setRemoveError(null);
+    try {
+      await deleteWorkspace(removing.id);
+      setRows((list) => list?.filter((w) => w.id !== removing.id) ?? null);
+      toast(`${removing.name} was deleted.`);
+      setRemoving(null);
+    } catch (e) {
+      setRemoveError(e instanceof ApiError ? e.detail : NETWORK_MESSAGE);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="workspaces-title">
+      <Panel>
+        <div className="grid grid-cols-1 gap-5 p-6 sm:p-7">
+          <div>
+            <div id="workspaces-title">
+              <SectionTitle>Workspaces</SectionTitle>
+            </div>
+            <p className="mt-1 text-[13px] text-ink-muted">Every organization and person on this server, by name. You see no one&apos;s profile or messages here.</p>
+          </div>
+          {error ? (
+            <p className="text-sm text-v-malicious" role="alert">
+              {error}
+            </p>
+          ) : !rows ? (
+            <Skeleton className="h-24 rounded-2xl" />
+          ) : (
+            <ul className="divide-y divide-line rounded-2xl border border-line">
+              {rows.map((w) => {
+                const yours = w.id === session.workspace?.id;
+                return (
+                  <li key={w.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-ink [overflow-wrap:anywhere]">
+                        {w.name}
+                        {yours && <span className="ml-2 text-xs font-normal text-ink-muted">(yours)</span>}
+                      </p>
+                      <p className="mt-0.5 text-xs text-ink-muted">
+                        {w.kind === 'organization' ? 'Organization' : 'One person'} · {w.members} {w.members === 1 ? 'member' : 'members'} · since <Time iso={w.created_at} />
+                      </p>
+                    </div>
+                    {!yours && (
+                      <Button size="sm" variant="ghost" aria-label={`Delete ${w.name}`} onClick={() => setRemoving(w)}>
+                        Delete
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </Panel>
+      <ConfirmDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoving(null);
+            setRemoveError(null);
+          }
+        }}
+        title={`Delete ${removing?.name ?? 'this workspace'}?`}
+        body={`Everything in it goes, for good: ${removing?.members === 1 ? 'its member' : `its ${removing?.members ?? 0} members`}, and its messages, reports, batches, campaigns, mailboxes, settings and keys. The audit log keeps its records.`}
+        confirmLabel="Delete workspace"
+        danger
+        busy={busy}
+        error={removeError}
+        onConfirm={remove}
+      />
+    </section>
+  );
+}
+
 const LIMITS: { key: 'retention_days' | 'max_upload_mb' | 'max_batch_messages' | 'campaign_window_days'; label: string }[] = [
   { key: 'retention_days', label: 'Keep messages and reports for (days)' },
   { key: 'max_upload_mb', label: 'Largest upload (MB)' },
@@ -313,6 +412,7 @@ export default function SettingsScreen({ session }: { session: Session }) {
       </Section>
 
       {session.owner && <SignupSection />}
+      {session.owner && <WorkspacesSection session={session} />}
 
       <ConfirmDialog
         open={removeKey !== null}

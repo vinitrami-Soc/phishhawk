@@ -49,6 +49,7 @@ import type {
   VerdictAnswer,
   VerdictFeedback,
   VerdictSummary,
+  WorkspaceSummary,
 } from './types';
 
 type Transport = (url: string, init: RequestInit) => Promise<Response>;
@@ -320,6 +321,11 @@ export function updateUser(id: number, patch: { role?: Role; disabled?: boolean;
   return request<User>('PATCH', `/api/v1/users/${id}`, { json: patch });
 }
 
+/** What they submitted stays the workspace's. 422 for yourself, 403 for the server's owner. */
+export function deleteUser(id: number): Promise<void> {
+  return request<void>('DELETE', `/api/v1/users/${id}`);
+}
+
 export function listTokens(signal?: AbortSignal): Promise<Token[]> {
   return request<Token[]>('GET', '/api/v1/tokens', { signal });
 }
@@ -363,6 +369,13 @@ export function patchMe(patch: ProfilePatch): Promise<Me> {
   return request<Me>('PATCH', '/api/v1/me', { json: patch });
 }
 
+/** Someone on their own deletes their account, and with it their workspace and everything in it. 403 when the
+    password is wrong, or in an organization, where its admins delete accounts. The session ends with it. */
+export async function deleteMyAccount(password: string): Promise<void> {
+  await request<void>('DELETE', '/api/v1/me', { json: { password } });
+  csrf = null;
+}
+
 /** The setup after sign-up is finished or skipped: the console stops opening it. */
 export function finishOnboarding(): Promise<void> {
   return request<void>('POST', '/api/v1/me/onboarded');
@@ -374,6 +387,16 @@ export function getServerSettings(signal?: AbortSignal): Promise<ServerSettings>
 
 export function patchServerSettings(patch: Partial<ServerSettings>): Promise<ServerSettings> {
   return request<ServerSettings>('PATCH', '/api/v1/server-settings', { json: patch });
+}
+
+/** For the owner: every workspace by name, kind and number of members, and no one's profile. */
+export function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceSummary[]> {
+  return request<WorkspaceSummary[]>('GET', '/api/v1/workspaces', { signal });
+}
+
+/** The owner deletes a workspace with everything in it; 409 for their own. */
+export function deleteWorkspace(id: number): Promise<void> {
+  return request<void>('DELETE', `/api/v1/workspaces/${id}`);
 }
 
 /* ---- mailboxes (admin) ---- */
