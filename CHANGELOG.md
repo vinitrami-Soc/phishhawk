@@ -9,6 +9,12 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Feedback, in the frontend.** "Was this verdict right?" on every analysis,
+  with a note, changed or withdrawn at any time; a Disputed filter in the
+  Queue; Feedback in the footer, which sends a note with the page it came
+  from; and a Feedback page in More: what you sent, or for the owner
+  everyone's (marked done there), with each workspace's answers on verdicts
+  for its admins and the CSV of disputed verdicts for the owner.
 - **Feedback, in the API.** Anyone signed in sends the server's owner a bug,
   an idea, a question or anything else, with the page it came from (10 an hour
   at most); the owner reads all of it and marks it done. On any analysis, each

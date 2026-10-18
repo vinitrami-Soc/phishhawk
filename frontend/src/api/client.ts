@@ -22,6 +22,7 @@ import type {
   BatchCreated,
   Campaign,
   CampaignSummary,
+  Feedback,
   Health,
   Invitation,
   Invite,
@@ -29,8 +30,10 @@ import type {
   MailboxPatch,
   Me,
   NewInvite,
+  NewFeedback,
   NewMailbox,
   NewToken,
+  Opinion,
   ProfilePatch,
   Role,
   ServerSettings,
@@ -43,6 +46,9 @@ import type {
   Token,
   User,
   Verdict,
+  VerdictAnswer,
+  VerdictFeedback,
+  VerdictSummary,
 } from './types';
 
 type Transport = (url: string, init: RequestInit) => Promise<Response>;
@@ -84,7 +90,7 @@ function signingIn(method: string, url: string): boolean {
   return method === 'POST' && (url === '/api/v1/session' || url === '/api/v1/setup' || url === '/api/v1/signup' || url.startsWith('/api/v1/join/'));
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, options: Options = {}): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, options: Options = {}): Promise<T> {
   const { json, form, signal, retried = false } = options;
   const isLogin = signingIn(method, url);
   const changes = method !== 'GET' && !isLogin;
@@ -221,6 +227,8 @@ export type AnalysisQuery = {
   since?: string;
   until?: string;
   offset?: number;
+  /** only the analyses someone answered missed or false_alarm on */
+  disputed?: boolean;
 };
 
 /** 50 per page, newest first; an empty page means there are no more. */
@@ -233,6 +241,7 @@ export function listAnalyses(query: AnalysisQuery, signal?: AbortSignal) {
   if (query.since) params.set('since', query.since);
   if (query.until) params.set('until', query.until);
   if (query.offset) params.set('offset', String(query.offset));
+  if (query.disputed) params.set('disputed', 'true');
   const qs = params.toString();
   return request<AnalysisSummary[]>('GET', `/api/v1/analyses${qs ? `?${qs}` : ''}`, { signal });
 }
@@ -400,3 +409,45 @@ export function listAudit(offset = 0, signal?: AbortSignal): Promise<AuditEntry[
 export function getHealth(signal?: AbortSignal): Promise<Health> {
   return request<Health>('GET', '/healthz', { signal });
 }
+
+/* ---- feedback ---- */
+
+/** 422 names the field (`message: required`); 429 past 10 an hour (see retryAfter). */
+export function sendFeedback(feedback: NewFeedback): Promise<Feedback> {
+  return request<Feedback>('POST', '/api/v1/feedback', { json: feedback });
+}
+
+export function listFeedback(signal?: AbortSignal): Promise<Feedback[]> {
+  return request<Feedback[]>('GET', '/api/v1/feedback', { signal });
+}
+
+/** The owner's. */
+export function markFeedback(id: number, status: Feedback['status']): Promise<Feedback> {
+  return request<Feedback>('PATCH', `/api/v1/feedback/${id}`, { json: { status } });
+}
+
+export function deleteFeedback(id: number): Promise<void> {
+  return request<void>('DELETE', `/api/v1/feedback/${id}`);
+}
+
+export function getVerdictFeedback(analysisId: number, signal?: AbortSignal): Promise<VerdictFeedback> {
+  return request<VerdictFeedback>('GET', `/api/v1/analyses/${analysisId}/feedback`, { signal });
+}
+
+/** Makes or changes the caller's answer. */
+export function answerVerdict(analysisId: number, answer: { opinion: Opinion; note: string }): Promise<VerdictAnswer> {
+  return request<VerdictAnswer>('PUT', `/api/v1/analyses/${analysisId}/feedback`, { json: answer });
+}
+
+/** The caller's own answer; with an answer's ID, anyone's (its author or an admin). */
+export function withdrawVerdictAnswer(analysisId: number, answerId?: number): Promise<void> {
+  return request<void>('DELETE', `/api/v1/analyses/${analysisId}/feedback${answerId === undefined ? '' : `/${answerId}`}`);
+}
+
+/** Admins: the workspace's answers. */
+export function getVerdictSummary(signal?: AbortSignal): Promise<VerdictSummary> {
+  return request<VerdictSummary>('GET', '/api/v1/feedback/verdicts', { signal });
+}
+
+/** The owner's download: every workspace's disputed verdicts, without messages, notes or people. */
+export const DISPUTED_CSV = '/api/v1/feedback/verdicts?format=csv';

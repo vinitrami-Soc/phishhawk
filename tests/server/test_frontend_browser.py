@@ -462,3 +462,59 @@ def test_someone_who_signs_up_alone_is_set_up_shown_around_and_analyses_a_first_
         page.get_by_role("button", name="Paste the message").wait_for()
         assert page.url == server.base + "/app/"
         assert errors == []
+
+
+def test_people_say_whether_a_verdict_was_right_and_send_the_owner_feedback(browser, tmp_path):
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        page, errors = _signed_in(browser, server)  # root owns the server
+        page.get_by_role("button", name="Paste the message").click()
+        with open(sample("sample_phish.eml"), encoding="utf-8") as message:
+            page.fill("textarea[aria-label='Raw message']", message.read())
+        page.get_by_role("switch", name="Offline analysis").click()
+        page.get_by_role("button", name="Analyze").click()
+        page.wait_for_url("**/app/analyses/*", timeout=60000)
+        analysis = page.url
+
+        # "Was this verdict right?": one answer, with a note, kept after a reload
+        question = page.get_by_role("radiogroup", name="Was this verdict right?")
+        question.get_by_role("radio", name="It was not phishing").click()
+        page.get_by_label("Note (optional)").fill("Our own phishing drill.")
+        page.get_by_role("button", name="Send my answer").click()
+        page.get_by_text("Thank you. Your answer was saved.").wait_for()
+        page.reload()
+        answered = page.get_by_role("radio", name="It was not phishing")
+        sync_api.expect(answered).to_have_attribute("aria-checked", "true")
+
+        # the Queue's Disputed filter finds it
+        page.goto(server.base + "/app/analyses")
+        with page.expect_response(lambda response: "disputed=true" in response.url) as filtered:
+            page.get_by_role("button", name="Disputed").click()
+        assert filtered.value.status == 200
+        sync_api.expect(page.locator("main table a[href^='/app/analyses/']")).to_have_count(1)
+
+        # feedback from the footer, with the page it came from
+        page.get_by_role("contentinfo").get_by_role("button", name="Feedback").click()
+        page.get_by_text("An idea").click()
+        page.get_by_label("Your message").fill("Show the disputed ones on Triage too.")
+        page.get_by_role("button", name="Send", exact=True).click()
+        page.get_by_text("Sent. Thank you.").wait_for()
+
+        # the owner's Feedback page: the feedback, the answers on verdicts and the download
+        page.goto(server.base + "/app/feedback")
+        page.get_by_text("Show the disputed ones on Triage too.").wait_for()
+        sync_api.expect(page.get_by_text("from /app/analyses")).to_be_visible()
+        sync_api.expect(page.locator("main a[href='%s']" % analysis.replace(server.base, ""))).to_have_count(1)
+        download = page.evaluate("fetch('/api/v1/feedback/verdicts?format=csv').then((r) => r.text())")
+        assert download.startswith("workspace_id,analysis_id,") and analysis.rsplit("/", 1)[1] in download
+        page.get_by_role("button", name="Mark done").click()
+        sync_api.expect(page.get_by_role("button", name="Reopen")).to_be_visible()
+
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            for url, ready in ((analysis, "Was this verdict right?"),
+                               (server.base + "/app/feedback", "Answers on verdicts")):
+                page.goto(url)
+                page.get_by_text(ready).first.wait_for()
+                page.wait_for_timeout(400)
+                assert page.evaluate(PAST_EDGE, "body") == [], (width, url)
+        assert errors == []

@@ -331,3 +331,46 @@ export type ProfilePatch = Partial<Profile> & { organization?: string; password?
 
 /** GET /api/v1/server-settings (the owner only) */
 export type ServerSettings = { signup_open: boolean; signup_daily_cap: number; max_upload_mb: number; max_batch_messages: number };
+
+/* ---- feedback ---- */
+
+export type FeedbackKind = 'bug' | 'idea' | 'question' | 'other';
+
+/** POST /api/v1/feedback, GET /api/v1/feedback (the owner gets everyone's; anyone else their own) */
+export type Feedback = {
+  id: number;
+  kind: FeedbackKind;
+  message: string;
+  /** the app path it was sent from, or "" */
+  page: string;
+  status: 'open' | 'done';
+  created_at: string;
+  username: string | null;
+  workspace: { id: number; name: string };
+};
+
+export type NewFeedback = { kind: FeedbackKind; message: string; page: string };
+
+/** right; missed: it was phishing; false_alarm: it was not */
+export type Opinion = 'right' | 'missed' | 'false_alarm';
+
+export type VerdictAnswer = {
+  id: number;
+  user_id: number;
+  username: string | null;
+  opinion: Opinion;
+  note: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OpinionCounts = Record<Opinion, number>;
+
+/** GET /api/v1/analyses/{id}/feedback */
+export type VerdictFeedback = { mine: VerdictAnswer | null; answers: VerdictAnswer[]; counts: OpinionCounts };
+
+/** GET /api/v1/feedback/verdicts (admins) */
+export type VerdictSummary = {
+  counts: OpinionCounts;
+  disputed: ({ analysis_id: number; report_id: string; verdict: Verdict; score: number; last_answer_at: string } & OpinionCounts)[];
+};

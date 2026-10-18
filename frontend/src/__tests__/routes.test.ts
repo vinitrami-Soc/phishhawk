@@ -101,3 +101,9 @@ test('the setup after sign-up has a page of its own, signed in', () => {
   assert.equal(signedOutView(parseRoute('/app/welcome')), 'login');
   assert.equal(pageTitle({ name: 'welcome' }, true), 'Welcome · PhishHawk');
 });
+
+test('feedback has a page of its own, signed in', () => {
+  assert.deepEqual(parseRoute('/app/feedback'), { name: 'feedback' });
+  assert.equal(signedOutView(parseRoute('/app/feedback')), 'login');
+  assert.equal(pageTitle({ name: 'feedback' }, true), 'Feedback · PhishHawk');
+});
