@@ -55,6 +55,7 @@ MATRIX = [
     ("POST", "/api/v1/invites", (401, 403, 201, 403, 403)),
     ("GET", "/api/v1/server-settings", (401, 403, 200, 403, 403)),
     ("PATCH", "/api/v1/server-settings", (401, 403, 200, 403, 403)),
+    ("GET", "/api/v1/workspaces", (401, 403, 200, 403, 403)),
     ("GET", "/mailboxes", (303, 403, 200, 403, 403)),
     ("GET", "/settings", (303, 403, 200, 403, 403)),
     ("GET", "/users", (303, 403, 200, 403, 403)),
