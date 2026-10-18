@@ -501,6 +501,12 @@ image's health check uses it.
 - **More than one worker**: `run` already starts one. SQLite takes one writer
   at a time, so extra workers (`phishhawk server worker`) mostly wait; on
   Postgres they share the queue, each job claimed by one of them.
+- **One workspace is busy**: workspaces take turns at the queue. The one
+  served longest ago goes first, and within it the oldest job, so a batch of
+  thousands in one workspace does not hold up a single message in another,
+  even with one worker. At most 2 jobs of one workspace run at once (with
+  several workers on Postgres, rarely one more); the server's own jobs, such
+  as the retention sweep, are never held back.
 - **A batch shows a message as failed**: that message could not be analysed
   (the reason is shown); the rest of the batch and its combined reports go on
   without it.

@@ -1,32 +1,45 @@
-"""The job queue: a table. A worker claims the oldest queued job in one
-transaction (SQLite: one writer at a time; Postgres: SKIP LOCKED)."""
+"""The job queue: a table. A worker claims a queued job in one transaction
+(SQLite: one writer at a time; Postgres: SKIP LOCKED). Workspaces take turns:
+the one served longest ago goes first, and within it the oldest job, so a busy
+workspace cannot hold up a quiet one even with a single worker. At most
+RUNNING_EACH jobs of one workspace run at once (with several workers on
+Postgres, two claiming at the same moment can each take one past it). The
+server's own jobs, which name no workspace, are never held back."""
 
 from __future__ import annotations
 
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from .models import Job, utcnow
 
 KINDS = ("analyze", "batch_finalize", "campaign_rebuild", "mailbox_poll", "retention_sweep")
 MAX_ATTEMPTS = 3
+RUNNING_EACH = 2  # jobs of one workspace that run at once
 
 
-def enqueue(db: Session, kind: str, payload: dict[str, Any] | None = None) -> Job:
+def enqueue(db: Session, kind: str, payload: dict[str, Any] | None = None, workspace_id: int | None = None) -> Job:
     if kind not in KINDS:
         raise ValueError("unknown job kind %r" % kind)
-    job = Job(kind=kind, payload=payload or {})
+    job = Job(kind=kind, payload=payload or {}, workspace_id=workspace_id)
     db.add(job)
     db.flush()
     return job
 
 
 def claim(db: Session) -> Job | None:
-    job = db.scalars(select(Job).where(Job.status == "queued").order_by(Job.id).limit(1)
-                     .with_for_update(skip_locked=True)).first()
+    earlier = aliased(Job)
+    full = (select(earlier.workspace_id).where(earlier.status == "running", earlier.workspace_id.is_not(None))
+            .group_by(earlier.workspace_id).having(func.count() >= RUNNING_EACH))
+    served = (select(func.max(earlier.started_at)).where(earlier.workspace_id == Job.workspace_id)
+              .correlate(Job).scalar_subquery())
+    job = db.scalars(select(Job).where(Job.status == "queued",
+                                       or_(Job.workspace_id.is_(None), Job.workspace_id.not_in(full)))
+                     .order_by(served.is_not(None), served, Job.id).limit(1)
+                     .with_for_update(skip_locked=True, of=Job)).first()
     if job is not None:
         job.status, job.attempts = "running", job.attempts + 1
         job.started_at = job.heartbeat_at = utcnow()

@@ -205,7 +205,7 @@ def reanalyze(db: DB, actor: CurrentActor, analysis_id: int) -> dict[str, Any]:
                             source=old.source, offline=old.offline)
     db.add(submission)
     db.flush()
-    jobs.enqueue(db, "analyze", {"submission_id": submission.id})
+    jobs.enqueue(db, "analyze", {"submission_id": submission.id}, message.workspace_id)
     _audit(db, actor, "reanalyze", "analysis", analysis_id, {"submission": submission.id})
     return submission_view(db, submission)
 

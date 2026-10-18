@@ -555,7 +555,8 @@ def queue_poll(db: Session, mailbox_id: int) -> bool:
     """Queue a poll, unless one is waiting already."""
     if mailbox_id in _waiting(db):
         return False
-    jobs.enqueue(db, "mailbox_poll", {"mailbox_id": mailbox_id})
+    box = db.get(Mailbox, mailbox_id)
+    jobs.enqueue(db, "mailbox_poll", {"mailbox_id": mailbox_id}, box.workspace_id if box else None)
     return True
 
 

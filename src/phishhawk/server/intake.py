@@ -57,7 +57,7 @@ def accept(db: Session, store: BlobStore, raw: bytes, *, workspace_id: int, sour
                             offline=offline, batch_id=batch_id, position=position, mailbox_id=mailbox_id)
     db.add(submission)
     db.flush()
-    jobs.enqueue(db, "analyze", {"submission_id": submission.id})
+    jobs.enqueue(db, "analyze", {"submission_id": submission.id}, workspace_id)
     details = {"sha256": sha256, "source": source, "offline": offline}
     if batch_id is not None:
         details["batch"] = batch_id
