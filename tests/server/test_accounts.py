@@ -290,12 +290,14 @@ def test_a_new_password_needs_the_current_one_and_ends_the_other_sessions(app, a
 
 
 def test_the_server_settings_are_the_owners_alone(admin, anon, services):
+    daily = {"daily_messages_organization": 500, "daily_messages_individual": 100}
     assert admin.get("/api/v1/server-settings").json() == {"signup_open": False, "signup_daily_cap": 100,
-                                                           "max_upload_mb": 25, "max_batch_messages": 500}
+                                                           "max_upload_mb": 25, "max_batch_messages": 500} | daily
     changed = admin.patch("/api/v1/server-settings", json={"signup_open": True, "signup_daily_cap": 5,
                                                           "max_upload_mb": 10})
-    assert changed.status_code == 200 and changed.json() == {"signup_open": True, "signup_daily_cap": 5,
-                                                             "max_upload_mb": 10, "max_batch_messages": 500}
+    assert changed.status_code == 200
+    assert changed.json() == {"signup_open": True, "signup_daily_cap": 5, "max_upload_mb": 10,
+                              "max_batch_messages": 500} | daily
     assert anon.get("/api/v1/signup").json() == {"open": True}
     assert admin.patch("/api/v1/server-settings", json={"signup_daily_cap": 0}).status_code == 422
     _signed_in(anon, anon.post("/api/v1/signup", json=PERSON | {"kind": "individual"}))

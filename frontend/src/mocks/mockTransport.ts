@@ -65,7 +65,7 @@ const memberOf = (userId: number): Member => members.get(userId) ?? { workspace_
 /* Analyses made in the preview belong to the workspace that submitted them; the sample ones to Example Corp. */
 const analysisWorkspace = new Map<number, number>();
 const workspaceOf = (a: Analysis) => analysisWorkspace.get(a.id) ?? 1;
-const serverSettings: ServerSettings = { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500 };
+const serverSettings: ServerSettings = { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500, daily_messages_organization: 500, daily_messages_individual: 100 };
 type MockInvite = Invite & { token: string; workspace_id: number; used: boolean };
 const invites: MockInvite[] = [];
 /* Feedback: notes to the owner, and each person's answer on a verdict, as the server keeps them. */
@@ -635,7 +635,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     if (!admin || !me.owner) return error(403, 'forbidden', 'only the server\'s owner can do that');
     if (method === 'GET') return json(200, serverSettings);
     const patch = (body ?? {}) as Partial<ServerSettings>;
-    for (const key of ['signup_daily_cap', 'max_upload_mb', 'max_batch_messages'] as const) {
+    for (const key of ['signup_daily_cap', 'max_upload_mb', 'max_batch_messages', 'daily_messages_organization', 'daily_messages_individual'] as const) {
       const value = patch[key];
       if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 100000)) return error(422, 'invalid', `${key}: between 1 and 100000`);
     }

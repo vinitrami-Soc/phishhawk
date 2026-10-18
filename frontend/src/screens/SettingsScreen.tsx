@@ -105,10 +105,16 @@ function DomainList({ label, hint, values, onChange }: { label: string; hint: st
 const SERVER_LIMITS = ['max_upload_mb', 'max_batch_messages'];
 
 /** Who may create an account (the owner only): a switch, and how many accounts a day the server takes. */
+const DAILY: { key: 'daily_messages_organization' | 'daily_messages_individual'; label: string }[] = [
+  { key: 'daily_messages_organization', label: 'Messages a day, each organization' },
+  { key: 'daily_messages_individual', label: 'Messages a day, each person on their own' },
+];
+
 function SignupSection() {
   const [server, setServer] = useState<ServerSettings | null>(null);
   const [open, setOpen] = useState(false);
   const [cap, setCap] = useState('');
+  const [daily, setDaily] = useState<Record<string, string>>({});
   const [state, setState] = useState<SaveState>('idle');
   const [error, setError] = useState<string | null>(null);
 
@@ -116,6 +122,7 @@ function SignupSection() {
     setServer(s);
     setOpen(s.signup_open);
     setCap(String(s.signup_daily_cap));
+    setDaily(Object.fromEntries(DAILY.map(({ key }) => [key, String(s[key])])));
   }
 
   useEffect(() => {
@@ -127,12 +134,14 @@ function SignupSection() {
   }, []);
 
   async function save() {
-    const daily = parseLimit(cap);
-    if (daily === null) return setError('Accounts a day must be a whole number from 1 to 100000.');
+    const accounts = parseLimit(cap);
+    if (accounts === null) return setError('Accounts a day must be a whole number from 1 to 100000.');
+    const messages = DAILY.map(({ key }) => [key, parseLimit(daily[key] ?? '')] as const);
+    if (messages.some(([, value]) => value === null)) return setError('Messages a day must be a whole number from 1 to 100000.');
     setState('saving');
     setError(null);
     try {
-      adopt(await patchServerSettings({ signup_open: open, signup_daily_cap: daily }));
+      adopt(await patchServerSettings({ signup_open: open, signup_daily_cap: accounts, ...Object.fromEntries(messages) }));
       setState('saved');
       setTimeout(() => setState('idle'), 1600);
     } catch (e) {
@@ -142,7 +151,7 @@ function SignupSection() {
   }
 
   return (
-    <Section title="Sign-up" description="For the whole server: you own it. People who create an account get a workspace of their own and see nothing of anyone else's." state={state} error={error} onSave={save}>
+    <Section title="Sign-up and daily messages" description="For the whole server: you own it. People who create an account get a workspace of their own and see nothing of anyone else's." state={state} error={error} onSave={save}>
       {!server && !error ? (
         <Skeleton className="h-24 rounded-2xl" />
       ) : (
@@ -164,6 +173,21 @@ function SignupSection() {
             hint="For the whole server. One address can also create only 3 an hour."
             className="sm:max-w-xs"
           />
+          <div className="grid gap-4 sm:grid-cols-2">
+            {DAILY.map(({ key, label }) => (
+              <TextField
+                key={key}
+                label={label}
+                type="number"
+                min={1}
+                max={100000}
+                inputMode="numeric"
+                value={daily[key] ?? ''}
+                onChange={(e) => setDaily((d) => ({ ...d, [key]: e.target.value }))}
+                hint="Every upload, paste, batch message, new analysis and mailbox import counts. Past it, more come after 00:00 UTC."
+              />
+            ))}
+          </div>
         </div>
       )}
     </Section>

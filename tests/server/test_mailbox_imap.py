@@ -345,3 +345,19 @@ def test_a_mailboxs_imports_land_in_its_workspace_and_only_its_own_are_duplicate
         assert imported.workspace_id == theirs and s.get(Message, imported.message_id).workspace_id == theirs
         submitted = s.scalars(select(AuditRecord).where(AuditRecord.actor == "mailbox:Reports")).one()
         assert submitted.workspace_id == theirs
+
+
+def test_a_poll_stops_at_the_daily_limit_and_the_rest_come_the_next_day(services, server):
+    with transaction(services.sessions) as s:
+        appsettings.set_value(s, SERVER, "daily_messages_organization", 3)
+    for number in range(5):
+        server.add(report(number))
+    box = _mailbox(services, server)
+    assert mailbox.poll(services, box)["imported"] == 3
+    assert mailbox.poll(services, box)["imported"] == 0  # the rest wait, still in the mailbox
+    assert _state(services, box)["status"] == "ok"
+    with transaction(services.sessions) as s:  # a day later
+        for submission in s.scalars(select(Submission)):
+            submission.submitted_at -= dt.timedelta(days=1)
+    assert mailbox.poll(services, box)["imported"] == 2
+    assert len(_submissions(services)) == 5

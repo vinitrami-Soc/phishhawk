@@ -214,7 +214,9 @@ test('everyone edits their own profile; the owner alone sets the server', async 
   assert.equal((await call('PATCH', '/api/v1/me', { password: 'another long password', current_password: '' })).status, 403);
   await call('DELETE', '/api/v1/session');
   csrf = (await signIn('boss', 'x')).body.csrf;
-  assert.deepEqual((await call('GET', '/api/v1/server-settings')).body, { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500 });
+  assert.deepEqual((await call('GET', '/api/v1/server-settings')).body, { signup_open: true, signup_daily_cap: 100, max_upload_mb: 25, max_batch_messages: 500, daily_messages_organization: 500, daily_messages_individual: 100 });
+  assert.equal((await call('PATCH', '/api/v1/server-settings', { daily_messages_individual: 0 })).status, 422);
+  assert.equal((await call('PATCH', '/api/v1/server-settings', { daily_messages_individual: 50 })).body.daily_messages_individual, 50);
   assert.equal((await call('PATCH', '/api/v1/server-settings', { signup_open: false })).body.signup_open, false);
   assert.deepEqual((await call('GET', '/api/v1/signup')).body, { open: false });
   assert.equal((await call('PATCH', '/api/v1/server-settings', { signup_daily_cap: 0 })).status, 422);

@@ -14,7 +14,20 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from .. import appsettings, audit, auth, batches, campaigns, intake, jobs, mailboxes, retention, scope, views
+from .. import (
+    appsettings,
+    audit,
+    auth,
+    batches,
+    campaigns,
+    daily,
+    intake,
+    jobs,
+    mailboxes,
+    retention,
+    scope,
+    views,
+)
 from .. import mailbox as polling
 from ..accounts import profile_view
 from ..bodylimit import BATCH_FACTOR
@@ -118,15 +131,23 @@ def accept_upload(request: Request, db: DB, actor: Any, uploads: list[bytes], ra
               "offline": offline, "max_bytes": limit}
     try:
         if not uploads:
+            daily.check(db, actor.workspace_id)
             return submission_view(db, intake.accept(db, s.store, raw.encode(), source="paste", **common))
         split = batches.split(uploads, max_messages=appsettings.limit(db, s.settings, "max_batch_messages"),
                               max_message_bytes=limit, max_total=BATCH_FACTOR * limit)
+        daily.check(db, actor.workspace_id, len(split.messages))
         if len(split.messages) == 1:
             return submission_view(db, intake.accept(db, s.store, split.messages[0], source="upload",
                                                      known_message=True, **common))
         return batches.created_view(db, batches.accept(db, s.store, split.messages, **common), split.skipped)
     except (intake.IntakeError, batches.BatchError) as exc:
         raise HTTPException(exc.status, str(exc)) from exc
+    except daily.DailyLimit as exc:
+        raise _past_daily_limit(exc) from None
+
+
+def _past_daily_limit(exc: daily.DailyLimit) -> HTTPException:
+    return HTTPException(429, exc.detail, headers={"Retry-After": str(exc.retry_after)})
 
 
 def submission_view(db: DB, submission: Submission) -> dict[str, Any]:
@@ -201,6 +222,10 @@ def reanalyze(db: DB, actor: CurrentActor, analysis_id: int) -> dict[str, Any]:
     _, message, old = scope.analysis(db, actor, analysis_id)
     if message.raw_blob is None:
         raise HTTPException(410, "the message was deleted after the retention period")
+    try:
+        daily.check(db, message.workspace_id)
+    except daily.DailyLimit as exc:
+        raise _past_daily_limit(exc) from None
     submission = Submission(workspace_id=message.workspace_id, message_id=message.id, user_id=actor.user_id,
                             source=old.source, offline=old.offline)
     db.add(submission)

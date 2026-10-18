@@ -332,8 +332,10 @@ def test_an_organization_signs_up_and_its_invitation_brings_in_a_second_person(b
     with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
         owner, owner_errors = _signed_in(browser, server)  # root owns the server: it lets anyone create an account
         owner.goto(server.base + "/app/settings")
-        title = owner.get_by_role("heading", name="Sign-up", exact=True)
+        title = owner.get_by_role("heading", name="Sign-up and daily messages", exact=True)
         signup = owner.locator("main div.grid").filter(has=title).last  # the section, not the page around it
+        sync_api.expect(signup.get_by_label("Messages a day, each organization")).to_have_value("500")
+        sync_api.expect(signup.get_by_label("Messages a day, each person on their own")).to_have_value("100")
         signup.get_by_role("switch", name="Anyone can create an account").click()
         # beside its title on a wide screen, as in every other section
         below = owner.evaluate(SAVE_BELOW_TITLE)

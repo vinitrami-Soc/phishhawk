@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from .. import imapfetch, mailapi
 from ..report.common import printable
-from . import appsettings, audit, intake, jobs, mailboxes
+from . import appsettings, audit, daily, intake, jobs, mailboxes
 from .crypto import DecryptError
 from .db import transaction
 from .models import Job, Mailbox, MailboxItem, Message, utcnow
@@ -491,6 +491,7 @@ def poll(services: Services, mailbox_id: int, heartbeat: Callable[[], None] | No
         if mailbox is None or not mailbox.enabled:
             return counts
         kind, name, config, cursor = mailbox.kind, mailbox.name, dict(mailbox.config), dict(mailbox.cursor or {})
+        workspace_id = mailbox.workspace_id
         try:
             secret = mailboxes.secret_of(s.box, mailbox)
         except DecryptError:
@@ -507,8 +508,14 @@ def poll(services: Services, mailbox_id: int, heartbeat: Callable[[], None] | No
             with transaction(s.sessions) as db:
                 return _seen(db, mailbox_id, remote_id)
 
+        def room() -> int:
+            with transaction(s.sessions) as db:
+                return daily.room(db, workspace_id)
+
         with contextlib.closing(source.items(seen)) as items:
             for item in items:
+                if not room():  # the workspace's messages for today are in: the rest at a poll tomorrow
+                    break
                 outcome = _handle(s, mailbox_id, name, config, item, key, max_bytes)
                 counts[outcome] += 1
                 if heartbeat is not None:

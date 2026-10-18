@@ -163,7 +163,7 @@ an account answers 201 `{"csrf"}` with the session cookie, as a login does; a
 | `POST /api/v1/join/{token}` with the sign-up fields but `kind` and `organization` | The new member, with the invitation's role. |
 | `GET /api/v1/invites`, `POST /api/v1/invites` with `{"role", "note"}`, `DELETE /api/v1/invites/{id}` | Admins of an organization: the invitations still usable (`id`, `role`, `note`, `created_at`, `expires_at`, `created_by_name`); a new one adds `token` and `link` (`/join/<token>`, the built-in join page), shown once; 403 in an individual workspace. |
 | `GET /api/v1/me`, `PATCH /api/v1/me` | `{"username", "role", "owner", "profile", "workspace"}`. Send any of `first_name`, `last_name`, `location`, `job_title`; `organization` (an organization's admin renames it); `password` with `current_password` (403 when that is wrong). |
-| `GET /api/v1/server-settings`, `PATCH /api/v1/server-settings` | The owner's only (403 for anyone else): `signup_open`, `signup_daily_cap`, `max_upload_mb`, `max_batch_messages`. |
+| `GET /api/v1/server-settings`, `PATCH /api/v1/server-settings` | The owner's only (403 for anyone else): `signup_open`, `signup_daily_cap`, `max_upload_mb`, `max_batch_messages`, `daily_messages_organization`, `daily_messages_individual` (messages each workspace may submit a day; past it, a submission answers 429 with `Retry-After` until midnight UTC). |
 
 Feedback. Signed in with a session (an API token gets 403); a 422 `detail`
 starts with the field it is about.
