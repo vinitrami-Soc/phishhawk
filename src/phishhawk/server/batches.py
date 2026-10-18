@@ -201,7 +201,7 @@ def after_submission(db: Session, submission: Submission) -> None:
         Submission.batch_id == batch.id, Submission.status.in_(("queued", "running"))))
     if not waiting:
         batch.status = "finalizing"
-        jobs.enqueue(db, "batch_finalize", {"batch_id": batch.id})
+        jobs.enqueue(db, "batch_finalize", {"batch_id": batch.id}, batch.workspace_id)
 
 
 def failed(db: Session, batch_id: int, reason: str) -> None:

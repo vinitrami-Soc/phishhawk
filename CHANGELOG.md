@@ -9,6 +9,10 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Workspaces take turns at the queue.** The workspace served longest ago
+  goes first, and within it the oldest job, so one busy workspace cannot hold
+  up the others, even with a single worker; at most 2 jobs of one workspace
+  run at once. Migration 0008 records the workspace of each job.
 - **Feedback, in the frontend.** "Was this verdict right?" on every analysis,
   with a note, changed or withdrawn at any time; a Disputed filter in the
   Queue; Feedback in the footer, which sends a note with the page it came

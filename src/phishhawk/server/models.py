@@ -255,6 +255,9 @@ class Job(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(32))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    # whose work it is, for fair turns; None for the server's own (the retention sweep)
+    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), default=None,
+                                                     index=True)
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued, running, done, failed
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")

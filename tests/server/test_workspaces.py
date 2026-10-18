@@ -349,3 +349,23 @@ def test_every_route_that_names_a_row_is_scoped(app, admin, beta, theirs):
     assert checked >= 30  # the API's and the built-in pages'
     assert admin.get("/api/v1/analyses/%d" % ids["analysis_id"]).json()["tier1_deleted_at"] is None
     assert [m["id"] for m in admin.get("/api/v1/mailboxes").json()] == [ids["mailbox_id"]]
+
+
+def test_every_job_names_the_workspace_whose_work_it_is(beta, services):
+    """The queue gives workspaces turns (jobs.py); a job that names no workspace would run as the server's."""
+    files = [("files", ("m%d.eml" % i, m, "message/rfc822")) for i, m in enumerate(_invoices(2))]
+    created = beta.post("/api/v1/submissions", files=files, data={"offline": "true"})
+    assert created.status_code == 202, created.text
+    one = created.json()["submission_ids"][0]
+    while worker.run_one(services):
+        pass
+    analysis = beta.get("/api/v1/submissions/%d" % one).json()["analysis_id"]
+    assert beta.post("/api/v1/analyses/%d/reanalyze" % analysis).status_code == 202
+    box = beta.post("/api/v1/mailboxes", json={"name": "Reports", "kind": "imap", "secret": "pw",
+                                               "config": {"host": "imap.example", "user": "soc@beta.example"}})
+    assert beta.post("/api/v1/mailboxes/%d/poll" % box.json()["id"]).status_code == 202
+    with transaction(services.sessions) as s:
+        theirs = s.scalars(select(Workspace.id).where(Workspace.name == "Beta")).one()
+        kinds = {(job.kind, job.workspace_id) for job in s.scalars(select(Job))}
+    assert {"analyze", "batch_finalize", "campaign_rebuild", "mailbox_poll"} <= {k for k, _ in kinds}
+    assert {w for k, w in kinds if k != "retention_sweep"} == {theirs}

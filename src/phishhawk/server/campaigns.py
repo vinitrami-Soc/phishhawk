@@ -28,7 +28,7 @@ def queue_rebuild(db: Session, workspace_id: int) -> None:
     """At most one rebuild of a workspace waits at a time: it reads every record of the workspace anyway."""
     waiting = db.scalars(select(Job.payload).where(Job.kind == "campaign_rebuild", Job.status == "queued"))
     if not any(payload.get("workspace_id") == workspace_id for payload in waiting):
-        jobs.enqueue(db, "campaign_rebuild", {"workspace_id": workspace_id})
+        jobs.enqueue(db, "campaign_rebuild", {"workspace_id": workspace_id}, workspace_id)
 
 
 def rebuild(db: Session, workspace_id: int, window_days: int, now: dt.datetime | None = None) -> int:
