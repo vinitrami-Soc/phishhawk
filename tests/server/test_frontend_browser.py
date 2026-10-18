@@ -350,8 +350,13 @@ def test_an_organization_signs_up_and_its_invitation_brings_in_a_second_person(b
         _account(page, "olivia")
         page.get_by_label("Organization", exact=True).fill("Acme SOC")
         page.locator("form [type=submit]").click()
-        page.wait_for_selector(".ph-commandbar")
-        assert page.url == server.base + "/app/"
+        # an organization's admin is set up first: invite, mailbox, providers, then the tour; skipped here
+        page.get_by_role("heading", name="Invite your team").wait_for()
+        assert page.url == server.base + "/app/welcome"
+        sync_api.expect(page.get_by_role("list", name="Setup steps").get_by_role("listitem")).to_have_count(4)
+        page.get_by_role("button", name="Skip setup").click()
+        page.wait_for_url(server.base + "/app/")
+        page.get_by_role("button", name="Paste the message").wait_for()
 
         page.goto(server.base + "/app/users")
         page.get_by_role("button", name="Invite").first.click()
@@ -367,7 +372,8 @@ def test_an_organization_signs_up_and_its_invitation_brings_in_a_second_person(b
         guest.get_by_role("heading", level=1, name="Join Acme SOC").wait_for()
         _account(guest, "priya")
         guest.locator("form [type=submit]").click()
-        guest.wait_for_selector(".ph-commandbar")
+        guest.get_by_role("heading", name="A look around").wait_for()  # someone invited is only shown around
+        sync_api.expect(guest.get_by_role("list", name="Setup steps")).to_have_count(0)
         me = guest.evaluate("fetch('/api/v1/session').then((r) => r.json())")
         assert (me["username"], me["role"], me["workspace"]["name"]) == ("priya", "analyst", "Acme SOC")
         assert guest.evaluate("fetch('/api/v1/analyses').then((r) => r.json())") == []  # none of root's
@@ -378,6 +384,7 @@ def test_an_organization_signs_up_and_its_invitation_brings_in_a_second_person(b
         for width in WIDTHS:
             for screen, path, ready in ((page, "/app/users", "Invitations"),
                                         (page, "/app/profile", "Your profile"),
+                                        (page, "/app/welcome", "Invite your team"),
                                         (visitor, "/app/signup", "Who is it for?")):
                 screen.set_viewport_size({"width": width, "height": 900})
                 screen.goto(server.base + path)

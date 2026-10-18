@@ -5,6 +5,7 @@
    getting in: setup, Create an account and an invitation's Join. */
 
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Activity, Inbox, KeyRound, ListChecks, Mailbox, Network, ScrollText, Settings, UserRound, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
@@ -220,7 +221,8 @@ export default function App() {
         <WelcomeScreen
           session={session}
           onDone={(href) => {
-            setSetupDone(true);
+            // committed first: the path changes in a render of its own, which must not send it back here
+            flushSync(() => setSetupDone(true));
             void refresh();
             navigate(href);
           }}
