@@ -18,7 +18,7 @@
    organization. A new workspace starts empty and sees nothing of the others. */
 
 import fixtures from './fixtures.json';
-import type { Analysis, AnalysisFile, AuditEntry, Batch, Feedback, Invite, Mailbox, MailboxConfig, MailboxKind, Opinion, Profile, ServerSettings, Settings, Submission, Token, User, VerdictAnswer, Workspace } from '../api/types';
+import type { Analysis, AnalysisFile, AuditEntry, Batch, Feedback, Invite, Mailbox, MailboxConfig, MailboxKind, Opinion, Profile, ServerSettings, Settings, Submission, Token, User, VerdictAnswer, Workspace, WorkspaceSummary } from '../api/types';
 
 const CSRF_DETAIL = 'the form is out of date: reload the page and try again';
 const THROTTLE_MS = 8_000;
@@ -55,6 +55,7 @@ const tokens: Token[] = [];
 
 /* Workspaces: who is in which, with their profile. The users list stays the server's shape. */
 const workspaces: Workspace[] = [{ id: 1, name: 'Example Corp', kind: 'organization' }];
+const workspaceMade = new Map<number, string>([[1, new Date(Date.now() - 90 * 86_400_000).toISOString()]]);
 type Member = { workspace_id: number; owner: boolean; profile: Profile; onboarded: boolean };
 const blank: Profile = { first_name: '', last_name: '', location: '', job_title: '' };
 const members = new Map<number, Member>([
@@ -115,6 +116,24 @@ function addMember(username: string, role: 'admin' | 'analyst', workspaceId: num
   users.push(user);
   members.set(user.id, { workspace_id: workspaceId, owner: false, profile, onboarded: !signedUp });
   return user;
+}
+
+/** A deleted account: its sessions, tokens, feedback and answers go; what it submitted stays the workspace's. */
+function removeUser(userId: number) {
+  users.splice(users.findIndex((u) => u.id === userId), 1);
+  members.delete(userId);
+  tokens.splice(0, tokens.length, ...tokens.filter((t) => t.user_id !== userId));
+  feedbackRows.splice(0, feedbackRows.length, ...feedbackRows.filter((f) => f.user_id !== userId));
+  answers.splice(0, answers.length, ...answers.filter((a) => a.user_id !== userId));
+}
+
+/** A deleted workspace: everything in it, its people too. */
+function removeWorkspace(workspaceId: number) {
+  for (const user of users.filter((u) => memberOf(u.id).workspace_id === workspaceId)) removeUser(user.id);
+  analyses.splice(0, analyses.length, ...analyses.filter((a) => workspaceOf(a) !== workspaceId));
+  invites.splice(0, invites.length, ...invites.filter((i) => i.workspace_id !== workspaceId));
+  workspaces.splice(workspaces.findIndex((w) => w.id === workspaceId), 1);
+  workspaceMade.delete(workspaceId);
 }
 
 /* Two report mailboxes: one polled a few minutes ago, one whose sign-in Google refuses. A poll of an enabled
@@ -353,6 +372,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     const { first_name, last_name } = account.profile;
     const workspace: Workspace = { id: Math.max(...workspaces.map((w) => w.id)) + 1, name: given.kind === 'organization' ? organization : `${first_name} ${last_name}`, kind: given.kind };
     workspaces.push(workspace);
+    workspaceMade.set(workspace.id, new Date().toISOString());
     const user = addMember(account.username, 'admin', workspace.id, account.profile);
     session = sessionFor(user);
     record(user.username, 'signup', '', '', { kind: workspace.kind, workspace: workspace.id });
@@ -607,6 +627,16 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     const mine = memberOf(me.user_id);
     const view = () => ({ username: me.username, role: me.role, owner: me.owner, profile: mine.profile, workspace });
     if (method === 'GET') return json(200, view());
+    if (method === 'DELETE') {
+      if (me.owner) return error(403, 'forbidden', "the server's owner cannot delete their own account");
+      if (workspace.kind !== 'individual') return error(403, 'forbidden', `in an organization its admins delete accounts: ask an admin of ${workspace.name}`);
+      // the preview takes any password that is not empty; the server checks it
+      if (!(body as { password?: string } | undefined)?.password) return error(403, 'forbidden', 'the current password is not right');
+      record(me.username, 'account_delete', 'workspace', workspace.id, { workspace: workspace.id, kind: workspace.kind });
+      removeWorkspace(workspace.id);
+      session = null;
+      return json(204, null);
+    }
     const patch = (body ?? {}) as Record<string, string | undefined>;
     try {
       const changes: Partial<Profile> = {};
@@ -644,6 +674,21 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     settings.max_batch_messages = serverSettings.max_batch_messages;
     record(me.username, 'server_settings', '', '', { changed: Object.keys(patch) });
     return json(200, serverSettings);
+  }
+
+  if (pathname === '/api/v1/workspaces' || pathname.startsWith('/api/v1/workspaces/')) {
+    if (!admin) return adminOnly();
+    if (method === 'GET') {
+      if (!me.owner) return error(403, 'forbidden', "only the server's owner can do that");
+      const listed: WorkspaceSummary[] = workspaces.map((w) => ({ ...w, created_at: workspaceMade.get(w.id) ?? new Date().toISOString(), members: users.filter((u) => memberOf(u.id).workspace_id === w.id).length }));
+      return json(200, listed);
+    }
+    const gone = workspaces.find((w) => `/api/v1/workspaces/${w.id}` === pathname);
+    if (method !== 'DELETE' || !gone || !me.owner) return error(404, 'not_found', 'no such workspace');
+    if (gone.id === me.workspace_id) return error(409, 'conflict', 'this is your own workspace: it holds your account');
+    record(me.username, 'workspace_delete', 'workspace', gone.id, { name: gone.name, kind: gone.kind });
+    removeWorkspace(gone.id);
+    return json(204, null);
   }
 
   if (pathname.startsWith('/api/v1/settings') || pathname.startsWith('/api/v1/users') || pathname.startsWith('/api/v1/tokens') || pathname.startsWith('/api/v1/mailboxes') || pathname.startsWith('/api/v1/invites')) {
@@ -801,6 +846,15 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
       record(me.username, 'user_create', 'user', user.id, { username, role });
       return json(201, user);
     }
+  }
+  if ((m = pathname.match(/^\/api\/v1\/users\/(\d+)$/)) && method === 'DELETE') {
+    const user = users.find((u) => u.id === Number(m![1]) && memberOf(u.id).workspace_id === me.workspace_id);
+    if (!user) return error(404, 'not_found', 'no such user');
+    if (user.id === me.user_id) return error(422, 'invalid', 'you cannot delete yourself');
+    if (memberOf(user.id).owner) return error(403, 'forbidden', "the server's owner cannot be deleted");
+    record(me.username, 'user_delete', 'user', user.id, { username: user.username, role: user.role });
+    removeUser(user.id);
+    return json(204, null);
   }
   if ((m = pathname.match(/^\/api\/v1\/users\/(\d+)$/)) && method === 'PATCH') {
     const user = users.find((u) => u.id === Number(m![1]) && memberOf(u.id).workspace_id === me.workspace_id);
