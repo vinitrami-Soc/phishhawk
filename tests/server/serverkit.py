@@ -109,3 +109,41 @@ def running_server(tmp_path, **settings):
             process.send_signal(signal.SIGTERM)
             process.wait(timeout=60)
         database.close()
+
+
+@contextlib.contextmanager
+def smtp_sink():
+    """A mail server on this machine that keeps what it is sent, for a real server's mail: (its port, the raw
+    messages, in order). It takes every message and checks nothing."""
+    import socketserver
+    import threading
+
+    received: list[bytes] = []
+
+    class Handler(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.wfile.write(b"220 sink\r\n")
+            while line := self.rfile.readline():
+                verb = line[:4].upper()
+                if verb == b"DATA":
+                    self.wfile.write(b"354 go on\r\n")
+                    lines = []
+                    while (part := self.rfile.readline()) not in (b".\r\n", b""):
+                        lines.append(part[1:] if part.startswith(b".") else part)  # a leading dot was doubled
+                    received.append(b"".join(lines))
+                    self.wfile.write(b"250 kept\r\n")
+                elif verb == b"QUIT":
+                    self.wfile.write(b"221 bye\r\n")
+                    return
+                else:
+                    self.wfile.write(b"250 ok\r\n")
+
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield server.server_address[1], received
+    finally:
+        server.shutdown()
+        server.server_close()
+

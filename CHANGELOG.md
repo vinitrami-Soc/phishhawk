@@ -9,6 +9,14 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Email and password reset, in the frontend.** When the server sends mail,
+  Sign in offers "Forgot password?": a username or an email address, then a
+  link to choose a new password, after which every device is signed out.
+  Sign-up and joining ask for an email address, and the profile shows whether
+  it is confirmed and changes it with the current password. The link from a
+  confirmation email confirms the address with one press, so a mail scanner
+  that opens links confirms nothing. Without mail, the only change is an
+  optional email field.
 - **Email and password reset, in the API.** With an SMTP server and a public
   URL set (any service: Brevo, Amazon SES, Postmark, a company relay), each
   account has an email address, confirmed by a link before anything else is

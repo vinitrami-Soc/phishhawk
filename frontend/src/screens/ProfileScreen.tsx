@@ -1,10 +1,13 @@
 /* Your profile: first and last name, location and job title, seen only inside
    your workspace. An organization's admin also renames it here. A new password
-   needs the current one and signs you out everywhere else. The server checks
-   everything before it changes anything. Someone on their own deletes their
-   account here; in an organization its admins delete accounts. */
+   needs the current one and signs you out everywhere else; so does a new email
+   address, since whoever has it can reset the password, and a link sent to it
+   confirms it. The server checks everything before it changes anything. Someone
+   on their own deletes their account here; in an organization its admins delete
+   accounts. */
 
 import { useEffect, useState, type FormEvent } from 'react';
+import { CircleCheck } from 'lucide-react';
 import { deleteMyAccount, getMe, patchMe } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
 import type { Me, ProfilePatch, Session } from '@/api/types';
@@ -12,6 +15,7 @@ import { ROLE_LABEL } from '@/app/vocabulary';
 import { FormStatus, PROFILE_KEYS, ProfileFields, sentence, useAccountForm } from '@/components/phishhawk/AccountForm';
 import { Button, Card, ConfirmDialog, ErrorState, PageHeader, PasswordField, SectionTitle, Skeleton, TextField } from '@/components/ui/ui';
 import { useToast } from '@/components/ui/toast';
+import { useSendsMail } from '@/hooks/useGettingIn';
 
 function Details({ me, onSaved }: { me: Me; onSaved: (me: Me) => void }) {
   const toast = useToast();
@@ -43,6 +47,60 @@ function Details({ me, onSaved }: { me: Me; onSaved: (me: Me) => void }) {
           <FormStatus busy={form.busy} busyText="Saving" general={form.general} />
           <Button variant="primary" type="submit" disabled={form.busy}>
             Save profile
+          </Button>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
+function Email({ me, onSaved }: { me: Me; onSaved: (me: Me) => void }) {
+  const toast = useToast();
+  const sendsMail = useSendsMail();
+  const saved = me.email ?? '';
+  const form = useAccountForm({ email: saved, current_password: '' });
+  const unchanged = form.values.email.trim().toLowerCase() === saved;
+  const again = unchanged && Boolean(saved) && !me.email_verified && sendsMail; // the same address: its link again
+  const ready = Boolean(form.values.current_password) && (!unchanged || again);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!ready) return;
+    void form.run(async () => {
+      const next = await patchMe({ email: form.values.email.trim(), current_password: form.values.current_password });
+      form.setValues({ email: next.email ?? '', current_password: '' });
+      onSaved(next);
+      toast(!next.email ? 'Email address removed.' : sendsMail ? `A link is on its way to ${next.email}. Open it to confirm the address.` : 'Email address saved.');
+    });
+  }
+
+  const status = !saved
+    ? sendsMail
+      ? 'None yet. Without one, a forgotten password needs an admin.'
+      : 'None yet. This server sends no email for now.'
+    : me.email_verified
+      ? null
+      : sendsMail
+        ? `${saved} is not confirmed yet: open the link sent to it. Until then no reset link goes to it.`
+        : `${saved} is kept for when this server sends email.`;
+  return (
+    <Card className="p-5 sm:p-6">
+      <SectionTitle>Email</SectionTitle>
+      {status ? (
+        <p className="mt-1 text-[13px] text-ink-muted">{status}</p>
+      ) : (
+        <p className="mt-1 flex items-center gap-1.5 text-[13px] text-ink-muted">
+          <CircleCheck className="h-3.5 w-3.5 shrink-0 text-accent" strokeWidth={1.75} aria-hidden="true" />
+          <span className="min-w-0 break-all">{saved} is confirmed: a forgotten password can be reset with it.</span>
+        </p>
+      )}
+      <form className="mt-5 grid grid-cols-1 gap-4" onSubmit={submit} noValidate>
+        <TextField label="Email address" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} maxLength={254} hint="Leave it empty for none." {...form.bind('email')} />
+        <PasswordField label="Current password" autoComplete="current-password" hint="Whoever has the address can reset your password, so changing it needs your password." {...form.bind('current_password')} />
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <FormStatus busy={form.busy} busyText="Saving" general={form.general} />
+          <Button type="submit" disabled={form.busy || !ready}>
+            {again ? 'Send the link again' : 'Save email'}
           </Button>
         </div>
       </form>
@@ -173,6 +231,13 @@ export default function ProfileScreen({ session, onChanged, onDeleted }: { sessi
       {me && (
         <>
           <Details
+            me={me}
+            onSaved={(saved) => {
+              setMe(saved);
+              onChanged();
+            }}
+          />
+          <Email
             me={me}
             onSaved={(saved) => {
               setMe(saved);

@@ -5,7 +5,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { LiquidMetalButton } from '@/components/threeui/liquid-metal/LiquidMetalButton';
-import { AccountPage, CredentialFields, FormStatus, ProfileFields, accountFrom, useAccountForm } from '@/components/phishhawk/AccountForm';
+import { AccountPage, CredentialFields, EmailField, FormStatus, ProfileFields, accountFrom, useAccountForm } from '@/components/phishhawk/AccountForm';
 import { getSetupState, setUp } from '@/api/client';
 import { isAbort } from '@/api/errors';
 import type { Session } from '@/api/types';
@@ -15,7 +15,7 @@ import { Skeleton, Switch, TextField } from '@/components/ui/ui';
 export default function SetupScreen({ onEntered }: { onEntered: (session: Session) => void }) {
   const [open, setOpen] = useState<boolean | null>(null);
   const [signupOpen, setSignupOpen] = useState(false);
-  const form = useAccountForm({ code: '', username: '', password: '', first_name: '', last_name: '', location: '', organization: '', job_title: '' });
+  const form = useAccountForm({ code: '', username: '', password: '', email: '', first_name: '', last_name: '', location: '', organization: '', job_title: '' });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -62,6 +62,7 @@ export default function SetupScreen({ onEntered }: { onEntered: (session: Sessio
       <form className="grid grid-cols-1 gap-4" onSubmit={submit} noValidate>
         <TextField label="Setup code" autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="ABCD-EFGH-JKLM-NPQR" {...form.bind('code')} />
         <CredentialFields bind={form.bind} />
+        <EmailField bind={form.bind} required={false} />
         <ProfileFields bind={form.bind} />
         <TextField label="Organization" autoComplete="organization" maxLength={80} hint="Your team's name. You can change it later." {...form.bind('organization')} />
         <div className="rounded-2xl border border-line bg-raised/60 px-4 py-3.5">

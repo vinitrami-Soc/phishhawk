@@ -86,9 +86,11 @@ type Options = {
   retried?: boolean;
 };
 
-/** Requests of someone not signed in yet: no CSRF token, and a 401 is theirs, not an ended session. */
+/** Requests of someone not signed in yet: no CSRF token, and a 401 is theirs, not an ended session. A forgotten
+    password and a link from mail need no one signed in either. */
 function signingIn(method: string, url: string): boolean {
-  return method === 'POST' && (url === '/api/v1/session' || url === '/api/v1/setup' || url === '/api/v1/signup' || url.startsWith('/api/v1/join/'));
+  const open = ['/api/v1/join/', '/api/v1/password-reset', '/api/v1/verify-email/'];
+  return method === 'POST' && (url === '/api/v1/session' || url === '/api/v1/setup' || url === '/api/v1/signup' || open.some((start) => url.startsWith(start)));
 }
 
 async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, options: Options = {}): Promise<T> {
@@ -197,6 +199,34 @@ export function getInvitation(token: string, signal?: AbortSignal): Promise<Invi
 
 export function joinInvitation(token: string, fields: AccountFields): Promise<Session> {
   return enter(`/api/v1/join/${enc(token)}`, fields);
+}
+
+/* ---- a forgotten password, and confirming an email address: by links the server sends ---- */
+
+/** available: this server sends mail. Only then offer "Forgot password?", and ask for an email at sign-up and joining. */
+export function getResetState(signal?: AbortSignal): Promise<{ available: boolean }> {
+  return request('GET', '/api/v1/password-reset', { signal });
+}
+
+/** A link for the account with this username, or each with this confirmed address. 202 whatever is found, with a
+    detail to show as it is; 404: this server sends no mail; 429: see retryAfter. */
+export function requestReset(login: string): Promise<{ detail: string }> {
+  return request('POST', '/api/v1/password-reset', { json: { login } });
+}
+
+/** The account a reset link is for; 404 when it was used, is over an hour old or is not valid. */
+export function getResetLink(token: string, signal?: AbortSignal): Promise<{ username: string }> {
+  return request('GET', `/api/v1/password-reset/${enc(token)}`, { signal });
+}
+
+/** The new password; every session of the account ends, so sign in with it afterwards. 422: too short. */
+export function resetPassword(token: string, password: string): Promise<void> {
+  return request('POST', `/api/v1/password-reset/${enc(token)}`, { json: { password } });
+}
+
+/** The address the link was sent to, confirmed; 404 when it was used, is over 24 hours old, or the address changed. */
+export function verifyEmail(token: string): Promise<void> {
+  return request('POST', `/api/v1/verify-email/${enc(token)}`);
 }
 
 /* ---- submissions and analyses ---- */

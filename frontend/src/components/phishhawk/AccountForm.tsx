@@ -125,6 +125,24 @@ export function ProfileFields({ bind }: { bind: Bind }) {
   );
 }
 
+/** An email address: needed when the server sends mail, for a link to reset the password; confirmed by a link sent
+    to it. Without mail it is optional and kept for when the server sends some. */
+export function EmailField({ bind, required, label }: { bind: Bind; required: boolean; label?: string }) {
+  return (
+    <TextField
+      label={label ?? (required ? 'Email' : 'Email (optional)')}
+      type="email"
+      inputMode="email"
+      autoComplete="email"
+      autoCapitalize="none"
+      spellCheck={false}
+      maxLength={254}
+      hint={required ? 'For a link to reset your password. A link sent to it confirms it.' : 'For a link to reset your password, once this server sends email.'}
+      {...bind('email')}
+    />
+  );
+}
+
 /** The message under the button: what is happening, or what went wrong that no field explains. */
 export function FormStatus({ busy, busyText, general }: { busy: boolean; busyText: string; general: string | null }) {
   return (
@@ -150,5 +168,6 @@ export function accountFrom(values: Record<string, string>): AccountFields {
     last_name: values.last_name ?? '',
     location: values.location ?? '',
     job_title: values.job_title ?? '',
+    email: (values.email ?? '').trim(),
   };
 }
