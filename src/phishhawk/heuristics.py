@@ -717,6 +717,9 @@ def _body(a: Analysis) -> None:
     if a.hidden_filler:
         a.add_signal("medium", "%d letters of hidden text the reader never sees, unrelated to the visible text "
                                "('%s...')" % (a.hidden_filler, a.hidden_sample[:50]), ("T1027",))
+    if a.hidden_claim:
+        a.add_signal("medium", "hidden text vouches for the message to filters or AI assistants, never to the "
+                               "reader ('%s')" % a.hidden_claim[:80], ("T1027",))
     for link in a.script_links[:3]:
         if link["kind"].startswith("javascript"):  # 2002 newsletters still opened pop-ups this way
             a.add_signal("medium", "a link runs JavaScript instead of opening a website (%s)" % link["where"],

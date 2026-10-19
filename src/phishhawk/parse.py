@@ -790,6 +790,28 @@ def _hidden_filler(visible: str, hidden: str) -> tuple[int, str]:
     return letters, " ".join(hidden.split())[:80]
 
 
+# Hidden words that vouch for the message: written for a spam filter or an AI assistant that summarises the
+# mail, never for the reader. A newsletter's hidden preview line says what the message is about, not that it
+# is harmless.
+_HIDDEN_CLAIM_RE = re.compile(
+    r"\b(?:benign|harmless|not (?:a )?(?:spam|phishing|malicious|scam)"
+    r"|(?:safe|clean|legitimate) (?:e-?mail|message|mail|notification)|spam[ -]?filters?"
+    r"|ignore (?:all |any |the )?(?:previous|prior|above|earlier) instructions"
+    r"|(?:classify|mark|treat|label) (?:this|the) (?:e-?mail|message) as"
+    r"|you are an? (?:ai|assistant|language model)|as an ai)\b", re.I)
+
+
+def _hidden_claim(visible: str, hidden: str) -> str:
+    """The first hidden phrase that vouches for the message, with a few words around it, or "". One the visible
+    text says too is a responsive layout's hidden copy."""
+    seen = visible.lower()
+    for match in _HIDDEN_CLAIM_RE.finditer(hidden):
+        if match.group(0).lower() not in seen:
+            around = hidden[max(0, match.start() - 30):match.end() + 30]
+            return defang_text(" ".join(around.split()))
+    return ""
+
+
 def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
                   file_hook: Callable[[Analysis, FileIoc, bytes], None] | None = None,
                   open_attached: bool = True) -> None:
@@ -821,6 +843,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
     analysis.hidden_splits = sum(found.hidden_splits for found in html_found)
     analysis.tag_splits = sum(found.tag_splits for found in html_found)
     analysis.hidden_filler, analysis.hidden_sample = _hidden_filler(visible, hidden)
+    analysis.hidden_claim = _hidden_claim(visible, hidden)
 
     unwrapped = msg.__dict__.get("_unwrapped_part")
     already_analysed = _part_bytes(unwrapped) if unwrapped is not None and unwrapped is not msg else None
