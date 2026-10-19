@@ -164,8 +164,11 @@ def delete(request: Request, db: DB, actor: CurrentActor, message_id: int,
 
 
 @router.post("/messages/{message_id}/hold")
-def hold(db: DB, actor: Admin, message_id: int, hold: Annotated[bool, Form()] = True) -> Response:
-    (api.hold if hold else api.release)(db, actor, message_id)
+def hold(db: DB, actor: Admin, message_id: int, hold: Annotated[str, Form()] = "true") -> Response:
+    """hold=false releases the message; anything else, or no field at all, holds it. Read as text: FastAPI 0.147
+    and later take a missing bool field for false, as an unticked checkbox, which made a bare POST release."""
+    held = hold.strip().lower() not in ("false", "0", "off", "no")
+    (api.hold if held else api.release)(db, actor, message_id)
     analysis_id = db.scalars(select(Analysis.id).where(Analysis.message_id == message_id)
                              .order_by(Analysis.id.desc())).first()
     return _see_other("/analyses/%d" % analysis_id if analysis_id else "/queue")
