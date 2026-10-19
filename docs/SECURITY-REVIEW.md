@@ -5,8 +5,9 @@ bug-bounty hunter would test it: as a target, not as a detector. It was tested
 twice before 2.0.0, once against 1.2.0 and again after 2.0 added a dozen
 file-format readers of its own, and a third time before 2.1.0, which added
 7z decompression, virtual disks and NTFS, and two mail APIs. Round 4 covered
-2.2, and round 5 the web app of 3.0 (the server, its API, its pages and its
-mailbox import). Every finding below was reproduced, fixed, and turned into a
+2.2, round 5 the web app of 3.0 (the server, its API, its pages and its
+mailbox import), and round 6 its workspaces, sign-up, invitations, feedback
+and deletion. Every finding below was reproduced, fixed, and turned into a
 test that fails on the old code (most in
 [`tests/test_security.py`](../tests/test_security.py), the web app's in
 [`tests/server/`](../tests/server/)).
@@ -176,6 +177,37 @@ another site, and from a hostile IMAP server.
 | Headers | A strict Content-Security-Policy, `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `Cross-Origin-Opener-Policy`, HSTS behind TLS, `no-store` on API answers, nothing indexed |
 | The container | Runs as an unprivileged user on a read-only file system, every capability dropped, `no-new-privileges`; Compose publishes the port on this machine only |
 
+## Round 6: workspaces, sign-up, feedback and deletion (fixed before release)
+
+The surfaces added since round 5 were attacked on a running server with two
+organizations and people on their own: one workspace's admin against
+another's rows, lists, searches and built-in pages; the invitation and setup
+tokens, raced and guessed; sign-up from one address with forged
+`X-Forwarded-For` headers; markup, formulas and bidirectional overrides in
+feedback, notes and names; and the new deletions, as every role and with API
+tokens. Bandit was run again over the server.
+
+| # | Finding | Impact | Severity | Fix |
+|---|---|---|---|---|
+| 70 | **Any admin of the owner's organization could become the owner.** `PATCH /api/v1/users/{id}` (and the built-in Users page) let an admin set the owner's password, demote them or disable them, as for any member. A new password let them sign in as the owner: server settings, everyone's feedback, and deleting any workspace. | Privilege escalation to the whole server | High | Only the owner changes their own account; anyone else gets 403, through the API and the page |
+| 71 | **A message for a workspace deleted meanwhile left its encrypted copy.** An upload or a mailbox import writes the raw message before its row; when the row's workspace was gone, the insert failed and the file stayed. | Deleted data kept on disk, encrypted and unreachable | Low | The file is removed when the insert fails |
+
+### Workspaces and accounts: tested and found safe
+
+| Attack | Result |
+|---|---|
+| Another workspace's rows by ID | Every route and page that names a row is called by another workspace's admin, generated from the route table, so a new route without scoping fails the suite: 404, as for a row that does not exist. The owner's workspace routes answer 404 to anyone else |
+| Another workspace's rows in lists and searches | The Queue's search by SHA-256, report ID or indicator, its filters by user and by dispute, campaigns, the audit log, users, tokens, mailboxes, invitations, feedback, the summary of answers and the settings (provider keys included) show only the caller's workspace, in the API and on the built-in pages |
+| IDs in request bodies | A token for another workspace's user, and an answer removed through another analysis, are refused (404) |
+| Invitation tokens | 32 random bytes, stored as a hash; one use, enforced by an atomic update, so six joins raced at once make one account; revoked, used and expired ones answer 404 |
+| The setup code | Compared in constant time, throttled, sealed with the encryption key, and closed (404) once anyone has an account |
+| Sign-up from one address | Three an hour per address and a daily cap for the server; `X-Forwarded-For` counts only from a trusted proxy, so forged addresses from anywhere else are throttled as one |
+| Markup and formulas in feedback, notes and names | Kept as text and shown as text; nothing is rendered as HTML. The owner's CSV holds no message, note or person, only numbers, hashes, report IDs and verdicts, and no cell starts with a formula character |
+| Bidirectional overrides and control characters | Refused in feedback, notes, profile fields and organization names |
+| Deleting | An admin deletes only their own workspace's members, never themselves or the owner; only the owner deletes a workspace, never their own; someone on their own deletes their account only with their password, throttled as logins are. None of it with an API token. A deleted workspace's sessions, tokens, rows, settings and encrypted files go with it, and the audit chain still verifies |
+| The owner's API tokens | A token never acts as the owner: server settings, everyone's feedback, the CSV and the workspace list need a person's session |
+| Bandit | Constant SQL strings in two migrations, a token endpoint's URL taken for a password, and `assert` used to narrow types: none a flaw |
+
 ## Tested and found safe
 
 | Attack | Result |
@@ -208,6 +240,16 @@ another site, and from a hostile IMAP server.
 
 ## What remains
 
+- **Usernames are the server's, and a deleted one can be taken again.** The
+  audit log keeps the name of whoever did each thing, so after a deletion a
+  record may name someone who no longer has that account. Sign-up also says
+  when a username is taken.
+- **The owner sees each workspace's name**, and someone on their own is named
+  after their first and last name. It shows no profile, member or message.
+- **The daily caps and the hourly feedback limit are counted, not locked.**
+  Requests raced at the same moment can pass a cap by a few.
+- **An invitation keeps its role** after the admin who made it is demoted or
+  deleted, until it is used, withdrawn by another admin, or 7 days old.
 - **A forged `Authentication-Results` header when the receiving server writes
   none.** Nothing in the message shows who wrote it. Set `--trusted-authserv`
   (or `PHISHHAWK_TRUSTED_AUTHSERV`) to your mail server's authserv-id and only
