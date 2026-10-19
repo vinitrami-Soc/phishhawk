@@ -10,6 +10,9 @@ export type SubmissionStatus = 'queued' | 'running' | 'done' | 'failed';
 /** Where a user's data lives: an organization (a team) or one person. No workspace sees another's data. */
 export type Workspace = { id: number; name: string; kind: 'organization' | 'individual' };
 
+/** GET /api/v1/workspaces (the owner only): each workspace by name, kind and number of members, no one's profile. */
+export type WorkspaceSummary = Workspace & { members: number; created_at: string };
+
 /** A person's profile, seen only inside their workspace. */
 export type Profile = { first_name: string; last_name: string; location: string; job_title: string };
 

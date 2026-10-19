@@ -252,7 +252,17 @@ export default function App() {
     else if (route.name === 'privacy') screen = <PrivacyScreen />;
     else if (route.name === 'help') screen = <HelpScreen />;
     else if (route.name === 'feedback') screen = <FeedbackScreen session={session} />;
-    else if (route.name === 'profile') screen = <ProfileScreen session={session} onChanged={() => void refresh()} />;
+    else if (route.name === 'profile')
+      screen = (
+        <ProfileScreen
+          session={session}
+          onChanged={() => void refresh()}
+          onDeleted={() => {
+            signingOut.current = true;
+            void signOut();
+          }}
+        />
+      );
     else if (route.name === 'join') screen = <SignedInInvitationState username={session.username} />;
     else screen = <NotFoundState />;
 

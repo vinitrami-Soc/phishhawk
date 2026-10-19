@@ -1,11 +1,12 @@
 /* Users (admin): who can sign in, and with which role. In an organization the
    admin invites people with a link (they make their own account) or adds a user
-   with a password. An individual workspace has one member, so it has neither. */
+   with a password. An individual workspace has one member, so it has neither.
+   Deleting a member keeps what they submitted in the workspace. */
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link2, UserPlus } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/core/dialog';
-import { createUser, listUsers, updateUser } from '@/api/client';
+import { createUser, deleteUser, listUsers, updateUser } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
 import type { Role, Session, User } from '@/api/types';
 import { ROLE_LABEL } from '@/app/vocabulary';
@@ -14,7 +15,7 @@ import { useToast } from '@/components/ui/toast';
 import { Invitations } from '@/components/phishhawk/Invitations';
 import { cn } from '@/lib/utils';
 
-type Change = { user: User; kind: 'role' | 'disable' | 'enable' } | null;
+type Change = { user: User; kind: 'role' | 'disable' | 'enable' | 'delete' } | null;
 
 function AddUserDialog({ open, onOpenChange, onCreated }: { open: boolean; onOpenChange: (o: boolean) => void; onCreated: (u: User) => void }) {
   const [username, setUsername] = useState('');
@@ -108,6 +109,13 @@ export default function UsersScreen({ session }: { session: Session }) {
     setBusy(true);
     setChangeError(null);
     try {
+      if (change.kind === 'delete') {
+        await deleteUser(change.user.id);
+        setUsers((list) => list?.filter((u) => u.id !== change.user.id) ?? null);
+        toast(`${change.user.username} was deleted.`);
+        setChange(null);
+        return;
+      }
       const patch = change.kind === 'role' ? { role: (change.user.role === 'admin' ? 'analyst' : 'admin') as Role } : { disabled: change.kind === 'disable' };
       const updated = await updateUser(change.user.id, patch);
       setUsers((list) => list?.map((u) => (u.id === updated.id ? updated : u)) ?? null);
@@ -124,6 +132,7 @@ export default function UsersScreen({ session }: { session: Session }) {
     role: { title: `Make ${change.user.username} ${change.user.role === 'admin' ? 'an analyst' : 'an admin'}?`, body: change.user.role === 'admin' ? 'They lose access to settings, users and tokens.' : 'They get access to settings, users and tokens.', label: 'Change role' },
     disable: { title: `Disable ${change.user.username}?`, body: 'They can no longer sign in. Their analyses and audit entries stay.', label: 'Disable' },
     enable: { title: `Enable ${change.user.username}?`, body: 'They can sign in again.', label: 'Enable' },
+    delete: { title: `Delete ${change.user.username}?`, body: 'Their account, profile, API tokens, feedback and answers on verdicts go, for good. The messages they submitted stay in this workspace.', label: 'Delete' },
   }[change.kind];
 
   return (
@@ -165,12 +174,15 @@ export default function UsersScreen({ session }: { session: Session }) {
                   <p className="mt-0.5 text-xs text-ink-muted">Last sign-in: {u.last_login_at ? <Time iso={u.last_login_at} relative /> : 'never'}</p>
                 </div>
                 {!self && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="ghost" onClick={() => setChange({ user: u, kind: 'role' })}>
                       Make {u.role === 'admin' ? 'analyst' : 'admin'}
                     </Button>
                     <Button size="sm" variant={u.disabled ? 'secondary' : 'danger'} onClick={() => setChange({ user: u, kind: u.disabled ? 'enable' : 'disable' })}>
                       {u.disabled ? 'Enable' : 'Disable'}
+                    </Button>
+                    <Button size="sm" variant="ghost" aria-label={`Delete ${u.username}`} onClick={() => setChange({ user: u, kind: 'delete' })}>
+                      Delete
                     </Button>
                   </div>
                 )}
@@ -201,7 +213,7 @@ export default function UsersScreen({ session }: { session: Session }) {
         title={confirmText?.title ?? ''}
         body={confirmText?.body ?? ''}
         confirmLabel={confirmText?.label ?? 'Confirm'}
-        danger={change?.kind === 'disable'}
+        danger={change?.kind === 'disable' || change?.kind === 'delete'}
         busy={busy}
         error={changeError}
         onConfirm={apply}

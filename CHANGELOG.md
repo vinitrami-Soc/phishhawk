@@ -9,6 +9,12 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Deleting accounts and workspaces, in the frontend.** Delete on each member
+  in Users; a Workspaces list in Settings for the owner (name, kind, members
+  and since when), with Delete on all but their own; and Delete your account
+  on the Profile page for someone on their own, with their password, which
+  ends on the product page. Privacy and terms now says what profiles and
+  feedback keep, who sees them, and how accounts are deleted.
 - **Deleting accounts and workspaces, in the API.** An admin deletes a member:
   what they submitted stays the workspace's, their feedback and answers on
   verdicts go. The owner lists the workspaces by name, kind and number of

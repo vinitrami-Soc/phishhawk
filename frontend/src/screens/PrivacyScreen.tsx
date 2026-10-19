@@ -29,15 +29,16 @@ export default function PrivacyScreen() {
         title="Privacy and terms"
         description={
           <>
-            What PhishHawk keeps, what leaves this server, and the one cookie it sets. Last updated <time dateTime="2026-10-12">12 October 2026</time>.
+            What PhishHawk keeps, what leaves this server, and the one cookie it sets. Last updated <time dateTime="2026-10-18">18 October 2026</time>.
           </>
         }
       />
 
       <Section title="Who runs this PhishHawk">
         <p>
-          Your organisation runs PhishHawk on its own server, for its security team. It decides who has an account and how long messages are kept, and its own policies apply to what you
-          submit. For questions about your data, or to have something deleted, ask your PhishHawk admin.
+          Whoever set up this server runs it: its owner. The owner decides whether anyone may create an account. Each organisation, and each person on their own, has a workspace of its own,
+          and no one sees another workspace&apos;s messages, analyses or people. A workspace&apos;s admins decide who is in it and how long its messages are kept, and its own policies apply to
+          what you submit. For questions about your data, ask an admin of your workspace.
         </p>
       </Section>
 
@@ -46,6 +47,10 @@ export default function PrivacyScreen() {
           <li>
             <B>Your account</B>: your username, your role, when you last signed in, and a hash of your password. The password itself is never stored. API tokens, for scripts, are kept
             only as a hash and shown once, when they are created.
+          </li>
+          <li>
+            <B>Your profile</B>: your first and last name, location and job title, so the people you work with know who you are. Only the people in your workspace see it; the server&apos;s
+            owner sees each workspace&apos;s name and how many people are in it, never their profiles.
           </li>
           <li>
             <B>Your session</B>, while you are signed in. It ends when you sign out, or after eight hours without use (your admin can change this).
@@ -63,6 +68,10 @@ export default function PrivacyScreen() {
                 admin uses Delete completely. Recipient addresses, the subject in clear, the body and attachment names are never part of it.
               </li>
             </ul>
+          </li>
+          <li>
+            <B>Your feedback</B>: what you send the server&apos;s owner, with its kind and the page you sent it from, read only by you and the owner; and your answers on whether a
+            verdict was right, with any note, seen by everyone in your workspace. The owner&apos;s download of disputed verdicts names no person and holds no message or note.
           </li>
           <li>
             <B>The audit log</B>: every sign-in and failed sign-in, submission, analysis, download, re-analysis, deletion, hold, settings change and user or token change, with who did it
@@ -83,6 +92,18 @@ export default function PrivacyScreen() {
         <p>
           To send nothing for one message, turn on Offline analysis when you submit it. Each analysis records which providers were asked.
         </p>
+      </Section>
+
+      <Section title="Deleting your account">
+        <ul className="grid list-disc gap-2.5 pl-5 marker:text-ink-muted">
+          <li>On your own, you delete your account on your Profile page, with your password. Your workspace goes with it, with everything in it, for good.</li>
+          <li>
+            In an organisation, its admins delete accounts. The messages someone submitted stay with the organisation; their account, profile, API tokens, feedback and answers on verdicts
+            go.
+          </li>
+          <li>The server&apos;s owner can delete a whole workspace, with everything in it.</li>
+          <li>The audit log keeps its records, with the username of whoever did each thing: it is the record of what was done, and it cannot be changed.</li>
+        </ul>
       </Section>
 
       <Section title="Cookies and storage on your device">
