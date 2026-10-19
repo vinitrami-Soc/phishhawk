@@ -63,6 +63,9 @@ class User(Base):
     created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(default=None)
     onboarded_at: Mapped[dt.datetime | None] = mapped_column(default=None)  # finished or skipped the setup
+    email: Mapped[str] = mapped_column(String(254), default="", index=True)  # lowercase; "" for none
+    email_verified_at: Mapped[dt.datetime | None] = mapped_column(default=None)  # its confirmation link opened
+    reset_requested_at: Mapped[dt.datetime | None] = mapped_column(default=None)  # the last reset link asked for
     # the profile: seen only inside the workspace
     first_name: Mapped[str] = mapped_column(String(80), default="")
     last_name: Mapped[str] = mapped_column(String(80), default="")
@@ -85,6 +88,20 @@ class Invite(Base):
     used_at: Mapped[dt.datetime | None] = mapped_column(default=None)
     used_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
     revoked_at: Mapped[dt.datetime | None] = mapped_column(default=None)
+
+
+class EmailToken(Base):
+    """A link sent by email, to confirm an address or to set a new password; it works once, within its time.
+    Only the token's SHA-256 is kept."""
+    __tablename__ = "email_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    purpose: Mapped[str] = mapped_column(String(16))  # "verify" or "reset"
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    email: Mapped[str] = mapped_column(String(254))  # the address it was sent to
+    created_at: Mapped[dt.datetime] = mapped_column(default=utcnow)
+    expires_at: Mapped[dt.datetime] = mapped_column()
+    used_at: Mapped[dt.datetime | None] = mapped_column(default=None)
 
 
 class Session(Base):

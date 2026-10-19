@@ -81,6 +81,11 @@
       },
       "Join": {
         "properties": {
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
           "first_name": {
             "default": "",
             "title": "First Name",
@@ -286,6 +291,17 @@
         "title": "NewMailbox",
         "type": "object"
       },
+      "NewPassword": {
+        "properties": {
+          "password": {
+            "default": "",
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "title": "NewPassword",
+        "type": "object"
+      },
       "NewToken": {
         "properties": {
           "name": {
@@ -338,6 +354,17 @@
             "default": "",
             "title": "Current Password",
             "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
           },
           "first_name": {
             "anyOf": [
@@ -407,6 +434,17 @@
           }
         },
         "title": "ProfilePatch",
+        "type": "object"
+      },
+      "ResetRequest": {
+        "properties": {
+          "login": {
+            "default": "",
+            "title": "Login",
+            "type": "string"
+          }
+        },
+        "title": "ResetRequest",
         "type": "object"
       },
       "ServerSettingsPatch": {
@@ -621,6 +659,11 @@
             "title": "Code",
             "type": "string"
           },
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
           "first_name": {
             "default": "",
             "title": "First Name",
@@ -670,6 +713,11 @@
       },
       "SignUp": {
         "properties": {
+          "email": {
+            "default": "",
+            "title": "Email",
+            "type": "string"
+          },
           "first_name": {
             "default": "",
             "title": "First Name",
@@ -2341,6 +2389,149 @@
         "summary": "Get Raw"
       }
     },
+    "/api/v1/password-reset": {
+      "get": {
+        "description": "Whether this server sends mail, and so resets a forgotten password: offer \"Forgot password?\" then.",
+        "operationId": "reset_state_api_v1_password_reset_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset State Api V1 Password Reset Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Reset State"
+      },
+      "post": {
+        "description": "A reset link by email for the account with this username, or for each with this confirmed address. The\nanswer is the same whether or not one is found; 404 when this server sends no mail, 429 past 5 an hour from\none address.",
+        "operationId": "request_reset_api_v1_password_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Request Reset Api V1 Password Reset Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Request Reset"
+      }
+    },
+    "/api/v1/password-reset/{token}": {
+      "get": {
+        "description": "The account a reset link is for, while it can be used; 404 otherwise.",
+        "operationId": "reset_link_api_v1_password_reset__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reset Link Api V1 Password Reset  Token  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Link"
+      },
+      "post": {
+        "description": "A new password, once per link; every session of the account ends. 404 for a used or old link.",
+        "operationId": "reset_password_api_v1_password_reset__token__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewPassword"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password"
+      }
+    },
     "/api/v1/server-settings": {
       "get": {
         "description": "The owner's settings for the whole server: sign-up, its daily cap, and the upload limits.",
@@ -2959,6 +3150,39 @@
           }
         },
         "summary": "Patch User"
+      }
+    },
+    "/api/v1/verify-email/{token}": {
+      "post": {
+        "description": "The account's email address confirmed, by the link sent to it; 404 for a used or old link.",
+        "operationId": "verify_email_api_v1_verify_email__token__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify Email"
       }
     },
     "/api/v1/workspaces": {

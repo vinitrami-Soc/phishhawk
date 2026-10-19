@@ -21,12 +21,19 @@ services:
       PHISHHAWK_TRUSTED_PROXIES: ${PHISHHAWK_TRUSTED_PROXIES:-127.0.0.1,172.16.0.0/12}
       # the image serves the frontend in frontend/ at /app/; to serve another build, mount it below and use
       # PHISHHAWK_FRONTEND_DIR: /frontend
+      # mail, for confirming addresses and resetting passwords (docs/SERVER.md, "Email and password reset"),
+      # with the SMTP password in secrets/phishhawk_smtp_password and its two lines below uncommented:
+      # PHISHHAWK_PUBLIC_URL: https://phishhawk.example.org
+      # PHISHHAWK_SMTP_HOST: smtp-relay.brevo.com
+      # PHISHHAWK_SMTP_USERNAME: the SMTP login your provider shows
+      # PHISHHAWK_SMTP_FROM: PhishHawk <no-reply@example.org>
     volumes:
       - phishhawk-data:/data
       # - ./frontend-dist:/frontend:ro
     secrets:
       - phishhawk_secret_key
       - phishhawk_encryption_key
+      # - phishhawk_smtp_password
     init: true  # reaps the worker's helper processes
     read_only: true
     tmpfs:
@@ -42,6 +49,8 @@ secrets:
     file: ./secrets/phishhawk_secret_key
   phishhawk_encryption_key:
     file: ./secrets/phishhawk_encryption_key
+  # phishhawk_smtp_password:
+  #   file: ./secrets/phishhawk_smtp_password
 
 volumes:
   phishhawk-data:

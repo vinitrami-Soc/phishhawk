@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import hmac
+import re
 import secrets
 import unicodedata
 from collections.abc import Mapping
@@ -29,6 +30,9 @@ INVITE_DAYS = 7
 NOTE_MAX = 120
 PROFILE = ("first_name", "last_name", "location", "job_title")
 OPTIONAL = ("job_title",)
+EMAIL_MAX = 254
+# An address mail can be sent to: ASCII, one @, a domain with a dot. Stored lowercase.
+EMAIL_RE = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 
 
 class AccountError(Exception):
@@ -52,6 +56,18 @@ def clean(field: str, value: object, required: bool = True, most: int = FIELD_MA
     return text
 
 
+def clean_email(value: object, required: bool) -> str:
+    """An email address, trimmed and lowercased; "" for none, when none is needed."""
+    text = value.strip().lower() if isinstance(value, str) else ""
+    if not text:
+        if required:
+            raise AccountError(422, "email: required")
+        return ""
+    if len(text) > EMAIL_MAX or not EMAIL_RE.fullmatch(text):
+        raise AccountError(422, "email: an address such as name@example.org")
+    return text
+
+
 def profile(data: Mapping[str, Any]) -> dict[str, str]:
     return {name: clean(name, data.get(name), name not in OPTIONAL) for name in PROFILE}
 
@@ -68,11 +84,12 @@ def _credentials(db: Session, data: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def _new_user(db: Session, data: Mapping[str, Any], role: str, workspace_id: int,
-              fields: dict[str, str]) -> User:
+              fields: dict[str, str], email: str = "") -> User:
     username, password = _credentials(db, data)
     user = auth.create_user(db, username, password, role, workspace_id=workspace_id)
     for name, value in fields.items():
         setattr(user, name, value)
+    user.email = email  # unconfirmed until its link is opened
     user.onboarded_at = None  # signed up: the console opens the setup once
     return user
 
@@ -104,10 +121,11 @@ def set_up(db: Session, box: Box, data: Mapping[str, Any]) -> User:
     if not isinstance(sent, str) or not hmac.compare_digest(sent.strip().upper().encode(), code.encode()):
         raise AccountError(403, "that setup code is not right")
     fields = profile(data)
+    email = clean_email(data.get("email"), required=False)
     organization = clean("organization", data.get("organization"))
     workspace = db.get(Workspace, auth.default_workspace(db))
     assert workspace is not None
-    user = _new_user(db, data, "admin", workspace.id, fields)
+    user = _new_user(db, data, "admin", workspace.id, fields, email)
     user.owner = True
     workspace.name = organization
     signup_open = data.get("signup_open") is True
@@ -139,20 +157,21 @@ def cap_wait(db: Session, now: dt.datetime | None = None) -> float:
     return max(1.0, (oldest + dt.timedelta(days=1) - now).total_seconds())
 
 
-def sign_up(db: Session, data: Mapping[str, Any]) -> User:
+def sign_up(db: Session, data: Mapping[str, Any], email_required: bool = False) -> User:
     """A new workspace of the kind asked for, and its first admin. Everything is checked before anything is made,
-    and each problem names its field."""
+    and each problem names its field. A server that sends mail needs an email address, to reset a password."""
     kind = data.get("kind")
     if kind not in KINDS:
         raise AccountError(422, "kind: individual or organization")
     fields = profile(data)
+    email = clean_email(data.get("email"), email_required)
     organization = clean("organization", data.get("organization"), required=kind == "organization")
     _credentials(db, data)
     name = organization if kind == "organization" else "%s %s" % (fields["first_name"], fields["last_name"])
     workspace = Workspace(name=name[:FIELD_MAX], kind=kind)
     db.add(workspace)
     db.flush()
-    user = _new_user(db, data, "admin", workspace.id, fields)
+    user = _new_user(db, data, "admin", workspace.id, fields, email)
     audit.record(db, user.username, "signup", details={"kind": kind, "workspace": workspace.id},
                  workspace_id=SERVER)
     return user
@@ -203,17 +222,18 @@ def open_invite(db: Session, token: str) -> Invite:
     return row
 
 
-def join(db: Session, token: str, data: Mapping[str, Any]) -> User:
+def join(db: Session, token: str, data: Mapping[str, Any], email_required: bool = False) -> User:
     """The new member, with the invitation's role in its organization. The invitation is taken first, so two
     people with one link cannot both join; a refused request leaves it unused (the transaction rolls back)."""
     row = open_invite(db, token)
     fields = profile(data)
+    email = clean_email(data.get("email"), email_required)
     _credentials(db, data)
     taken = db.execute(update(Invite).where(Invite.id == row.id, Invite.used_at.is_(None))
                        .values(used_at=utcnow()))
     if getattr(taken, "rowcount", 0) != 1:  # an UPDATE's result has it; the type does not say so everywhere
         raise AccountError(404, "this invitation was used already")
-    user = _new_user(db, data, row.role, row.workspace_id, fields)
+    user = _new_user(db, data, row.role, row.workspace_id, fields, email)
     row.used_by = user.id
     audit.record(db, user.username, "join", "invite", row.id, {"role": row.role}, workspace_id=row.workspace_id)
     return user

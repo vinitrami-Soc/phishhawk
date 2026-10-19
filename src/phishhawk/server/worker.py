@@ -11,7 +11,7 @@ from collections.abc import Callable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import appsettings, audit, auth, batches, campaigns, jobs, mailbox
+from . import appsettings, audit, auth, batches, campaigns, jobs, mailbox, recovery
 from .db import transaction
 from .models import SERVER, Campaign, Job, Submission, Workspace, utcnow
 from .processing import Services, process_submission
@@ -64,6 +64,8 @@ def run_one(services: Services) -> bool:
             batches.finalize(services, int(payload["batch_id"]), beat)
         elif kind == "mailbox_poll":
             mailbox.poll(services, int(payload["mailbox_id"]), beat)
+        elif kind in recovery.KINDS:
+            recovery.deliver(services, kind, payload)
         elif kind == "campaign_rebuild":
             with transaction(services.sessions) as db:
                 # a job queued before workspaces names none: every workspace is rebuilt

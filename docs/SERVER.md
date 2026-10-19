@@ -138,6 +138,8 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
 | `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
 | `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
+| `PHISHHAWK_PUBLIC_URL` | empty | The address people open, such as `https://phishhawk.example.org`. Links in mail are built from it. |
+| `PHISHHAWK_SMTP_HOST`, `PHISHHAWK_SMTP_PORT`, `PHISHHAWK_SMTP_SECURITY`, `PHISHHAWK_SMTP_USERNAME`, `PHISHHAWK_SMTP_PASSWORD`, `PHISHHAWK_SMTP_FROM` | empty, `587`, `starttls`, empty, empty, empty | The mail server for confirming addresses and resetting passwords; see [Email and password reset](#email-and-password-reset). |
 
 An admin can change the retention period and the campaign window of their
 workspace on the Settings page. The upload and batch limits are the whole
@@ -215,7 +217,9 @@ on, the login page offers "Create an account" (`/signup`).
 - One address can sign up 3 times an hour, and the server makes at most 100
   accounts a day (the owner's `signup_daily_cap`). Past either limit the
   answer is 429 with `Retry-After`.
-- There is no email check: PhishHawk sends no email.
+- When the server sends mail (see [Email and password reset](#email-and-password-reset)),
+  each new account gives an email address, confirmed by a link. Otherwise
+  none is needed.
 
 **Invitations.** On Users, an organization's admin makes an invitation with a
 role and a note ("for Priya, SOC team"). They get a link
@@ -226,8 +230,9 @@ with that role. An individual workspace has one member and cannot invite.
 "Add a user", with a password the admin sets, still works.
 
 **Profile.** Everyone changes their first and last name, location and job
-title at `/profile` (or `GET/PATCH /api/v1/me`), and their password after
-entering the current one. A new password signs them out everywhere else. An
+title at `/profile` (or `GET/PATCH /api/v1/me`), and their email address and
+password after entering the current one. A new password signs them out
+everywhere else. An
 organization's admin can also rename it. A profile is seen only inside its
 workspace.
 
@@ -251,6 +256,60 @@ batch, new analysis and mailbox import counts; the day is UTC. Past it, an
 upload answers 429 with the seconds until midnight UTC (a batch that does not
 fit is refused whole), and a mailbox poll stops: what it left in the mailbox
 comes at a poll the next day.
+
+## Email and password reset
+
+Without mail settings PhishHawk sends no email: an email address is optional,
+there is no "Forgot password", and an admin gives a member a new password
+(`PATCH /api/v1/users/{id}`). To turn mail on, set the public URL, the SMTP
+server and the From address. Any SMTP service works (Brevo, Amazon SES,
+Postmark, Mailgun, your company's relay). For Brevo:
+
+```bash
+PHISHHAWK_PUBLIC_URL=https://phishhawk.example.org
+PHISHHAWK_SMTP_HOST=smtp-relay.brevo.com
+PHISHHAWK_SMTP_PORT=587                  # STARTTLS, the default
+PHISHHAWK_SMTP_USERNAME=...@smtp-brevo.com   # the SMTP login Brevo shows
+PHISHHAWK_SMTP_FROM="PhishHawk <no-reply@example.org>"
+```
+
+The SMTP password (Brevo's SMTP key) goes in `secrets/phishhawk_smtp_password`,
+never in a file you commit; `compose.yaml` has the lines to uncomment.
+`PHISHHAWK_SMTP_SECURITY` is `starttls`, `ssl` (port 465) or `none` (a relay
+on the same machine only); the server refuses to start with anything else.
+Certificates are always verified.
+
+Before the first message, verify the From address's domain with the service
+and add the DNS records it gives you: SPF and DKIM, and a DMARC record (start
+with `v=DMARC1; p=none; rua=mailto:dmarc@example.org`). Without them, the
+mail lands in spam or is refused. Then check:
+
+```bash
+phishhawk server test-email you@example.org
+```
+
+With mail on:
+
+- **An address on each account.** Setup, sign-up, an invitation and the
+  profile take one; sign-up and joining require it. Changing it on the profile
+  needs the current password. A new address gets a confirmation link, valid
+  for 24 hours; until it is opened, no reset link goes to that address.
+- **Forgot password.** The login page offers it. Someone enters a username or
+  an email address, and the answer is the same whether or not an account
+  matches. Each matching account with a confirmed address gets a link, valid
+  for an hour and once. The new password ends every session of the account,
+  and its other reset links stop working.
+- **Limits.** One address can ask for a reset 5 times an hour (then 429 with
+  `Retry-After`). An account gets one reset link every 2 minutes at most, and
+  5 links of each kind an hour, however often its address is saved again. A
+  disabled account gets none.
+- **Links** are built from `PHISHHAWK_PUBLIC_URL`, never from the request, so a
+  forged `Host` header cannot point one elsewhere. The server keeps only a
+  hash of each link's token.
+- The worker sends the mail, so a request never waits on the mail server. A
+  message the mail server refuses is not tried again; `test-email` shows why.
+- The audit log records each request (`password_reset_request`), each reset
+  (`password_reset`) and each confirmed address (`email_verified`).
 
 ## Feedback
 
@@ -554,6 +613,7 @@ phishhawk server create-admin   create an admin user (--password-stdin to read i
 phishhawk server setup-code     print the one-time setup code, while no one has an account
 phishhawk server rotate-key     re-encrypt everything under PHISHHAWK_NEW_ENCRYPTION_KEY
 phishhawk server audit verify   check the audit log's hash chain
+phishhawk server test-email ADDRESS   send a test message with the SMTP settings
 ```
 
 Exit codes: 0 done, 1 the audit log failed verification, 2 a usage error,

@@ -16,7 +16,8 @@ from sqlalchemy.orm import Session, aliased
 
 from .models import Job, utcnow
 
-KINDS = ("analyze", "batch_finalize", "campaign_rebuild", "mailbox_poll", "retention_sweep")
+KINDS = ("analyze", "batch_finalize", "campaign_rebuild", "mailbox_poll", "retention_sweep", "email_verify",
+         "email_reset")
 MAX_ATTEMPTS = 3
 RUNNING_EACH = 2  # jobs of one workspace that run at once
 

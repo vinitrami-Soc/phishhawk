@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +34,15 @@ class ServerSettings(BaseSettings):
     cookie_secure: bool = True  # False only for plain-HTTP local testing
     frontend_dir: str = ""  # a frontend's build, served at /app/ (docs/FRONTEND.md)
     trusted_proxies: str = "127.0.0.1"  # reverse proxies (addresses or networks) whose X-Forwarded-* count
+    # Mail, for confirming addresses and resetting passwords (docs/SERVER.md, "Email and password reset"): off
+    # until the SMTP host, the From address and the public URL are all set.
+    public_url: str = ""  # https://phishhawk.example.org: links in mail are built from it, never from the request
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"  # none: a relay on this machine only
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from: str = ""  # PhishHawk <no-reply@example.org>
 
     @property
     def db_url(self) -> str:
