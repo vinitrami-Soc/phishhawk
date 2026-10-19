@@ -309,6 +309,13 @@ the JSON and STIX output are the public interface.
   - An IMAP server that understates a message's size cannot make the poll, or
     `phishhawk imap`, read more than the limit.
   - A .zip with a damaged member is refused (415), not a server error.
+- Security review round 6 attacked workspaces, sign-up, invitations, feedback
+  and deletion (round 6 in [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md)):
+  - Another admin of the owner's organization can no longer change the
+    owner's password, role or disabled flag. A new password made them the
+    owner.
+  - A message whose workspace is deleted while it is being uploaded or
+    imported leaves no encrypted copy behind.
 
 ## [2.2.0] - 2026-10-06
 

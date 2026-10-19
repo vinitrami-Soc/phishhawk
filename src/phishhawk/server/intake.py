@@ -7,6 +7,7 @@ import hashlib
 import re
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from . import audit, jobs
@@ -48,9 +49,14 @@ def accept(db: Session, store: BlobStore, raw: bytes, *, workspace_id: int, sour
     message = db.scalars(select(Message).where(Message.workspace_id == workspace_id,
                                                Message.sha256 == sha256)).first()
     if message is None:
-        message = Message(workspace_id=workspace_id, sha256=sha256, size=len(raw), raw_blob=store.put(raw))
+        blob = store.put(raw)
+        message = Message(workspace_id=workspace_id, sha256=sha256, size=len(raw), raw_blob=blob)
         db.add(message)
-        db.flush()
+        try:
+            db.flush()
+        except SQLAlchemyError:  # its workspace was deleted meanwhile: no copy of the message stays
+            store.delete(blob)
+            raise
     elif message.raw_blob is None:  # submitted again after its tier 1 was deleted
         message.raw_blob, message.tier1_deleted_at, message.deletion_reason = store.put(raw), None, ""
     submission = Submission(workspace_id=workspace_id, message_id=message.id, user_id=user_id, source=source,

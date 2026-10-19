@@ -145,3 +145,37 @@ def test_in_an_organization_an_admin_deletes_accounts(alice, admin):
         assert refused.status_code == 403, refused.text
     assert "admin" in alice.request("DELETE", "/api/v1/me", json={"password": PASSWORD}).json()["detail"]
     assert alice.get("/api/v1/session").status_code == 200
+
+
+def test_no_other_admin_takes_over_the_servers_owner(app, admin):
+    """An admin of the owner's organization must not become the owner: not by a new password, a new role or by
+    disabling them, through the API or the built-in Users page."""
+    assert admin.post("/api/v1/users", json={"username": "carol", "password": PASSWORD,
+                                             "role": "admin"}).status_code == 201
+    owner = admin.get("/api/v1/session").json()["user_id"]
+    carol = login(app, "carol")
+    for change in ({"password": "carol knows this one now"}, {"role": "analyst"}, {"disabled": True}):
+        refused = carol.patch("/api/v1/users/%d" % owner, json=change)
+        assert refused.status_code == 403 and "owner" in refused.json()["detail"], (change, refused.text)
+    taken = "carol knows this one now"
+    page = carol.post("/users/%d" % owner, data={"csrf_token": carol.headers["X-CSRF-Token"], "password": taken})
+    assert page.status_code == 403, page.text[:200]
+    stranger = TestClient(app)
+    assert stranger.post("/api/v1/session", json={"username": "admin", "password": taken}).status_code == 401
+    assert admin.get("/api/v1/session").status_code == 200  # still signed in, still the owner
+    assert admin.patch("/api/v1/users/%d" % owner, json={"password": "the owner's own new one"}).status_code == 200
+
+
+def test_a_message_for_a_workspace_deleted_meanwhile_leaves_no_file(services):
+    """An upload or a mailbox poll still running when its workspace is deleted: the insert fails, and the
+    encrypted copy of the message already written must go too."""
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    from phishhawk.server import intake
+
+    before = _blobs(services)
+    with pytest.raises(IntegrityError), transaction(services.sessions) as s:
+        intake.accept(s, services.store, _invoices(1)[0], workspace_id=999999, source="upload", user_id=None,
+                      actor="system", offline=True, max_bytes=10 * 1024 * 1024)
+    assert _blobs(services) == before

@@ -408,6 +408,8 @@ def create_user(db: DB, actor: Admin, body: NewUser) -> dict[str, Any]:
 @router.patch("/users/{user_id}")
 def patch_user(db: DB, actor: Admin, user_id: int, body: UserPatch) -> dict[str, Any]:
     user = scope.user(db, actor, user_id)
+    if user.owner and user.id != actor.user_id:  # a new password would make another admin the owner
+        raise HTTPException(403, "only the server's owner changes their own account")
     if user.id == actor.user_id and (body.disabled or (body.role and body.role != "admin")):
         raise HTTPException(422, "you cannot disable yourself or remove your own admin role")
     if body.role is not None:
