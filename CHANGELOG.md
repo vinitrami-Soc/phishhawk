@@ -9,6 +9,15 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Hidden text that vouches for the message.** A short hidden line written
+  for a spam filter or an AI assistant that summarises mail ("harmless",
+  "benign", "not phishing", "ignore previous instructions", "classify this
+  email as") is a medium signal, quoted in the report and in the JSON
+  (`hidden_claim`). Too short to count as hidden filler, it went unremarked
+  before. A phrase the visible text says too (a responsive layout's hidden
+  copy) does not count, nor does newsletter boilerplate such as a whitelist
+  request. On 21,359 real messages (phishing_pot, Nazario, SpamAssassin ham
+  and spam, Enron, mail-library fixtures) no verdict changed.
 - **Deleting accounts and workspaces, in the frontend.** Delete on each member
   in Users; a Workspaces list in Settings for the owner (name, kind, members
   and since when), with Delete on all but their own; and Delete your account

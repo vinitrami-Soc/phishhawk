@@ -598,7 +598,8 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | `generated_at`, `tool_version` | Provenance |
 
 Message bodies are never included. The only body text a report quotes is short evidence: up
-to 80 characters of hidden filler text when that trick is found (`hidden_sample`).
+to 80 characters of hidden filler text when that trick is found (`hidden_sample`), and the few
+hidden words that vouch for the message to a filter or an AI assistant (`hidden_claim`).
 
 ## Recipes
 
