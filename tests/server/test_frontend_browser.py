@@ -5,7 +5,8 @@ sample offline, read the verdict, the sandboxed report and the files; upload
 two messages as a batch and follow them to their combined reports and their
 campaign; connect a mailbox (a test IMAP server) and find its reports in the
 queue; create an organization's account from the product page and join it from
-a second browser with its invitation link; then check phone, tablet and
+a second browser with its invitation link; confirm an email address and reset
+a forgotten password with the links a real server mails; then check phone, tablet and
 desktop widths for anything past the right edge. No console errors, so nothing broke the CSP. Skipped unless
 PHISHHAWK_FRONTEND_BUILD names the build (CI's frontend job makes it);
 PHISHHAWK_CHROMIUM may name the browser's executable."""
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from .serverkit import PASSWORD, running_server
+from .serverkit import PASSWORD, running_server, smtp_sink
 from conftest import build_eml, sample
 
 sync_api = pytest.importorskip("playwright.sync_api")
@@ -600,3 +601,90 @@ def test_an_admin_deletes_a_member_the_owner_a_workspace_and_someone_alone_their
             "Default organization"]
         alone_errors = [e for e in alone_errors if "status of 403" not in e]  # the wrong password
         assert errors == [] and alone_errors == []
+
+
+SITE = "https://phishhawk.example.org"
+
+
+def _mail_link(received, count, server):
+    """The link in the count-th message the server sent, opened on this server: its public URL is another."""
+    import email
+    import email.policy
+    import re
+    import time
+
+    deadline = time.monotonic() + 30
+    while len(received) < count:
+        assert time.monotonic() < deadline, "no mail came: %d of %d" % (len(received), count)
+        time.sleep(0.2)
+    body = email.message_from_bytes(received[count - 1], policy=email.policy.default).get_body().get_content()
+    return server.base + re.search(re.escape(SITE) + r"(/app/[A-Za-z0-9/_-]+)", body).group(1)
+
+
+def test_someone_who_forgot_their_password_sets_a_new_one_with_a_link_by_email(browser, tmp_path):
+    settings = {"PHISHHAWK_FRONTEND_DIR": str(Path(BUILD).resolve()), "PHISHHAWK_PUBLIC_URL": SITE,
+                "PHISHHAWK_SMTP_HOST": "127.0.0.1", "PHISHHAWK_SMTP_SECURITY": "none",
+                "PHISHHAWK_SMTP_FROM": "PhishHawk <no-reply@example.org>"}
+    with smtp_sink() as (port, received), \
+            running_server(tmp_path, PHISHHAWK_SMTP_PORT=str(port), **settings) as server:
+        page, errors = _signed_in(browser, server)
+        page.goto(server.base + "/app/profile")
+        page.get_by_text("None yet. Without one, a forgotten password needs an admin.").wait_for()
+        address = page.locator("form").filter(has=page.get_by_label("Email address"))
+        address.get_by_label("Email address").fill("Root@Corp.example")
+        sync_api.expect(address.get_by_role("button", name="Save email")).to_be_disabled()  # the password first
+        address.get_by_label("Current password").fill(PASSWORD)
+        address.get_by_role("button", name="Save email").click()
+        page.get_by_text("root@corp.example is not confirmed yet").wait_for()
+
+        page.goto(_mail_link(received, 1, server))
+        page.get_by_role("heading", name="Confirm your email address").wait_for()
+        page.get_by_role("button", name="Confirm my address").click()
+        page.get_by_role("heading", name="Your email address is confirmed").wait_for()
+        page.get_by_role("link", name="Your profile").click()
+        page.get_by_text("root@corp.example is confirmed").wait_for()
+
+        visitor, visitor_errors = _visitor(browser)
+        visitor.goto(server.base + "/app/login")
+        visitor.get_by_role("link", name="Forgot password?").click()
+        visitor.get_by_role("heading", level=1, name="Forgot your password?").wait_for()
+        visitor.get_by_label("Username or email").fill("ROOT@corp.example")
+        visitor.locator("form [type=submit]").click()
+        visitor.get_by_role("heading", level=1, name="Check your email").wait_for()
+        visitor.get_by_text("If an account matches, a link is on its way").wait_for()
+        reset = _mail_link(received, 2, server)
+        assert "/app/reset/" in reset
+
+        visitor.goto(reset)
+        visitor.get_by_text("For the account root.").wait_for()
+        visitor.get_by_label("New password").fill("too short")
+        visitor.locator("form [type=submit]").click()
+        sync_api.expect(visitor.get_by_label("New password")).to_have_attribute("aria-invalid", "true")
+        visitor.get_by_label("New password").fill("a brand new long password")
+        visitor.locator("form [type=submit]").click()
+        visitor.get_by_role("heading", level=1, name="Your password is changed").wait_for()
+        page.reload()
+        page.wait_for_selector("#login-username")  # root's other session ended with the old password
+        visitor.get_by_role("main").get_by_role("link", name="Sign in").click()
+        visitor.fill("#login-username", "root")
+        visitor.fill("#login-password", "a brand new long password")
+        visitor.locator("form [type=submit]").click()
+        visitor.wait_for_selector(".ph-commandbar")
+        visitor.goto(reset)
+        visitor.get_by_text("This link is for a forgotten password").wait_for()  # signed in: the profile instead
+        visitor.goto(server.base + "/app/forgot")
+        visitor.wait_for_url(server.base + "/app/profile")
+
+        stranger, stranger_errors = _visitor(browser)
+        for width in WIDTHS:
+            stranger.set_viewport_size({"width": width, "height": 900})
+            used = reset[len(server.base):]
+            for path, ready in (("/app/forgot", "Forgot your password?"), (used, "This link cannot be used")):
+                stranger.goto(server.base + path)
+                stranger.get_by_role("heading", level=1, name=ready).wait_for()
+                stranger.wait_for_timeout(300)
+                assert stranger.evaluate(PAST_EDGE) == [], (width, path)
+        refused = ("status of 422", "status of 404")  # the short password, and the used link
+        visitor_errors = [e for e in visitor_errors if not any(r in e for r in refused)]
+        stranger_errors = [e for e in stranger_errors if not any(r in e for r in refused)]
+        assert errors == [] and visitor_errors == [] and stranger_errors == []

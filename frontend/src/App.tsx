@@ -2,7 +2,8 @@
    only from the server (useAuth). Every screen is loaded on demand. Signed out,
    the start page is the product page, with Sign in at the top; the product
    page, Privacy and Help can be read signed out too, and so can the pages for
-   getting in: setup, Create an account and an invitation's Join. */
+   getting in: setup, Create an account, an invitation's Join, a forgotten
+   password and the links mail sends. */
 
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -22,7 +23,7 @@ import { Link, asset, navigate, usePath } from '@/app/router';
 import { ADMIN_ONLY, pageTitle, parseRoute, signedOutView } from '@/app/routes';
 import { ROLE_LABEL } from '@/app/vocabulary';
 import type { Session } from '@/api/types';
-import { NotFoundState, PermissionDeniedState, SignedInInvitationState, UnreachableState } from '@/screens/StateScreens';
+import { NotFoundState, PermissionDeniedState, SignedInInvitationState, SignedInResetState, UnreachableState } from '@/screens/StateScreens';
 
 const LandingScreen = lazy(() => import('@/screens/LandingScreen'));
 const LoginScreen = lazy(() => import('@/screens/LoginScreen'));
@@ -43,6 +44,9 @@ const HelpScreen = lazy(() => import('@/screens/HelpScreen'));
 const SetupScreen = lazy(() => import('@/screens/SetupScreen'));
 const SignupScreen = lazy(() => import('@/screens/SignupScreen'));
 const JoinScreen = lazy(() => import('@/screens/JoinScreen'));
+const ForgotScreen = lazy(() => import('@/screens/ForgotScreen'));
+const ResetScreen = lazy(() => import('@/screens/ResetScreen'));
+const VerifyEmailScreen = lazy(() => import('@/screens/VerifyEmailScreen'));
 const ProfileScreen = lazy(() => import('@/screens/ProfileScreen'));
 const WelcomeScreen = lazy(() => import('@/screens/WelcomeScreen'));
 const FeedbackScreen = lazy(() => import('@/screens/FeedbackScreen'));
@@ -114,9 +118,10 @@ export default function App() {
     navigate('/app/');
   }, [auth.status]);
 
-  // signed in on /app/login, setup or Create an account: go to the start page
+  // signed in on /app/login, setup or Create an account: go to the start page; on Forgot password, to the profile
   useEffect(() => {
     if (session && (route.name === 'login' || route.name === 'setup' || route.name === 'signup')) navigate('/app/', { replace: true });
+    if (session && route.name === 'forgot') navigate('/app/profile', { replace: true });
   }, [session, route.name]);
 
   // the setup after sign-up opens once, at the start page, until it is finished or skipped
@@ -202,12 +207,15 @@ export default function App() {
       </>
     );
   } else if (!session && view === 'account') {
-    // getting in: setting the server up, creating an account, joining with an invitation
-    body = (
-      <Suspense fallback={null}>
-        {route.name === 'join' ? <JoinScreen token={route.token} onEntered={entered} /> : route.name === 'signup' ? <SignupScreen onEntered={entered} /> : <SetupScreen onEntered={entered} />}
-      </Suspense>
-    );
+    // getting in: setting the server up, creating an account, joining with an invitation, a forgotten password
+    let account;
+    if (route.name === 'join') account = <JoinScreen token={route.token} onEntered={entered} />;
+    else if (route.name === 'signup') account = <SignupScreen onEntered={entered} />;
+    else if (route.name === 'forgot') account = <ForgotScreen />;
+    else if (route.name === 'reset') account = <ResetScreen token={route.token} />;
+    else if (route.name === 'verify-email') account = <VerifyEmailScreen token={route.token} signedIn={false} />;
+    else account = <SetupScreen onEntered={entered} />;
+    body = <Suspense fallback={null}>{account}</Suspense>;
   } else if (auth.status === 'signed-out' || !session) {
     body = (
       <Suspense fallback={null}>
@@ -264,6 +272,9 @@ export default function App() {
         />
       );
     else if (route.name === 'join') screen = <SignedInInvitationState username={session.username} />;
+    else if (route.name === 'reset') screen = <SignedInResetState username={session.username} />;
+    else if (route.name === 'verify-email') screen = <VerifyEmailScreen token={route.token} signedIn onConfirmed={() => void refresh()} />;
+    else if (route.name === 'forgot') screen = <PageFallback />; // on its way to the profile
     else screen = <NotFoundState />;
 
     body = (

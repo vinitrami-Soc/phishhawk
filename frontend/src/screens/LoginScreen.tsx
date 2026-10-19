@@ -1,8 +1,8 @@
 /* Sign in. Desktop: the card on the left, the product on the right; phones: the
    card only. Below the card: Create an account while the server's owner allows
    it, else how to get an account (an invitation or an admin); on a server with no
-   accounts yet, the way to set it up. The logo and "About PhishHawk" lead back to
-   the product page. */
+   accounts yet, the way to set it up. "Forgot password?" while the server sends
+   mail. The logo and "About PhishHawk" lead back to the product page. */
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, Eye, EyeOff, FileCheck2, ScrollText, Server } from 'lucide-react';
@@ -179,6 +179,11 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
                     {show ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
                   </button>
                 </div>
+                {gettingIn?.reset && (
+                  <Link href="/app/forgot" className="inline-flex min-h-8 items-center justify-self-end text-[13px] text-ink-muted underline-offset-2 transition-colors hover:text-ink hover:underline">
+                    Forgot password?
+                  </Link>
+                )}
               </div>
 
               <div className="mt-3 grid grid-cols-1 justify-items-center gap-3">

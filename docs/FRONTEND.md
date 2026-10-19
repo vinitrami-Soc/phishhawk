@@ -51,9 +51,12 @@ Getting in: `/app/setup` makes the owner's account with the setup code while
 no one has one; `/app/signup` creates an account (Just me, or My organization)
 while the owner allows it, and only then do Sign in and the product page offer
 Create account; `/app/join/{token}` makes an account in the organization an
-invitation is for. Signed in, everyone has Profile (`/app/profile`: their
-details and password); an organization's admins invite people on Users, and
-the owner sets sign-up and the server's limits in Settings.
+invitation is for. When the server sends mail, these ask for an email address,
+and Sign in offers "Forgot password?" (`/app/forgot`); the links in mail open
+`/app/reset/{token}` and `/app/verify-email/{token}`. Signed in, everyone has
+Profile (`/app/profile`: their details, email address and password); an
+organization's admins invite people on Users, and the owner sets sign-up and
+the server's limits in Settings.
 
 The setup after sign-up (`/app/welcome`) opens once, at the start page, for an
 account made by setup, sign-up or an invitation, until it is finished or

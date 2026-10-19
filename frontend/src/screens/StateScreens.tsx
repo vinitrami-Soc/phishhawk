@@ -2,7 +2,7 @@
    signed in: one sentence, one action. */
 
 import type { ReactNode } from 'react';
-import { CloudOff, Compass, Lock, Ticket } from 'lucide-react';
+import { CloudOff, Compass, KeyRound, Lock, Ticket } from 'lucide-react';
 import { navigate } from '@/app/router';
 import { Button } from '@/components/ui/ui';
 
@@ -60,6 +60,22 @@ export function SignedInInvitationState({ username }: { username: string }) {
       action={
         <Button onClick={() => navigate('/app/')} variant="primary">
           Back to Triage
+        </Button>
+      }
+    />
+  );
+}
+
+/** A reset link opened while signed in: the password changes on the profile, or after signing out. */
+export function SignedInResetState({ username }: { username: string }) {
+  return (
+    <StateBlock
+      icon={<KeyRound className="h-5 w-5" strokeWidth={1.5} />}
+      title="This link is for a forgotten password"
+      detail={`You are signed in as ${username}: change your password on your profile. If the link is for another account, sign out first and open it again.`}
+      action={
+        <Button onClick={() => navigate('/app/profile')} variant="primary">
+          Your profile
         </Button>
       }
     />

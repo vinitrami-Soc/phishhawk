@@ -30,6 +30,10 @@ export type Session = {
   onboarded?: boolean;
   workspace: Workspace | null;
   profile: Profile | null;
+  /** "" when the account has none; an older server leaves both out */
+  email?: string;
+  /** true once the link sent to the address was opened: only then can it reset the password */
+  email_verified?: boolean;
 };
 
 /** POST /api/v1/submissions (one message), GET /api/v1/submissions/{id}, POST /api/v1/analyses/{id}/reanalyze */
@@ -309,7 +313,7 @@ export type Health = {
 /* ---- getting in: setup, sign-up, invitations, profile ---- */
 
 /** A new account's own fields. A 422 or 409 `detail` starts with the field it is about ("last_name: required"). */
-export type AccountFields = Profile & { username: string; password: string };
+export type AccountFields = Profile & { username: string; password: string; email: string };
 
 /** POST /api/v1/setup: the owner's account, with the code from the server's log. */
 export type SetupFields = AccountFields & { code: string; organization: string; signup_open: boolean };
@@ -327,10 +331,10 @@ export type Invite = { id: number; role: Role; note: string; created_at: string;
 export type NewInvite = Invite & { token: string; link: string };
 
 /** GET /api/v1/me */
-export type Me = { username: string; role: Role; owner: boolean; profile: Profile; workspace: Workspace };
+export type Me = { username: string; role: Role; owner: boolean; profile: Profile; workspace: Workspace; email?: string; email_verified?: boolean };
 
-/** PATCH /api/v1/me: any of these. A new password needs the current one. */
-export type ProfilePatch = Partial<Profile> & { organization?: string; password?: string; current_password?: string };
+/** PATCH /api/v1/me: any of these. A new password or email address needs the current password. */
+export type ProfilePatch = Partial<Profile> & { organization?: string; password?: string; email?: string; current_password?: string };
 
 /** GET /api/v1/server-settings (the owner only) */
 export type ServerSettings = {

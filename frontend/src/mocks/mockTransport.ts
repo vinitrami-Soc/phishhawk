@@ -15,7 +15,14 @@
 
    The server is set up already, with "boss" as its owner in the organization
    "Example Corp", and anyone may create an account: an individual or a new
-   organization. A new workspace starts empty and sees nothing of the others. */
+   organization. A new workspace starts empty and sees nothing of the others.
+
+   The preview sends mail, as a server with mail settings does: an email address
+   is needed to create an account, and "Forgot password?" works. Each message
+   goes to mockOutbox and, in a browser, to the console, so its link can be
+   opened: /app/reset/<token> or /app/verify-email/<token>. "boss" has a
+   confirmed address. Five reset requests in a row wait a minute here (an hour on
+   the real server). */
 
 import fixtures from './fixtures.json';
 import type { Analysis, AnalysisFile, AuditEntry, Batch, Feedback, Invite, Mailbox, MailboxConfig, MailboxKind, Opinion, Profile, ServerSettings, Settings, Submission, Token, User, VerdictAnswer, Workspace, WorkspaceSummary } from '../api/types';
@@ -56,13 +63,13 @@ const tokens: Token[] = [];
 /* Workspaces: who is in which, with their profile. The users list stays the server's shape. */
 const workspaces: Workspace[] = [{ id: 1, name: 'Example Corp', kind: 'organization' }];
 const workspaceMade = new Map<number, string>([[1, new Date(Date.now() - 90 * 86_400_000).toISOString()]]);
-type Member = { workspace_id: number; owner: boolean; profile: Profile; onboarded: boolean };
+type Member = { workspace_id: number; owner: boolean; profile: Profile; onboarded: boolean; email: string; email_verified: boolean };
 const blank: Profile = { first_name: '', last_name: '', location: '', job_title: '' };
 const members = new Map<number, Member>([
-  [1, { workspace_id: 1, owner: true, profile: { first_name: 'Sam', last_name: 'Boss', location: 'London', job_title: 'SOC lead' }, onboarded: true }],
-  [2, { workspace_id: 1, owner: false, profile: { ...blank }, onboarded: true }],
+  [1, { workspace_id: 1, owner: true, profile: { first_name: 'Sam', last_name: 'Boss', location: 'London', job_title: 'SOC lead' }, onboarded: true, email: 'sam.boss@example-corp.co.uk', email_verified: true }],
+  [2, { workspace_id: 1, owner: false, profile: { ...blank }, onboarded: true, email: '', email_verified: false }],
 ]);
-const memberOf = (userId: number): Member => members.get(userId) ?? { workspace_id: 1, owner: false, profile: { ...blank }, onboarded: true };
+const memberOf = (userId: number): Member => members.get(userId) ?? { workspace_id: 1, owner: false, profile: { ...blank }, onboarded: true, email: '', email_verified: false };
 /* Analyses made in the preview belong to the workspace that submitted them; the sample ones to Example Corp. */
 const analysisWorkspace = new Map<number, number>();
 const workspaceOf = (a: Analysis) => analysisWorkspace.get(a.id) ?? 1;
@@ -96,25 +103,62 @@ function clean(field: string, value: unknown, required = true): string {
   return text;
 }
 
-/** The new account's profile and credentials, or the refusal (status and detail) the server would send. */
-function newAccount(given: Record<string, unknown>): { username: string; profile: Profile } | [number, string] {
+/** An email address as the server takes it: trimmed, lower case, one an email can be sent to; "" for none. */
+const EMAIL = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+function cleanEmail(value: unknown, required: boolean): string {
+  const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!text) {
+    if (required) throw 'email: required';
+    return '';
+  }
+  if (text.length > 254 || !EMAIL.test(text)) throw 'email: an address such as name@example.org';
+  return text;
+}
+
+/** A token as the server makes one: 32 random bytes, URL-safe base64. */
+function urlToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/* Mail the preview "sends": a reset link (an hour, once) or a confirmation link (24 hours, once). */
+export const mockOutbox: { to: string; subject: string; link: string }[] = [];
+type MailLink = { purpose: 'reset' | 'verify'; user_id: number; email: string; expires: number; used: boolean };
+const mailLinks = new Map<string, MailLink>();
+const RESET_WINDOW_MS = 60_000;
+let resetAsks: number[] = [];
+
+function sendLink(userId: number, purpose: MailLink['purpose']) {
+  const { email } = memberOf(userId);
+  const token = urlToken();
+  mailLinks.set(token, { purpose, user_id: userId, email, expires: Date.now() + (purpose === 'reset' ? 3_600_000 : 86_400_000), used: false });
+  const link = `/app/${purpose === 'reset' ? 'reset' : 'verify-email'}/${token}`;
+  mockOutbox.push({ to: email, subject: purpose === 'reset' ? 'Reset your PhishHawk password' : 'Confirm your email for PhishHawk', link });
+  if (typeof window !== 'undefined') console.info(`Mail to ${email}: ${window.location.origin}${link}`);
+}
+
+/** The new account's profile, credentials and address, or the refusal (status and detail) the server would send. */
+function newAccount(given: Record<string, unknown>): { username: string; profile: Profile; email: string } | [number, string] {
   try {
     const profile = Object.fromEntries(PROFILE_FIELDS.map((f) => [f, clean(f, given[f], f !== 'job_title')])) as Profile;
+    const email = cleanEmail(given.email, true);
     const username = String(given.username ?? '');
     if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) return [422, 'username: 3 to 64 lowercase letters, digits, dots, dashes or underscores'];
     if (String(given.password ?? '').length < 12) return [422, 'password: at least 12 characters'];
     if (users.some((u) => u.username === username)) return [409, 'username: that username is taken'];
-    return { username, profile };
+    return { username, profile, email };
   } catch (refusal) {
     return [422, String(refusal)];
   }
 }
 
-/** Someone who signed up or joined (`signedUp`) sees the setup once; someone an admin added does not. */
-function addMember(username: string, role: 'admin' | 'analyst', workspaceId: number, profile: Profile, signedUp = true): User {
+/** Someone who signed up or joined (`signedUp`) sees the setup once; someone an admin added does not. An address
+    given is sent its confirmation link. */
+function addMember(username: string, role: 'admin' | 'analyst', workspaceId: number, profile: Profile, signedUp = true, email = ''): User {
   const user: User = { id: Math.max(...users.map((u) => u.id)) + 1, username, role, disabled: false, last_login_at: new Date().toISOString() };
   users.push(user);
-  members.set(user.id, { workspace_id: workspaceId, owner: false, profile, onboarded: !signedUp });
+  members.set(user.id, { workspace_id: workspaceId, owner: false, profile, onboarded: !signedUp, email, email_verified: false });
+  if (email) sendLink(user.id, 'verify');
   return user;
 }
 
@@ -373,7 +417,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     const workspace: Workspace = { id: Math.max(...workspaces.map((w) => w.id)) + 1, name: given.kind === 'organization' ? organization : `${first_name} ${last_name}`, kind: given.kind };
     workspaces.push(workspace);
     workspaceMade.set(workspace.id, new Date().toISOString());
-    const user = addMember(account.username, 'admin', workspace.id, account.profile);
+    const user = addMember(account.username, 'admin', workspace.id, account.profile, true, account.email);
     session = sessionFor(user);
     record(user.username, 'signup', '', '', { kind: workspace.kind, workspace: workspace.id });
     return json(201, { csrf: session.csrf });
@@ -386,10 +430,47 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     const account = newAccount((body ?? {}) as Record<string, unknown>);
     if (Array.isArray(account)) return error(account[0], account[0] === 409 ? 'conflict' : 'invalid', account[1]);
     invite.used = true;
-    const user = addMember(account.username, invite.role, workspace.id, account.profile);
+    const user = addMember(account.username, invite.role, workspace.id, account.profile, true, account.email);
     session = sessionFor(user);
     record(user.username, 'join', 'invite', invite.id, { role: invite.role });
     return json(201, { csrf: session.csrf });
+  }
+
+  // a forgotten password, and the links mail sends: no one signed in
+  if (pathname === '/api/v1/password-reset') {
+    if (method === 'GET') return json(200, { available: true });
+    const now = Date.now();
+    resetAsks = resetAsks.filter((at) => now - at < RESET_WINDOW_MS);
+    if (resetAsks.length >= 5) {
+      const wait = Math.ceil((resetAsks[0] + RESET_WINDOW_MS - now) / 1000);
+      return error(429, 'throttled', 'too many requests: try again later', { 'Retry-After': String(wait) });
+    }
+    resetAsks.push(now);
+    const login = String((body as { login?: unknown } | undefined)?.login ?? '').trim().toLowerCase();
+    const matches = (u: User) => (login.includes('@') ? memberOf(u.id).email === login : u.username === login);
+    for (const u of users) if (login && !u.disabled && memberOf(u.id).email_verified && matches(u)) sendLink(u.id, 'reset');
+    return json(202, { detail: 'if an account matches, a link is on its way to its confirmed email address' });
+  }
+  if ((m = pathname.match(/^\/api\/v1\/(password-reset|verify-email)\/([A-Za-z0-9_-]+)$/))) {
+    const purpose = m[1] === 'password-reset' ? 'reset' : 'verify';
+    const link = mailLinks.get(m[2]);
+    const user = link && users.find((u) => u.id === link.user_id && !u.disabled);
+    if (!link || !user || link.purpose !== purpose || link.used || link.expires < Date.now() || memberOf(user.id).email !== link.email) {
+      return error(404, 'not_found', 'this link is not valid: it was used, is too old, or is for another address');
+    }
+    if (purpose === 'reset' && method === 'GET') return json(200, { username: user.username });
+    if (method !== 'POST') return error(405, 'method_not_allowed', 'method not allowed');
+    if (purpose === 'verify') {
+      link.used = true;
+      members.get(user.id)!.email_verified = true;
+      record(user.username, 'email_verified', 'user', user.id);
+      return json(204, null);
+    }
+    if (String((body as { password?: unknown } | undefined)?.password ?? '').length < 12) return error(422, 'invalid', 'password: at least 12 characters');
+    for (const other of mailLinks.values()) if (other.user_id === user.id && other.purpose === 'reset') other.used = true;
+    if (session?.user_id === user.id) session = null; // every session of the account ends
+    record(user.username, 'password_reset', 'user', user.id);
+    return json(204, null);
   }
 
   if (!session) return error(401, 'unauthorized', 'log in first');
@@ -402,7 +483,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
 
   if (pathname === '/api/v1/session') {
     if (method === 'GET') {
-      return json(200, { user_id: me.user_id, username: me.username, role: me.role, via: 'session', scope: 'full', csrf: me.csrf, owner: me.owner, onboarded: memberOf(me.user_id).onboarded, workspace, profile: memberOf(me.user_id).profile });
+      return json(200, { user_id: me.user_id, username: me.username, role: me.role, via: 'session', scope: 'full', csrf: me.csrf, owner: me.owner, onboarded: memberOf(me.user_id).onboarded, workspace, profile: memberOf(me.user_id).profile, email: memberOf(me.user_id).email, email_verified: memberOf(me.user_id).email_verified });
     }
     if (method === 'DELETE') {
       record(me.username, 'logout');
@@ -625,7 +706,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
   }
   if (pathname === '/api/v1/me') {
     const mine = memberOf(me.user_id);
-    const view = () => ({ username: me.username, role: me.role, owner: me.owner, profile: mine.profile, workspace });
+    const view = () => ({ username: me.username, role: me.role, owner: me.owner, profile: mine.profile, workspace, email: mine.email, email_verified: mine.email_verified });
     if (method === 'GET') return json(200, view());
     if (method === 'DELETE') {
       if (me.owner) return error(403, 'forbidden', "the server's owner cannot delete their own account");
@@ -646,6 +727,9 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
         if (!admin || workspace.kind !== 'organization') return error(403, 'forbidden', 'only an admin of an organization can rename it');
         rename = clean('organization', patch.organization);
       }
+      const email = patch.email === undefined ? null : cleanEmail(patch.email, false);
+      // whoever has the address can reset the password: a new one needs the current password (the preview takes any)
+      if (email !== null && !patch.current_password) return error(403, 'forbidden', 'the current password is not right');
       if (patch.password !== undefined) {
         if (patch.password.length < 12) return error(422, 'invalid', 'password: at least 12 characters');
         // the preview takes any current password that is not empty; the server checks it
@@ -654,6 +738,10 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
       }
       Object.assign(mine.profile, changes);
       if (rename) workspace.name = rename;
+      if (email !== null && (email !== mine.email || !mine.email_verified)) {
+        Object.assign(mine, { email, email_verified: false });
+        if (email) sendLink(me.user_id, 'verify'); // unconfirmed until its link is opened
+      }
       members.set(me.user_id, mine);
       return json(200, view());
     } catch (refusal) {
@@ -703,8 +791,7 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     const { role, note = '' } = (body ?? {}) as { role?: string; note?: string };
     if (role !== 'admin' && role !== 'analyst') return error(422, 'invalid', 'role: admin or analyst');
     if (note.length > 120) return error(422, 'invalid', 'note: 120 characters at most');
-    const bytes = crypto.getRandomValues(new Uint8Array(32));
-    const token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const token = urlToken();
     const invite: MockInvite = { id: invites.length + 1, role, note: note.trim(), created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString(), created_by_name: me.username, token, workspace_id: me.workspace_id, used: false };
     invites.push(invite);
     record(me.username, 'invite_create', 'invite', invite.id, { role, note: invite.note });

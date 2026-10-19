@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mockFetch } from '../mocks/mockTransport';
+import { mockFetch, mockOutbox } from '../mocks/mockTransport';
 
 /* The development mock: no password hassle while building the frontend, and
    still the server's contract (CSRF, 401, 429, 422). */
@@ -150,7 +150,7 @@ test('mailboxes: listed without their credentials, added, changed, polled and de
   assert.equal((await call('POST', `/api/v1/mailboxes/${id}/poll`)).status, 404);
 });
 
-const PERSON = { username: 'sam', password: 'long-enough-password', first_name: 'Sam', last_name: 'Lee', location: 'Leeds', organization: '', job_title: '' };
+const PERSON = { username: 'sam', password: 'long-enough-password', first_name: 'Sam', last_name: 'Lee', location: 'Leeds', organization: '', job_title: '', email: 'sam@example.org' };
 
 test('the preview is set up already, and anyone may create an account in it', async () => {
   assert.deepEqual((await call('GET', '/api/v1/setup')).body, { open: false });
@@ -167,6 +167,11 @@ test('an individual signs up without a CSRF token, and works alone', async () =>
   assert.equal(bad.status, 422);
   assert.match(bad.body.detail, /^last_name: /);
   assert.equal((await call('POST', '/api/v1/signup', { ...PERSON, kind: 'organization' })).status, 422);
+  // the preview sends mail, as a server with mail settings does: an address is needed, to reset a password
+  const noEmail = await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual', email: '' });
+  assert.equal(noEmail.status, 422);
+  assert.match(noEmail.body.detail, /^email: /);
+  assert.match((await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual', email: 'sam@' })).body.detail, /^email: /);
   assert.equal((await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual', username: 'alice' })).status, 409);
   const made = await call('POST', '/api/v1/signup', { ...PERSON, kind: 'individual' });
   assert.equal(made.status, 201);
@@ -174,6 +179,8 @@ test('an individual signs up without a CSRF token, and works alone', async () =>
   const me = (await call('GET', '/api/v1/session')).body;
   assert.deepEqual([me.username, me.role, me.owner, me.workspace.kind, me.workspace.name], ['sam', 'admin', false, 'individual', 'Sam Lee']);
   assert.deepEqual(me.profile, { first_name: 'Sam', last_name: 'Lee', location: 'Leeds', job_title: '' });
+  assert.deepEqual([me.email, me.email_verified], ['sam@example.org', false]);
+  assert.deepEqual([mockOutbox.at(-1)?.to, mockOutbox.at(-1)?.link.startsWith('/app/verify-email/')], ['sam@example.org', true]);
   assert.deepEqual((await call('GET', '/api/v1/analyses')).body, []);
   assert.deepEqual((await call('GET', '/api/v1/campaigns')).body, []);
   assert.deepEqual((await call('GET', '/api/v1/users')).body.map((u: { username: string }) => u.username), ['sam']);
@@ -304,4 +311,45 @@ test('deleting: an admin deletes a member, the owner a workspace, and someone on
   assert.equal((await call('GET', '/api/v1/session')).status, 401);
   csrf = (await signIn('boss', 'x')).body.csrf;
   assert.deepEqual((await call('GET', '/api/v1/workspaces')).body.map((w: Row) => w.id), [mine.id]);
+});
+
+test('a forgotten password: a link by email, only to a confirmed address, and once', async () => {
+  const tokenOf = (link: string | undefined, page: string) => link?.match(new RegExp(`^/app/${page}/([A-Za-z0-9_-]{40,})$`))?.[1] ?? '';
+  assert.deepEqual((await call('GET', '/api/v1/password-reset')).body, { available: true });
+  const me = (await call('GET', '/api/v1/session')).body;
+  assert.deepEqual([me.username, me.email, me.email_verified], ['boss', 'sam.boss@example-corp.co.uk', true]);
+  assert.equal((await call('PATCH', '/api/v1/me', { email: 'boss@example.org' })).status, 403); // the password first
+  assert.match((await call('PATCH', '/api/v1/me', { email: 'not an address', current_password: 'x' })).body.detail, /^email: /);
+  const changed = await call('PATCH', '/api/v1/me', { email: ' Boss@Example.org ', current_password: 'x' });
+  assert.equal(changed.status, 200);
+  assert.deepEqual([changed.body.email, changed.body.email_verified], ['boss@example.org', false]);
+  assert.equal(mockOutbox.at(-1)?.to, 'boss@example.org');
+  const confirm = tokenOf(mockOutbox.at(-1)?.link, 'verify-email');
+  assert.ok(confirm);
+
+  await call('DELETE', '/api/v1/session');
+  csrf = '';
+  const sent = mockOutbox.length;
+  const asked = await call('POST', '/api/v1/password-reset', { login: 'boss' });
+  assert.equal(asked.status, 202);
+  assert.equal(mockOutbox.length, sent); // not confirmed yet: no reset link goes to it
+  assert.deepEqual((await call('POST', '/api/v1/password-reset', { login: 'nobody' })).body, asked.body); // says nothing either way
+  assert.equal((await call('POST', `/api/v1/verify-email/${confirm}`)).status, 204);
+  assert.equal((await call('POST', `/api/v1/verify-email/${confirm}`)).status, 404);
+
+  await call('POST', '/api/v1/password-reset', { login: 'BOSS@example.org' });
+  assert.equal(mockOutbox.at(-1)?.to, 'boss@example.org');
+  const reset = tokenOf(mockOutbox.at(-1)?.link, 'reset');
+  assert.deepEqual((await call('GET', `/api/v1/password-reset/${reset}`)).body, { username: 'boss' });
+  assert.match((await call('POST', `/api/v1/password-reset/${reset}`, { password: 'short' })).body.detail, /^password: /);
+  assert.equal((await call('POST', `/api/v1/password-reset/${reset}`, { password: 'a brand new long password' })).status, 204);
+  assert.equal((await call('GET', `/api/v1/password-reset/${reset}`)).status, 404);
+  assert.equal((await call('GET', '/api/v1/password-reset/not-a-real-link-at-all-not-a-real-link')).status, 404);
+
+  // five asks from one address, then a wait
+  for (const login of ['a', 'b']) assert.equal((await call('POST', '/api/v1/password-reset', { login })).status, 202);
+  const throttled = await call('POST', '/api/v1/password-reset', { login: 'c' });
+  assert.equal(throttled.status, 429);
+  assert.ok(Number(throttled.retryAfter) > 0);
+  csrf = (await signIn('boss', 'x')).body.csrf;
 });

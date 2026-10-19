@@ -6,19 +6,21 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { LiquidMetalButton } from '@/components/threeui/liquid-metal/LiquidMetalButton';
-import { AccountPage, CredentialFields, FormStatus, ProfileFields, accountFrom, useAccountForm } from '@/components/phishhawk/AccountForm';
+import { AccountPage, CredentialFields, EmailField, FormStatus, ProfileFields, accountFrom, useAccountForm } from '@/components/phishhawk/AccountForm';
 import { getInvitation, joinInvitation } from '@/api/client';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
 import type { Invitation, Session } from '@/api/types';
 import { Link } from '@/app/router';
 import { ROLE_LABEL } from '@/app/vocabulary';
 import { Skeleton } from '@/components/ui/ui';
+import { useSendsMail } from '@/hooks/useGettingIn';
 
 type Loaded = { status: 'loading' } | { status: 'ready'; invitation: Invitation } | { status: 'invalid'; detail: string };
 
 export default function JoinScreen({ token, onEntered }: { token: string; onEntered: (session: Session) => void }) {
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' });
-  const form = useAccountForm({ username: '', password: '', first_name: '', last_name: '', location: '', job_title: '' });
+  const form = useAccountForm({ username: '', password: '', email: '', first_name: '', last_name: '', location: '', job_title: '' });
+  const sendsMail = useSendsMail();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -71,6 +73,7 @@ export default function JoinScreen({ token, onEntered }: { token: string; onEnte
     >
       <form className="grid grid-cols-1 gap-4" onSubmit={submit} noValidate>
         <CredentialFields bind={form.bind} />
+        <EmailField bind={form.bind} required={sendsMail} />
         <ProfileFields bind={form.bind} />
         <div className="mt-3 grid grid-cols-1 justify-items-center gap-3">
           <LiquidMetalButton type="submit" height={52} disabled={form.busy}>

@@ -96,6 +96,23 @@ test('setup, sign-up and joining are reached signed out; the profile signed in',
   assert.equal(pageTitle({ name: 'profile' }, false), 'Sign in · PhishHawk');
 });
 
+test('a forgotten password: the page that asks for a link, and the two pages links in mail open', () => {
+  const token = 'Ab3_-'.repeat(9);
+  assert.deepEqual(parseRoute('/app/forgot'), { name: 'forgot' });
+  assert.deepEqual(parseRoute(`/app/reset/${token}`), { name: 'reset', token });
+  assert.deepEqual(parseRoute(`/app/verify-email/${token}/`), { name: 'verify-email', token });
+  for (const path of ['/app/reset', '/app/reset/short', `/app/reset/${token}/x`, '/app/verify-email/a%20b', `/app/verify-email/${'a'.repeat(129)}`]) {
+    assert.deepEqual(parseRoute(path), { name: 'not-found' }, path);
+  }
+  for (const path of ['/app/forgot', `/app/reset/${token}`, `/app/verify-email/${token}`]) {
+    assert.equal(signedOutView(parseRoute(path)), 'account', path);
+  }
+  assert.equal(pageTitle({ name: 'forgot' }, false), 'Forgot your password · PhishHawk');
+  assert.equal(pageTitle({ name: 'reset', token }, false), 'Choose a new password · PhishHawk');
+  assert.equal(pageTitle({ name: 'verify-email', token }, false), 'Confirm your email · PhishHawk');
+  assert.equal(pageTitle({ name: 'verify-email', token }, true), 'Confirm your email · PhishHawk');
+});
+
 test('the setup after sign-up has a page of its own, signed in', () => {
   assert.deepEqual(parseRoute('/app/welcome'), { name: 'welcome' });
   assert.equal(signedOutView(parseRoute('/app/welcome')), 'login');

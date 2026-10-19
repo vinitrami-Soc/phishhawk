@@ -1,18 +1,19 @@
 /* Create an account, while the server's owner allows it. First who it is for:
    just me (a workspace for one person, nothing to approve) or my organization
    (a team, with this person as its admin, who then invites the others). Then
-   the account and profile. A new account starts empty and sees nothing of
-   anyone else's. */
+   the account and profile, with an email address when the server sends mail. A
+   new account starts empty and sees nothing of anyone else's. */
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, Building2, UserRound, type LucideIcon } from 'lucide-react';
 import { LiquidMetalButton } from '@/components/threeui/liquid-metal/LiquidMetalButton';
-import { AccountPage, CredentialFields, FormStatus, ProfileFields, accountFrom, useAccountForm } from '@/components/phishhawk/AccountForm';
+import { AccountPage, CredentialFields, EmailField, FormStatus, ProfileFields, accountFrom, useAccountForm } from '@/components/phishhawk/AccountForm';
 import { getSignupState, signUp } from '@/api/client';
 import { isAbort } from '@/api/errors';
 import type { Session, Workspace } from '@/api/types';
 import { Link } from '@/app/router';
 import { Skeleton, TextField } from '@/components/ui/ui';
+import { useSendsMail } from '@/hooks/useGettingIn';
 
 type Kind = Workspace['kind'];
 
@@ -33,7 +34,8 @@ const signIn = (
 export default function SignupScreen({ onEntered }: { onEntered: (session: Session) => void }) {
   const [open, setOpen] = useState<boolean | null>(null);
   const [kind, setKind] = useState<Kind | null>(null);
-  const form = useAccountForm({ username: '', password: '', first_name: '', last_name: '', location: '', organization: '', job_title: '' });
+  const form = useAccountForm({ username: '', password: '', email: '', first_name: '', last_name: '', location: '', organization: '', job_title: '' });
+  const sendsMail = useSendsMail();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -107,6 +109,7 @@ export default function SignupScreen({ onEntered }: { onEntered: (session: Sessi
     >
       <form className="grid grid-cols-1 gap-4" onSubmit={submit} noValidate>
         <CredentialFields bind={form.bind} />
+        <EmailField bind={form.bind} required={sendsMail} />
         <ProfileFields bind={form.bind} />
         <TextField
           label={kind === 'organization' ? 'Organization' : 'Organization (optional)'}
