@@ -94,6 +94,8 @@ def current_session(db: DB, actor: CurrentActor) -> dict[str, Any]:
             "scope": actor.scope, "csrf": actor.csrf, "owner": actor.owner,
             "onboarded": user is not None and user.onboarded_at is not None,
             "profile": profile_view(user) if user else None,
+            "email": user.email if user else "", "email_verified": user is not None and bool(
+                user.email and user.email_verified_at is not None),
             "workspace": {"id": workspace.id, "name": workspace.name, "kind": workspace.kind}
             if workspace else None}
 

@@ -39,6 +39,8 @@ MATRIX = [
     ("DELETE", "/api/v1/mailboxes/{mailbox}", (401, 403, 200, 403, 403)),
     ("GET", "/api/v1/setup", (200, 200, 200, 200, 200)),
     ("GET", "/api/v1/signup", (200, 200, 200, 200, 200)),
+    ("GET", "/api/v1/password-reset", (200, 200, 200, 200, 200)),
+    ("POST", "/api/v1/password-reset", (404, 404, 404, 404, 404)),  # this server sends no mail
     ("GET", "/api/v1/me", (401, 200, 200, 200, 200)),
     ("PATCH", "/api/v1/me", (401, 200, 200, 403, 403)),
     ("POST", "/api/v1/me/onboarded", (401, 204, 204, 403, 403)),
@@ -74,6 +76,7 @@ BODIES = {("PATCH", "/api/v1/settings"): {"retention_days": 20},
           ("PATCH", "/api/v1/feedback/{feedback}"): {"status": "done"},
           ("PUT", "/api/v1/analyses/{analysis}/feedback"): {"opinion": "right"},
           ("PATCH", "/api/v1/server-settings"): {"signup_daily_cap": 50},
+          ("POST", "/api/v1/password-reset"): {"login": "alice"},
           ("POST", "/api/v1/users"): {"username": "carol", "password": "another long password", "role": "analyst"}}
 
 

@@ -47,6 +47,7 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     app.state.services = services
     app.state.throttle = LoginThrottle()
     app.state.signups = SignupThrottle()
+    app.state.recoveries = SignupThrottle(per_hour=5)  # reset requests from one address
     templates = Jinja2Templates(directory=str(files("phishhawk.server") / "templates"))
     templates.env.filters["printable"] = lambda value: printable(str(value)) if value is not None else ""
     app.state.templates = templates

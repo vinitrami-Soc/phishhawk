@@ -65,5 +65,6 @@ def test_the_session_endpoint_says_who_is_calling(alice, admin, anon):
                                                    "onboarded": True,  # made by an admin: nothing to set up
                                                    "profile": {"first_name": "", "last_name": "", "location": "",
                                                                "job_title": ""},
+                                                   "email": "", "email_verified": False,
                                                    "workspace": {"id": 1, "name": "Default organization",
                                                                  "kind": "organization"}}

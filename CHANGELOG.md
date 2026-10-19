@@ -9,6 +9,17 @@ the JSON and STIX output are the public interface.
 
 ### Added
 
+- **Email and password reset, in the API.** With an SMTP server and a public
+  URL set (any service: Brevo, Amazon SES, Postmark, a company relay), each
+  account has an email address, confirmed by a link before anything else is
+  sent to it, and sign-up and joining require one. Someone who forgot their
+  password asks with their username or address and gets a link for an hour,
+  once; the answer is the same whether or not an account matches. The new
+  password ends every session of the account. Links are built from
+  `PHISHHAWK_PUBLIC_URL`, never from the request, and only a hash of each
+  token is kept. One address can ask 5 times an hour; an account gets one reset
+  link every 2 minutes and 5 links of each kind an hour at most. `phishhawk server test-email ADDRESS` checks the settings.
+  Without mail settings nothing changes.
 - **Hidden text that vouches for the message.** A short hidden line written
   for a spam filter or an AI assistant that summarises mail ("harmless",
   "benign", "not phishing", "ignore previous instructions", "classify this

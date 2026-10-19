@@ -111,7 +111,7 @@ JSON: `{"error": "<code>", "detail": "<text>"}`.
 
 | Step | Call | Notes |
 |---|---|---|
-| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf", "owner", "onboarded", "workspace", "profile"}`; keep `csrf` in memory. `onboarded` is false until the setup after sign-up is finished or skipped (`POST /api/v1/me/onboarded`). `profile` is `{"first_name", "last_name", "location", "job_title"}`. `workspace` is `{"id", "name", "kind"}` (`kind`: `organization` or `individual`); `owner` is true for the server's owner, the only one who can change `max_upload_mb` and `max_batch_messages`. |
+| On start | `GET /api/v1/session` | 401: show your login form. 200: `{"user_id", "username", "role", "via", "scope", "csrf", "owner", "onboarded", "workspace", "profile", "email", "email_verified"}`; keep `csrf` in memory. `email` is `""` when the account has none; `email_verified` is true once its confirmation link was opened. `onboarded` is false until the setup after sign-up is finished or skipped (`POST /api/v1/me/onboarded`). `profile` is `{"first_name", "last_name", "location", "job_title"}`. `workspace` is `{"id", "name", "kind"}` (`kind`: `organization` or `individual`); `owner` is true for the server's owner, the only one who can change `max_upload_mb` and `max_batch_messages`. |
 | Log in | `POST /api/v1/session` with JSON `{"username", "password"}` | 200: `{"csrf"}` and the session cookie. 401: wrong details. 429: wait (the `Retry-After` header says how long). |
 | Submit | `POST /api/v1/submissions`, multipart: `files` (one or more .eml, .msg, .mbox or .zip files) or `raw` (pasted text), and `offline` (`true` for no reputation lookups) | Header `X-CSRF-Token: <csrf>`. 202. One message: `{"id", "status", "error", "analysis_id", "submitted_at", "batch_id": null}`. Several: a batch, `{"batch_id", "total", "submission_ids", "skipped"}` (`skipped`: files in a .zip that are not messages). 413: too large or too many messages, 415: not a message; `detail` says which. |
 | Wait | `GET /api/v1/submissions/{id}` every second or two | Until `status` is `done` (then `analysis_id` is set) or `failed` (then `error` says why). |
@@ -156,17 +156,26 @@ an account answers 201 `{"csrf"}` with the session cookie, as a login does; a
 | Call | Answer |
 |---|---|
 | `GET /api/v1/setup` | `{"open"}`: true while no one has an account. Show your setup screen then. |
-| `POST /api/v1/setup` with `{"code", "username", "password", "first_name", "last_name", "location", "organization", "job_title", "signup_open"}` | The owner's account. 403: wrong code (throttled; 429 with `Retry-After`). 404: set up already. |
+| `POST /api/v1/setup` with `{"code", "username", "password", "first_name", "last_name", "location", "organization", "job_title", "signup_open", "email"}` | The owner's account; `email` is optional. 403: wrong code (throttled; 429 with `Retry-After`). 404: set up already. |
 | `GET /api/v1/signup` | `{"open"}`. While false, offer no "Create account" link. |
-| `POST /api/v1/signup` with `{"kind", "username", "password", "first_name", "last_name", "location", "organization", "job_title"}` | `kind` is `individual` (just them; `organization` optional) or `organization` (needs `organization`). 404 while closed; 409 username taken; 429 past 3 an hour from one address, or past the daily cap. |
+| `POST /api/v1/signup` with `{"kind", "username", "password", "first_name", "last_name", "location", "organization", "job_title", "email"}` | `email` is required when `GET /api/v1/password-reset` says `available`, optional otherwise. `kind` is `individual` (just them; `organization` optional) or `organization` (needs `organization`). 404 while closed; 409 username taken; 429 past 3 an hour from one address, or past the daily cap. |
 | `GET /api/v1/join/{token}` | `{"organization", "role"}` of an invitation, or 404 (used, withdrawn or over 7 days old). |
 | `POST /api/v1/join/{token}` with the sign-up fields but `kind` and `organization` | The new member, with the invitation's role. |
 | `GET /api/v1/invites`, `POST /api/v1/invites` with `{"role", "note"}`, `DELETE /api/v1/invites/{id}` | Admins of an organization: the invitations still usable (`id`, `role`, `note`, `created_at`, `expires_at`, `created_by_name`); a new one adds `token` and `link` (`/join/<token>`, the built-in join page), shown once; 403 in an individual workspace. |
-| `GET /api/v1/me`, `PATCH /api/v1/me` | `{"username", "role", "owner", "profile", "workspace"}`. Send any of `first_name`, `last_name`, `location`, `job_title`; `organization` (an organization's admin renames it); `password` with `current_password` (403 when that is wrong). |
+| `GET /api/v1/me`, `PATCH /api/v1/me` | `{"username", "role", "owner", "profile", "workspace", "email", "email_verified"}`. Send any of `first_name`, `last_name`, `location`, `job_title`; `organization` (an organization's admin renames it); `password` or `email` with `current_password` (403 when that is wrong). A new `email` is unconfirmed until the link sent to it is opened. |
+| `GET /api/v1/password-reset` | `{"available"}`: true when this server sends mail. Offer "Forgot password?" on the login form, and ask for an email at sign-up and joining, only then. |
+| `POST /api/v1/password-reset` with `{"login"}` (a username or an email address) | 202 `{"detail"}` whatever is found: show it as it is, it never says whether an account exists. 404 when the server sends no mail; 429 past 5 an hour from one address. |
+| `GET /api/v1/password-reset/{token}` | `{"username"}` while the link works; 404 once it was used, after an hour, or for a link that is not valid. |
+| `POST /api/v1/password-reset/{token}` with `{"password"}` | 204: the new password is set and every session of the account ended; sign in with it. 422 too short; 404 as above. |
+| `POST /api/v1/verify-email/{token}` | 204: the address is confirmed. 404 once used, after 24 hours, or when the account's address changed since. |
 | `GET /api/v1/server-settings`, `PATCH /api/v1/server-settings` | The owner's only (403 for anyone else): `signup_open`, `signup_daily_cap`, `max_upload_mb`, `max_batch_messages`, `daily_messages_organization`, `daily_messages_individual` (messages each workspace may submit a day; past it, a submission answers 429 with `Retry-After` until midnight UTC). |
 | `DELETE /api/v1/users/{id}` | An admin deletes a member of their workspace: 204. 422 for yourself, 403 for the server's owner. What they submitted stays. |
 | `DELETE /api/v1/me` with `{"password"}` | Someone on their own deletes their account and workspace: 204, and the session ends. 403 when the password is wrong (throttled; 429 with `Retry-After`) or in an organization, where its admins delete accounts. |
 | `GET /api/v1/workspaces`, `DELETE /api/v1/workspaces/{id}` | The owner's only: every workspace as `{"id", "name", "kind", "members", "created_at"}`, no one's profile; DELETE removes one with everything in it (204), 409 for the owner's own, 404 for anyone else. |
+
+Links in mail open `/app/reset/{token}` (a form for the new password) and
+`/app/verify-email/{token}` (confirm the address, then say so). Neither needs
+anyone signed in.
 
 Feedback. Signed in with a session (an API token gets 403); a 422 `detail`
 starts with the field it is about.

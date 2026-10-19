@@ -1,5 +1,5 @@
 """phishhawk server: run the web app and its worker, and the admin tasks that
-need no web page (migrate, create-admin, rotate-key, audit verify)."""
+need no web page (migrate, create-admin, rotate-key, audit verify, test-email)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,13 @@ import getpass
 import multiprocessing
 import os
 import signal
+import smtplib
 import sys
 from types import FrameType
 
 from pydantic import ValidationError
 
-from . import accounts, audit, auth, rotation
+from . import accounts, audit, auth, mailer, rotation
 from .app import build_services
 from .config import ServerSettings, load_settings
 from .crypto import Box, DecryptError
@@ -42,6 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
                                           "on yet (it is also in the log at start)")
     actions.add_parser("rotate-key", help="re-encrypt everything under PHISHHAWK_NEW_ENCRYPTION_KEY "
                                           "(stop the server first)")
+    test = actions.add_parser("test-email", help="send a test message with the SMTP settings, to check them")
+    test.add_argument("address")
     log = actions.add_parser("audit", help="audit log tasks")
     log.add_subparsers(dest="audit_action", metavar="<task>", required=True).add_parser(
         "verify", help="check the audit log's hash chain")
@@ -123,6 +126,19 @@ def rotate_key(settings: ServerSettings) -> int:
     return 0
 
 
+def test_email(settings: ServerSettings, address: str) -> int:
+    if not (settings.smtp_host and settings.smtp_from):
+        raise CliError("set PHISHHAWK_SMTP_HOST and PHISHHAWK_SMTP_FROM first (docs/SERVER.md)")
+    try:
+        mailer.send(settings, address, "PhishHawk test message",
+                    "PhishHawk can send mail from this server: password reset links will arrive.\n")
+    except (OSError, smtplib.SMTPException) as exc:
+        raise CliError("could not send: %s" % exc) from None
+    print("sent to %s. If it does not arrive, look in its spam folder and check the domain's SPF, DKIM and "
+          "DMARC records (docs/SERVER.md)." % address)
+    return 0
+
+
 def verify_audit(settings: ServerSettings) -> int:
     from sqlalchemy import func, select
 
@@ -201,6 +217,8 @@ def main(argv: list[str]) -> int:
             return rotate_key(settings)
         if args.action == "audit":
             return verify_audit(settings)
+        if args.action == "test-email":
+            return test_email(settings, args.address)
         if args.action == "worker":
             run_worker()
             return 0

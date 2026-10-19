@@ -91,3 +91,24 @@ def test_help_server_lists_every_action(capsys):
     out = capsys.readouterr().out
     for action in ("run", "worker", "migrate", "create-admin", "rotate-key", "audit"):
         assert action in out
+
+
+def test_test_email_checks_the_smtp_settings(env, monkeypatch, capsys):
+    from phishhawk.server import mailer
+
+    assert cli.main(["test-email", "me@example.org"]) == 3
+    assert "PHISHHAWK_SMTP_HOST" in capsys.readouterr().err
+    monkeypatch.setenv("PHISHHAWK_SMTP_HOST", "smtp.example.org")
+    monkeypatch.setenv("PHISHHAWK_SMTP_FROM", "PhishHawk <no-reply@example.org>")
+    sent = []
+    monkeypatch.setattr(mailer, "send", lambda settings, to, subject, body: sent.append((to, subject)))
+    assert cli.main(["test-email", "me@example.org"]) == 0
+    assert sent == [("me@example.org", "PhishHawk test message")]
+    assert "sent to me@example.org" in capsys.readouterr().out
+
+    def refuse(settings, to, subject, body):
+        raise OSError("Connection refused")
+
+    monkeypatch.setattr(mailer, "send", refuse)
+    assert cli.main(["test-email", "me@example.org"]) == 3
+    assert "could not send: Connection refused" in capsys.readouterr().err
