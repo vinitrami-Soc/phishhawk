@@ -76,7 +76,8 @@ def frontend(services, tmp_path):
 
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
-    (dist / "index.html").write_text('<!doctype html><title>PhishHawk</title><div id="root"></div>')
+    (dist / "index.html").write_text('<!doctype html><title>PhishHawk</title>\n'
+                                     '<meta name="robots" content="noindex, nofollow" />\n<div id="root"></div>')
     (dist / "assets" / "index-3f9a1c.js").write_text("console.log('PhishHawk');\n" * 200)
     services.settings.frontend_dir = str(dist)
     return TestClient(create_app(services=services))
@@ -95,6 +96,43 @@ def test_hashed_frontend_files_are_cached_for_a_year_and_the_page_is_always_chec
     assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
     for path in ("/app/", "/app/queue"):
         assert frontend.get(path).headers["cache-control"] == "no-cache", path
+
+
+PUBLIC_PAGES = ("/app/about", "/app/privacy", "/app/help")
+PRIVATE = ("/app/", "/app/queue", "/app/analyses/1", "/login", "/api/v1/session")
+
+
+def test_until_the_owner_lets_them_in_the_public_pages_stay_out_of_search_engines(frontend):
+    assert frontend.get("/robots.txt").text == "User-agent: *\nDisallow: /\n"
+    for path in PUBLIC_PAGES:
+        page = frontend.get(path)
+        assert page.headers["x-robots-tag"] == "noindex, nofollow", path
+        assert '<meta name="robots" content="noindex, nofollow" />' in page.text, path
+
+
+def test_with_indexing_on_only_the_product_privacy_and_help_pages_are_indexed(frontend):
+    frontend.app.state.services.settings.index_public_pages = True
+    robots = frontend.get("/robots.txt").text
+    assert robots == ("User-agent: *\nAllow: /app/about$\nAllow: /app/privacy$\nAllow: /app/help$\n"
+                      "Allow: /app/assets/\nAllow: /app/brand/\nDisallow: /\n")
+    for path in PUBLIC_PAGES:
+        page = frontend.get(path)
+        assert page.status_code == 200 and page.headers["x-robots-tag"] == "all", path  # no restriction
+        assert 'name="robots"' not in page.text and 'id="root"' in page.text, path
+    for path in PRIVATE:
+        page = frontend.get(path)
+        assert page.headers["x-robots-tag"] == "noindex, nofollow", path
+        if path.startswith("/app/"):
+            assert '<meta name="robots" content="noindex, nofollow" />' in page.text, path
+
+
+def test_the_built_frontend_carries_the_robots_tag_the_server_takes_out():
+    from pathlib import Path
+
+    from phishhawk.server.frontend import NOINDEX
+
+    page = (Path(__file__).parents[2] / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert page.count(NOINDEX) == 1
 
 
 def test_anyone_can_read_who_runs_this_server_once_its_operator_says(anon):

@@ -77,7 +77,10 @@ machine or in another container comes from. With that:
 
 Every answer carries `X-Robots-Tag: noindex, nofollow` and `/robots.txt`
 disallows everything, so a server reachable from the internet stays out of
-search engines. The frontend's files are sent compressed; its hashed files in
+search engines. For a public PhishHawk that people should find,
+`PHISHHAWK_INDEX_PUBLIC_PAGES=true` lets them list the three pages anyone can
+read before signing in: `/app/about`, `/app/privacy` and `/app/help`.
+Everything else stays out. The frontend's files are sent compressed; its hashed files in
 `/app/assets/` are cached for a year and its page is checked on every load.
 
 **Keep a copy of `secrets/phishhawk_encryption_key` somewhere safe.** Every
@@ -138,6 +141,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
 | `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
 | `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
+| `PHISHHAWK_INDEX_PUBLIC_PAGES` | `false` | `true` lets search engines list the frontend's product, privacy and help pages; see "HTTPS through a reverse proxy". |
 | `PHISHHAWK_OPERATOR_NAME`, `PHISHHAWK_OPERATOR_EMAIL` | empty | Who runs this server, such as `Example Security Ltd, United Kingdom`, and where people write about their data. The privacy page shows them; set both on a server open to the public. |
 | `PHISHHAWK_PUBLIC_URL` | empty | The address people open, such as `https://phishhawk.example.org`. Links in mail are built from it. |
 | `PHISHHAWK_SMTP_HOST`, `PHISHHAWK_SMTP_PORT`, `PHISHHAWK_SMTP_SECURITY`, `PHISHHAWK_SMTP_USERNAME`, `PHISHHAWK_SMTP_PASSWORD`, `PHISHHAWK_SMTP_FROM` | empty, `587`, `starttls`, empty, empty, empty | The mail server for confirming addresses and resetting passwords; see [Email and password reset](#email-and-password-reset). |

@@ -26,7 +26,7 @@ from .config import ServerSettings, load_settings
 from .crypto import Box
 from .db import make_engine, make_sessionmaker, transaction
 from .deps import COOKIE
-from .frontend import Frontend
+from .frontend import PUBLIC_PAGES, Frontend
 from .models import Job
 from .processing import Services
 from .security import APP_CSP, BASE_HEADERS, HSTS
@@ -123,7 +123,13 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
 
     @app.get("/robots.txt", include_in_schema=False)
     def robots() -> PlainTextResponse:
-        return PlainTextResponse("User-agent: *\nDisallow: /\n")
+        """Nothing, unless the owner lets search engines list the frontend's public pages and the files those
+        pages need."""
+        allowed = ""
+        if services.settings.index_public_pages and services.settings.frontend_dir:
+            allowed = "".join("Allow: /app/%s$\n" % page for page in PUBLIC_PAGES)
+            allowed += "Allow: /app/assets/\nAllow: /app/brand/\n"
+        return PlainTextResponse("User-agent: *\n" + allowed + "Disallow: /\n")
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
@@ -152,8 +158,8 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     static = StaticFiles(directory=str(files("phishhawk.server") / "static"))
     app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
     if services.settings.frontend_dir:
-        app.mount("/app", GZipMiddleware(Frontend(services.settings.frontend_dir), minimum_size=1024),
-                  name="frontend")
+        frontend = Frontend(services.settings.frontend_dir, indexed=lambda: services.settings.index_public_pages)
+        app.mount("/app", GZipMiddleware(frontend, minimum_size=1024), name="frontend")
     # outermost: the scheme and the client's address come from a trusted reverse proxy's X-Forwarded-* headers
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=services.settings.trusted_proxies)
     return app
