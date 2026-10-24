@@ -16,3 +16,11 @@ updates:
     groups:
       frontend:
         patterns: ["*"]
+  # deploy/compose.yaml: the tunnel's image (Postgres stays on 16: a new major needs a dump and restore)
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]

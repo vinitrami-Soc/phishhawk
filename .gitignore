@@ -11,3 +11,6 @@ dist/
 /*.md.out
 .coverage
 /secrets/
+/deploy/secrets/
+/deploy/.env
+/deploy/backups/

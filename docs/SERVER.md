@@ -50,6 +50,8 @@ Then log in at <http://127.0.0.1:8000>: it opens the web app at `/app/`. The
 built-in pages, the backup and admin interface, stay at `/login`, `/queue` and
 the rest. Compose publishes the port on this machine only. To reach it from other machines, put a reverse proxy with TLS
 (Caddy or nginx) in front of it; do not publish port 8000 on a network.
+For a server on the internet, [DEPLOY.md](DEPLOY.md) is the runbook: Postgres, a
+Cloudflare Tunnel instead of an open port, nightly backups and deploys from GitHub.
 
 ## HTTPS through a reverse proxy
 
