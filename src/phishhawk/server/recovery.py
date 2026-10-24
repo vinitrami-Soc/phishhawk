@@ -13,7 +13,7 @@ import datetime as dt
 import secrets
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from . import audit, auth, jobs, mailer
@@ -105,6 +105,11 @@ def deliver(services: Services, kind: str, payload: dict[str, Any]) -> None:
     page = "reset" if purpose == "reset" else "verify-email"
     subject, body = _mail(purpose, username, "%s/app/%s/%s" % (settings.public_url.rstrip("/"), page, token))
     mailer.send(settings, to, subject, body)
+
+
+def prune(db: Session, older_than: dt.timedelta) -> None:
+    """Links long past their expiry, used or not: none can be used again, and the table would only grow."""
+    db.execute(delete(EmailToken).where(EmailToken.expires_at < utcnow() - older_than))
 
 
 def open_token(db: Session, purpose: str, token: str) -> tuple[EmailToken, User]:
