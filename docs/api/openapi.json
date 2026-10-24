@@ -2848,7 +2848,7 @@
     },
     "/api/v1/submissions": {
       "post": {
-        "description": "One message (a file or pasted text) is one submission. Several (several files, an .mbox or a .zip) are a\nbatch: the answer then holds the batch ID and the submissions' IDs.",
+        "description": "One message (a file or pasted text) is one submission. Several (several files, an .mbox or a .zip) are a\nbatch: the answer then holds the batch ID and the submissions' IDs. Accepting a big batch takes seconds, so it\nruns on a worker thread and the server answers everyone else meanwhile.",
         "operationId": "submit_api_v1_submissions_post",
         "requestBody": {
           "content": {
