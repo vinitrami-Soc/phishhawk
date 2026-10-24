@@ -97,6 +97,14 @@ def test_hashed_frontend_files_are_cached_for_a_year_and_the_page_is_always_chec
         assert frontend.get(path).headers["cache-control"] == "no-cache", path
 
 
+def test_anyone_can_read_who_runs_this_server_once_its_operator_says(anon):
+    assert anon.get("/api/v1/operator").json() == {"name": "", "email": ""}
+    settings = anon.app.state.services.settings
+    settings.operator_name, settings.operator_email = "Example Security Ltd, United Kingdom", "privacy@example.org"
+    assert anon.get("/api/v1/operator").json() == {"name": "Example Security Ltd, United Kingdom",
+                                                    "email": "privacy@example.org"}
+
+
 def test_the_login_throttle_forgets_the_oldest_names_beyond_its_limit():
     from phishhawk.server import auth
 

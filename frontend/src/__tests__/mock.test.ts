@@ -160,6 +160,10 @@ test('the preview is set up already, and anyone may create an account in it', as
   assert.deepEqual([me.owner, me.workspace.name, me.workspace.kind], [true, 'Example Corp', 'organization']);
 });
 
+test('the preview says who runs it, for the privacy page', async () => {
+  assert.deepEqual((await call('GET', '/api/v1/operator')).body, { name: 'Example Corp Security, United Kingdom', email: 'privacy@example-corp.co.uk' });
+});
+
 test('an individual signs up without a CSRF token, and works alone', async () => {
   await call('DELETE', '/api/v1/session');
   csrf = '';
