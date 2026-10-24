@@ -166,6 +166,12 @@ test('the privacy page says what is kept and when it was last updated', () => {
   }
 });
 
+test('the privacy page names who runs this server as the server says, never as the app guesses', () => {
+  const page = readFileSync(root + 'src/screens/PrivacyScreen.tsx', 'utf8');
+  assert.match(page, /getOperator\(/);
+  assert.match(page, /href=\{`mailto:\$\{operator\.email\}`\}/);
+});
+
 test('printing uses the light colours, whatever the theme on screen', () => {
   const css = readFileSync(root + 'src/styles/tokens.css', 'utf8');
   const block = (selector: RegExp) => {

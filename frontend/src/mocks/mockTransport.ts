@@ -400,6 +400,9 @@ export async function mockFetch(url: string, init: RequestInit): Promise<Respons
     if (method === 'GET') return json(200, { open: false });
     return error(404, 'not_found', 'this server is set up already: sign in');
   }
+  if (pathname === '/api/v1/operator' && method === 'GET') {
+    return json(200, { name: 'Example Corp Security, United Kingdom', email: 'privacy@example-corp.co.uk' });
+  }
   if (pathname === '/api/v1/signup') {
     if (method === 'GET') return json(200, { open: serverSettings.signup_open });
     if (!serverSettings.signup_open) return error(404, 'not_found', 'sign-up is closed: ask an admin for an invitation');

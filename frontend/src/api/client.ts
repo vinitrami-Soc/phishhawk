@@ -33,6 +33,7 @@ import type {
   NewFeedback,
   NewMailbox,
   NewToken,
+  Operator,
   Opinion,
   ProfilePatch,
   Role,
@@ -185,6 +186,11 @@ export function setUp(fields: SetupFields): Promise<Session> {
 /** open: anyone may create an account now. While it is false, show no "Create an account". */
 export function getSignupState(signal?: AbortSignal): Promise<{ open: boolean }> {
   return request('GET', '/api/v1/signup', { signal });
+}
+
+/** Who runs this server and where to write about one's data, for the privacy page; both empty until it says. */
+export function getOperator(signal?: AbortSignal): Promise<Operator> {
+  return request('GET', '/api/v1/operator', { signal });
 }
 
 /** A workspace of their own, or a new organization with them as its admin. 409: username taken; 429: see retryAfter. */

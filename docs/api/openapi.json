@@ -2389,6 +2389,27 @@
         "summary": "Get Raw"
       }
     },
+    "/api/v1/operator": {
+      "get": {
+        "description": "Who runs this server and where to write about one's data, for the privacy page; empty until its operator\nsets them (PHISHHAWK_OPERATOR_NAME and PHISHHAWK_OPERATOR_EMAIL).",
+        "operationId": "operator_api_v1_operator_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Operator Api V1 Operator Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Operator"
+      }
+    },
     "/api/v1/password-reset": {
       "get": {
         "description": "Whether this server sends mail, and so resets a forgotten password: offer \"Forgot password?\" then.",

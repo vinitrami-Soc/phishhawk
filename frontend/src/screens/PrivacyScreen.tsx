@@ -2,7 +2,9 @@
    cookie, and the terms of use. Readable before signing in. Every sentence here
    is what the M1 server does (docs/SERVER.md); change it only with the server. */
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { getOperator } from '@/api/client';
+import type { Operator } from '@/api/types';
 import { ScrollProgress } from '@/components/core/scroll-progress';
 import { Link } from '@/app/router';
 import { Card, PageHeader } from '@/components/ui/ui';
@@ -19,6 +21,16 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 const B = ({ children }: { children: ReactNode }) => <strong className="font-medium text-ink">{children}</strong>;
 
 export default function PrivacyScreen() {
+  const [operator, setOperator] = useState<Operator | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getOperator(controller.signal)
+      .then(setOperator)
+      .catch(() => {}); // not known: the page reads as it does when nobody has said
+    return () => controller.abort();
+  }, []);
+
   return (
     <div className="grid max-w-3xl grid-cols-1 gap-6">
       <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden">
@@ -29,12 +41,27 @@ export default function PrivacyScreen() {
         title="Privacy and terms"
         description={
           <>
-            What PhishHawk keeps, what leaves this server, and the one cookie it sets. Last updated <time dateTime="2026-10-18">18 October 2026</time>.
+            What PhishHawk keeps, what leaves this server, and the one cookie it sets. Last updated <time dateTime="2026-10-24">24 October 2026</time>.
           </>
         }
       />
 
       <Section title="Who runs this PhishHawk">
+        {operator?.name && (
+          <p>
+            This PhishHawk is run by <B>{operator.name}</B>.
+            {operator.email && (
+              <>
+                {' '}
+                For questions about your data, or to have it deleted, write to{' '}
+                <a href={`mailto:${operator.email}`} className="text-ink underline underline-offset-2 hover:text-accent">
+                  {operator.email}
+                </a>
+                .
+              </>
+            )}
+          </p>
+        )}
         <p>
           Whoever set up this server runs it: its owner. The owner decides whether anyone may create an account. Each organisation, and each person on their own, has a workspace of its own,
           and no one sees another workspace&apos;s messages, analyses or people. A workspace&apos;s admins decide who is in it and how long its messages are kept, and its own policies apply to

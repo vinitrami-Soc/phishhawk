@@ -135,6 +135,14 @@ def test_the_built_frontend_carries_the_robots_tag_the_server_takes_out():
     assert page.count(NOINDEX) == 1
 
 
+def test_anyone_can_read_who_runs_this_server_once_its_operator_says(anon):
+    assert anon.get("/api/v1/operator").json() == {"name": "", "email": ""}
+    settings = anon.app.state.services.settings
+    settings.operator_name, settings.operator_email = "Example Security Ltd, United Kingdom", "privacy@example.org"
+    assert anon.get("/api/v1/operator").json() == {"name": "Example Security Ltd, United Kingdom",
+                                                    "email": "privacy@example.org"}
+
+
 def test_the_login_throttle_forgets_the_oldest_names_beyond_its_limit():
     from phishhawk.server import auth
 

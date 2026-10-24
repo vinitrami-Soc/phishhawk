@@ -35,6 +35,9 @@ class ServerSettings(BaseSettings):
     frontend_dir: str = ""  # a frontend's build, served at /app/ (docs/FRONTEND.md)
     trusted_proxies: str = "127.0.0.1"  # reverse proxies (addresses or networks) whose X-Forwarded-* count
     index_public_pages: bool = False  # true: search engines may list the product, privacy and help pages
+    # who runs this server and where to write about one's data, for the privacy page: whoever set it up says
+    operator_name: str = ""  # Example Security Ltd, United Kingdom
+    operator_email: str = ""  # privacy@example.org
     # Mail, for confirming addresses and resetting passwords (docs/SERVER.md, "Email and password reset"): off
     # until the SMTP host, the From address and the public URL are all set.
     public_url: str = ""  # https://phishhawk.example.org: links in mail are built from it, never from the request

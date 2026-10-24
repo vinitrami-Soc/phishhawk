@@ -322,6 +322,14 @@ class NewPassword(BaseModel):
     password: str = ""
 
 
+@router.get("/operator")
+def operator(request: Request) -> dict[str, Any]:
+    """Who runs this server and where to write about one's data, for the privacy page; empty until its operator
+    sets them (PHISHHAWK_OPERATOR_NAME and PHISHHAWK_OPERATOR_EMAIL)."""
+    settings = services(request).settings
+    return {"name": settings.operator_name, "email": settings.operator_email}
+
+
 @router.get("/password-reset")
 def reset_state(request: Request) -> dict[str, Any]:
     """Whether this server sends mail, and so resets a forgotten password: offer "Forgot password?" then."""

@@ -324,6 +324,9 @@ export type SignupFields = AccountFields & { kind: Workspace['kind']; organizati
 /** GET /api/v1/join/{token}: the organization an invitation opens, and the role it gives. */
 export type Invitation = { organization: string; role: Role };
 
+/** GET /api/v1/operator: who runs this server and where to write about one's data; both empty until it says. */
+export type Operator = { name: string; email: string };
+
 /** GET /api/v1/invites: an invitation that can still be used. Never its token. */
 export type Invite = { id: number; role: Role; note: string; created_at: string; expires_at: string; created_by_name: string | null };
 

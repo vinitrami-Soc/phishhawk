@@ -153,6 +153,19 @@ def test_a_visitor_reads_the_product_page_signs_in_and_comes_back_on_signing_out
         assert errors == []
 
 
+def test_a_visitor_reads_who_runs_the_server_and_where_to_write_on_the_privacy_page(browser, tmp_path):
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve()),
+                        PHISHHAWK_OPERATOR_NAME="Example Security Ltd, United Kingdom",
+                        PHISHHAWK_OPERATOR_EMAIL="privacy@example.org") as server:
+        page, errors = _visitor(browser)
+        page.goto(server.base + "/app/privacy")
+        page.get_by_role("heading", name="Who runs this PhishHawk").wait_for()
+        sync_api.expect(page.get_by_text("Example Security Ltd, United Kingdom")).to_be_visible()
+        write = page.get_by_role("link", name="privacy@example.org")
+        sync_api.expect(write).to_have_attribute("href", "mailto:privacy@example.org")
+        assert errors == []
+
+
 def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_path):
     with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
         page, errors = _signed_in(browser, server)
