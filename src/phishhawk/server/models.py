@@ -268,13 +268,15 @@ class CampaignMember(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
-    __table_args__ = (Index("ix_jobs_status", "status", "id"),)
+    # when a workspace was last served is read for every waiting job at each claim: from this index, not by
+    # reading the workspace's whole history
+    __table_args__ = (Index("ix_jobs_status", "status", "id"),
+                      Index("ix_jobs_workspace_started", "workspace_id", "started_at"))
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(32))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     # whose work it is, for fair turns; None for the server's own (the retention sweep)
-    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), default=None,
-                                                     index=True)
+    workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), default=None)
     status: Mapped[str] = mapped_column(String(16), default="queued")  # queued, running, done, failed
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str] = mapped_column(Text, default="")
