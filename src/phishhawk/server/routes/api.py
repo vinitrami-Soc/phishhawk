@@ -10,6 +10,7 @@ import re
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -115,8 +116,10 @@ async def submit(request: Request, db: DB, actor: CurrentActor,
                  files: Annotated[list[UploadFile] | None, File()] = None,
                  raw: Annotated[str, Form()] = "", offline: Annotated[bool, Form()] = False) -> dict[str, Any]:
     """One message (a file or pasted text) is one submission. Several (several files, an .mbox or a .zip) are a
-    batch: the answer then holds the batch ID and the submissions' IDs."""
-    return accept_upload(request, db, actor, await read_uploads(request, db, [file, *(files or [])]), raw, offline)
+    batch: the answer then holds the batch ID and the submissions' IDs. Accepting a big batch takes seconds, so it
+    runs on a worker thread and the server answers everyone else meanwhile."""
+    uploads = await read_uploads(request, db, [file, *(files or [])])
+    return await run_in_threadpool(accept_upload, request, db, actor, uploads, raw, offline)
 
 
 async def read_uploads(request: Request, db: DB, uploads: list[UploadFile | None]) -> list[bytes]:

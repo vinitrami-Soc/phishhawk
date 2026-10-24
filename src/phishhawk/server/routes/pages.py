@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import select
 
@@ -68,8 +69,9 @@ async def submit(request: Request, db: DB, actor: CurrentActor,
                  files: Annotated[list[UploadFile] | None, File()] = None, raw: Annotated[str, Form()] = "",
                  offline: Annotated[bool, Form()] = False) -> Response:
     try:
-        outcome = api.accept_upload(request, db, actor, await api.read_uploads(request, db, list(files or [])),
-                                    raw, offline)
+        uploads = await api.read_uploads(request, db, list(files or []))
+        # on a worker thread, as in api.submit: a big batch takes seconds
+        outcome = await run_in_threadpool(api.accept_upload, request, db, actor, uploads, raw, offline)
     except HTTPException as exc:
         recent = views.listing(db, services(request).store, actor.workspace_id)[:10]
         return html_response(request, "home.html", {"actor": actor, "recent": recent, "error": exc.detail},

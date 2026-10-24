@@ -73,3 +73,37 @@ def test_nothing_but_an_upload_may_be_larger_than_a_megabyte(app, admin):
             status, body, read = call(app, method, headers, path)
             assert (status, read) == (413, False), (path, credential)
     assert b"larger than 1 MB" in body
+
+
+def test_accepting_an_upload_does_not_hold_up_everyone_else(app, alice, monkeypatch):
+    """Accepting an upload (opening an archive, sealing each message, writing its rows) takes seconds for a big
+    batch. It runs on a worker thread: the server answers other requests meanwhile, instead of all of them waiting
+    for it."""
+    import time
+
+    import httpx
+
+    from phishhawk.server.routes import api
+
+    def slow(*args, **kwargs):
+        time.sleep(1)
+        return {"id": 1, "status": "queued"}
+
+    monkeypatch.setattr(api, "accept_upload", slow)
+
+    async def upload_and_ask():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver",
+                                     cookies=dict(alice.cookies.items()),
+                                     headers=dict(alice.headers)) as client:
+            message = {"file": ("m.eml", big_message(2048), "message/rfc822")}
+            upload = asyncio.create_task(client.post("/api/v1/submissions", files=message))
+            started = time.monotonic()
+            await asyncio.sleep(0.2)  # the upload is being accepted now
+            other = await client.get("/robots.txt")
+            waited = time.monotonic() - started
+            return (await upload).status_code, other.status_code, waited
+
+    uploaded, answered, waited = asyncio.run(upload_and_ask())
+    assert (uploaded, answered) == (202, 200)
+    assert waited < 0.7, waited  # 0.2 s of its own; the upload's second is not on its account
+
