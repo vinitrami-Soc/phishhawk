@@ -73,3 +73,55 @@ def test_nothing_but_an_upload_may_be_larger_than_a_megabyte(app, admin):
             status, body, read = call(app, method, headers, path)
             assert (status, read) == (413, False), (path, credential)
     assert b"larger than 1 MB" in body
+
+
+async def exchange(app, method, path, headers, body=b""):
+    """One whole request to the app, called directly; its status."""
+    sent, waiting = [], [{"type": "http.request", "body": body, "more_body": False}]
+
+    async def receive():
+        if waiting:
+            return waiting.pop()
+        await asyncio.sleep(3600)  # the body is all sent: nothing more until the answer
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": method, "path": path, "raw_path": path.encode(), "query_string": b"",
+             "headers": [(k.encode(), v.encode()) for k, v in [("host", "testserver"), *headers]],
+             "scheme": "http", "server": ("testserver", 80), "client": ("127.0.0.1", 5000), "root_path": "",
+             "http_version": "1.1"}
+    await app(scope, receive, send)
+    return next(m for m in sent if m["type"] == "http.response.start")["status"]
+
+
+def test_accepting_an_upload_does_not_hold_up_everyone_else(app, alice, monkeypatch):
+    """Accepting an upload (opening an archive, sealing each message, writing its rows) takes seconds for a big
+    batch. It runs on a worker thread: the server answers other requests meanwhile, instead of all of them waiting
+    for it."""
+    import time
+    from urllib.parse import urlencode
+
+    from phishhawk.server.routes import api
+
+    def slow(*args, **kwargs):
+        time.sleep(1)
+        return {"id": 1, "status": "queued"}
+
+    monkeypatch.setattr(api, "accept_upload", slow)
+    body = urlencode({"raw": big_message(2048).decode()}).encode()
+    form = [("cookie", "; ".join("%s=%s" % pair for pair in alice.cookies.items())),
+            ("x-csrf-token", alice.headers["X-CSRF-Token"]),
+            ("content-type", "application/x-www-form-urlencoded"), ("content-length", str(len(body)))]
+
+    async def upload_and_ask():
+        upload = asyncio.create_task(exchange(app, "POST", "/api/v1/submissions", form, body))
+        started = time.monotonic()
+        await asyncio.sleep(0.2)  # the upload is being accepted now
+        answered = await exchange(app, "GET", "/robots.txt", [])
+        waited = time.monotonic() - started
+        return await upload, answered, waited
+
+    uploaded, answered, waited = asyncio.run(upload_and_ask())
+    assert (uploaded, answered) == (202, 200)
+    assert waited < 0.7, waited  # 0.2 s of its own; the upload's second is not on its account
