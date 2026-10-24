@@ -1,0 +1,90 @@
+# PhishHawk in production: the web app and its worker, Postgres, and a Cloudflare Tunnel that brings visitors in.
+# Nothing is published on the server: no web port is open, only SSH. docs/DEPLOY.md is the runbook.
+#   First:  sh deploy/setup.sh        (keys, database password, tunnel token, the site's address, mail)
+#   Then:   docker compose -f deploy/compose.yaml up -d --build --wait
+# Secrets live in deploy/secrets/ and settings in deploy/.env: setup.sh writes both, git ignores both.
+name: phishhawk
+
+services:
+  phishhawk:
+    build:
+      context: ..
+      dockerfile: server.Dockerfile
+    image: phishhawk-server
+    env_file: .env  # PHISHHAWK_PUBLIC_URL and the mail settings
+    environment:
+      # only the tunnel reaches the app, from this project's own network: its X-Forwarded-* count, so the
+      # throttles see each visitor's address, not Cloudflare's
+      PHISHHAWK_TRUSTED_PROXIES: 172.31.240.0/24
+    volumes:
+      - data:/data
+    secrets:
+      - phishhawk_secret_key
+      - phishhawk_encryption_key
+      - phishhawk_database_url
+      - phishhawk_smtp_password
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true  # reaps the worker's helper processes
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: phishhawk
+      POSTGRES_DB: phishhawk
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - db:/var/lib/postgresql/data
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phishhawk -d phishhawk"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.3
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
+    secrets:
+      - cloudflare_tunnel_token
+    depends_on:
+      phishhawk:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.240.0/24
+
+secrets:
+  phishhawk_secret_key:
+    file: secrets/phishhawk_secret_key
+  phishhawk_encryption_key:
+    file: secrets/phishhawk_encryption_key
+  phishhawk_database_url:
+    file: secrets/phishhawk_database_url
+  phishhawk_smtp_password:
+    file: secrets/phishhawk_smtp_password
+  postgres_password:
+    file: secrets/postgres_password
+  cloudflare_tunnel_token:
+    file: secrets/cloudflare_tunnel_token
+
+volumes:
+  data:
+  db:

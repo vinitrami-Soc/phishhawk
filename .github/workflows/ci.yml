@@ -187,6 +187,47 @@ jobs:
         if: failure()
         run: docker compose logs
 
+  server-deploy:
+    name: web app as deployed (deploy/)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up the way docs/DEPLOY.md says, without a tunnel token or mail
+        run: printf 'https://phishhawk.example.org\n\n\n\n\n\n\n' | sh deploy/setup.sh
+      - name: Build and start the web app on Postgres
+        run: docker compose -f deploy/compose.yaml up -d --build --wait phishhawk db
+      - name: From the tunnel's network, the login throttle slows down each visitor, not the tunnel
+        run: |
+          docker run --rm --network phishhawk_default --entrypoint python phishhawk-server -c '
+          import json, urllib.request, urllib.error
+          def attempt(address, username):  # a wrong password from that visitor, as the tunnel passes it on
+              request = urllib.request.Request("http://phishhawk:8000/api/v1/session",
+                  data=json.dumps({"username": username, "password": "wrong"}).encode(),
+                  headers={"Content-Type": "application/json", "X-Forwarded-For": address, "X-Forwarded-Proto": "https"})
+              try:
+                  urllib.request.urlopen(request)
+              except urllib.error.HTTPError as error:
+                  return error.code
+          codes = [attempt("203.0.113.7", "someone%d" % n) for n in range(3)]
+          codes += [attempt("203.0.113.7", "someone-else"), attempt("198.51.100.9", "someone-new")]
+          print(codes)
+          assert codes == [401, 401, 401, 429, 401], codes'
+      - name: Back up, change something, restore the way docs/DEPLOY.md says, and find it as it was
+        run: |
+          C="docker compose -f deploy/compose.yaml"
+          openssl rand -hex 16 | $C exec -T phishhawk phishhawk server create-admin first --password-stdin
+          sh deploy/backup.sh
+          openssl rand -hex 16 | $C exec -T phishhawk phishhawk server create-admin second --password-stdin
+          $C stop phishhawk
+          $C exec -T db pg_restore -U phishhawk -d phishhawk --clean --if-exists < deploy/backups/db-*.dump
+          $C run --rm -T --no-deps --entrypoint tar phishhawk -C /data -xzf - < deploy/backups/data-*.tgz
+          $C up -d --wait phishhawk db
+          test "$($C exec -T db psql -U phishhawk -d phishhawk -tAc 'select string_agg(username, $$,$$) from users')" = first
+          $C exec -T phishhawk phishhawk server audit verify
+      - name: Logs
+        if: failure()
+        run: docker compose -f deploy/compose.yaml logs
+
   frontend:
     name: frontend
     runs-on: ubuntu-latest

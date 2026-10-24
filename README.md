@@ -249,6 +249,7 @@ audit log. It needs the `server` extra
 (`pip install "phishhawk[server]"`) or Docker Compose (`docker compose up -d`).
 Setup, roles, keys and backups: [docs/SERVER.md](docs/SERVER.md). The browser app, built in
 Google AI Studio, is in [frontend/](frontend/) and comes with the Docker image: [docs/FRONTEND.md](docs/FRONTEND.md).
+A public server, with Postgres, a Cloudflare Tunnel, backups and deploys from GitHub: [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ### Check the install
 

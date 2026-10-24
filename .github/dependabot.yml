@@ -27,3 +27,11 @@ updates:
       # and no new major versions (TypeScript 7, @types/node beyond the Node the image runs) without a look first
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+  # deploy/compose.yaml: the tunnel's image (Postgres stays on 16: a new major needs a dump and restore)
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: monthly
+    ignore:
+      - dependency-name: postgres
+        update-types: ["version-update:semver-major"]
