@@ -16,3 +16,14 @@ updates:
     groups:
       frontend:
         patterns: ["*"]
+    ignore:
+      # pinned to what the frontend is built and tested with (src/__tests__/rules.test.ts): moving them is a
+      # deliberate upgrade of the whole app, not a monthly bump
+      - dependency-name: react
+      - dependency-name: react-dom
+      - dependency-name: "@types/react"
+      - dependency-name: "@types/react-dom"
+      - dependency-name: motion
+      # and no new major versions (TypeScript 7, @types/node beyond the Node the image runs) without a look first
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
