@@ -19,6 +19,7 @@ from .retention import sweep
 
 STALE_AFTER = dt.timedelta(minutes=2)
 SWEEP_EVERY = dt.timedelta(hours=1)
+KEEP_FINISHED = dt.timedelta(days=30)  # finished jobs and spent email links, then the sweep removes them
 
 
 def schedule(services: Services) -> None:
@@ -85,6 +86,8 @@ def run_one(services: Services) -> bool:
                         audit.record(db, "system", "retention_sweep", details={"deleted": count, "days": days},
                                      workspace_id=workspace_id)
                 auth.end_idle_sessions(db, services.settings.session_idle_minutes)
+                jobs.prune(db, KEEP_FINISHED)
+                recovery.prune(db, KEEP_FINISHED)
                 audit.record(db, "system", "retention_sweep", details={"deleted": total}, workspace_id=SERVER)
     except Exception as exc:  # a bug in a handler must not stop the worker
         error = "%s: %s" % (type(exc).__name__, exc)
