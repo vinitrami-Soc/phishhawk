@@ -8,3 +8,11 @@ updates:
     directory: /
     schedule:
       interval: monthly
+  # the web console in frontend/: its packages, in one pull request a month
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: monthly
+    groups:
+      frontend:
+        patterns: ["*"]
