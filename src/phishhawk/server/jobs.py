@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
 from .models import Job, utcnow
@@ -74,6 +74,11 @@ def requeue_stale(db: Session, stale_after: dt.timedelta, given_up: list[Job] | 
             job.status = "queued"
         moved += 1
     return moved
+
+
+def prune(db: Session, older_than: dt.timedelta) -> None:
+    """Finished jobs, kept a while to show what ran, then removed: the table would only grow."""
+    db.execute(delete(Job).where(Job.status.in_(("done", "failed")), Job.finished_at < utcnow() - older_than))
 
 
 def pending(db: Session, kind: str) -> bool:

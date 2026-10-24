@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from phishhawk.server import intake, jobs, worker
 from phishhawk.server.db import transaction
-from phishhawk.server.models import SERVER, Analysis, AuditRecord, Job, Message
+from phishhawk.server.models import SERVER, Analysis, AuditRecord, EmailToken, Job, Message, utcnow
 
 from .serverkit import home
 from conftest import sample
@@ -80,3 +80,29 @@ def test_a_failing_handler_fails_its_job_and_the_worker_carries_on(services, mon
         job = s.scalars(select(Job)).one()
         assert (job.status, job.error) == ("failed", "RuntimeError: boom")
     assert not worker.run_one(services)
+
+
+def test_the_sweep_removes_finished_jobs_and_spent_email_links_after_30_days(services):
+    """Both would only pile up: a mailbox polled every 5 minutes leaves about 100,000 finished jobs a year. A job
+    still waiting or running stays, however old."""
+    from phishhawk.server import auth
+
+    long_ago, lately = utcnow() - dt.timedelta(days=31), utcnow() - dt.timedelta(days=29)
+    with transaction(services.sessions) as s:
+        user = auth.create_user(s, "sam", "a long enough password", "analyst")
+        s.add_all([Job(kind="analyze", status="done", created_at=long_ago, finished_at=long_ago),
+                   Job(kind="analyze", status="failed", created_at=long_ago, finished_at=long_ago),
+                   Job(kind="analyze", status="done", created_at=lately, finished_at=lately),
+                   Job(kind="mailbox_poll", status="running", created_at=long_ago, started_at=long_ago),
+                   EmailToken(user_id=user.id, purpose="reset", token_hash="a" * 64, email="sam@example.org",
+                              created_at=long_ago, expires_at=long_ago + dt.timedelta(hours=1)),
+                   EmailToken(user_id=user.id, purpose="verify", token_hash="b" * 64, email="sam@example.org",
+                              created_at=lately, expires_at=lately + dt.timedelta(hours=24))])
+    worker.schedule(services)
+    assert worker.run_one(services)  # the sweep
+    with transaction(services.sessions) as s:
+        left = sorted((j.kind, j.status, j.finished_at is not None and j.finished_at >= lately)
+                      for j in s.scalars(select(Job)).all() if j.kind != "retention_sweep")
+        assert left == [("analyze", "done", True), ("mailbox_poll", "running", False)]
+        assert [t.purpose for t in s.scalars(select(EmailToken)).all()] == ["verify"]
+
