@@ -80,7 +80,9 @@ docker compose -f deploy/compose.yaml exec phishhawk phishhawk server setup-code
 ```
 
 `setup.sh` asks for the site's address (`https://phishhawk.example.org`), the
-tunnel token and the mail settings, and writes them to `deploy/.env` and
+tunnel token, who runs the site and where people write about their data (the
+privacy page shows both), whether search engines may list the product, privacy
+and help pages, and the mail settings. It writes them to `deploy/.env` and
 `deploy/secrets/` (git ignores both). Run it again to change an answer.
 
 Open `https://phishhawk.example.org/setup`, enter the setup code and make your

@@ -1,6 +1,6 @@
 #!/bin/sh
 # First setup of PhishHawk on this server (docs/DEPLOY.md). Makes the two keys and the database password, asks for
-# the Cloudflare Tunnel token, the site's address and the mail settings, and writes deploy/secrets/ and
+# the site's address, the Cloudflare Tunnel token, who runs it and the mail settings, and writes deploy/secrets/ and
 # deploy/.env. Run it again to change an answer: an empty answer keeps the one already given, and keys already made
 # are never replaced (a new encryption key would leave every stored file unreadable).
 set -eu
@@ -39,6 +39,9 @@ ask_secret() {  # ask_secret FILE QUESTION: written to secrets/FILE; empty keeps
 echo "The site" >&2
 public_url=$(ask PHISHHAWK_PUBLIC_URL "  Its address, such as https://phishhawk.example.org")
 ask_secret cloudflare_tunnel_token "  The Cloudflare Tunnel token (docs/DEPLOY.md, step 2)"
+operator_name=$(ask PHISHHAWK_OPERATOR_NAME "  Who runs it, for the privacy page, such as Example Security Ltd, United Kingdom")
+operator_email=$(ask PHISHHAWK_OPERATOR_EMAIL "  Where people write about their data, such as privacy@example.org")
+indexed=$(ask PHISHHAWK_INDEX_PUBLIC_PAGES "  Let search engines list its product, privacy and help pages? (true or false)")
 echo "Mail, for password reset links (leave empty for none; docs/SERVER.md, \"Email and password reset\")" >&2
 smtp_host=$(ask PHISHHAWK_SMTP_HOST "  SMTP server, such as smtp-relay.brevo.com")
 smtp_port=$(ask PHISHHAWK_SMTP_PORT "  SMTP port (587 for STARTTLS)")
@@ -49,6 +52,9 @@ ask_secret phishhawk_smtp_password "  SMTP password or key"
 {
   echo "# written by deploy/setup.sh: run it again to change an answer"
   echo "PHISHHAWK_PUBLIC_URL=$public_url"
+  echo "PHISHHAWK_OPERATOR_NAME=$operator_name"
+  echo "PHISHHAWK_OPERATOR_EMAIL=$operator_email"
+  echo "PHISHHAWK_INDEX_PUBLIC_PAGES=${indexed:-false}"
   echo "PHISHHAWK_SMTP_HOST=$smtp_host"
   echo "PHISHHAWK_SMTP_PORT=${smtp_port:-587}"
   echo "PHISHHAWK_SMTP_USERNAME=$smtp_username"
