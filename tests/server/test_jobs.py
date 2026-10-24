@@ -88,3 +88,25 @@ def test_at_most_two_jobs_of_one_workspace_run_at_once(db):
     assert [_claim(db), _claim(db), _claim(db)] == [(None, 9), (quiet, 0), None]
     _finish(db, busy, 0)
     assert _claim(db) == (busy, 2)
+
+
+def test_a_year_of_finished_jobs_does_not_slow_the_next_claim(db):
+    """Each claim asks when every waiting job's workspace was last served. Finished jobs stay in the table (a
+    report mailbox polled every 5 minutes makes about 100,000 a year), so that question must be answered from an
+    index, not by reading the workspace's whole history once for each waiting job."""
+    import time
+
+    from sqlalchemy import insert
+
+    now = dt.datetime.now(dt.timezone.utc)
+    with transaction(db) as s:
+        s.execute(insert(Job), [{"kind": "mailbox_poll", "payload": {}, "workspace_id": 1, "status": "done",
+                                 "attempts": 1, "error": "", "created_at": now,
+                                 "started_at": now - dt.timedelta(minutes=n), "finished_at": now}
+                                for n in range(20_000)])
+        for n in range(200):
+            jobs.enqueue(s, "analyze", {"n": n}, workspace_id=1)
+    started = time.monotonic()
+    assert _claim(db) == (1, 0)
+    assert time.monotonic() - started < 0.5
+
