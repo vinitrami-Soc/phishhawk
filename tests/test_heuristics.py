@@ -123,6 +123,27 @@ def test_iocs_skip_trusted_shorteners_and_freemail_domains():
     assert any(t == "sha256" for t, _ in values)
 
 
+def test_iocs_leave_out_the_address_a_link_only_pretends_to_open():
+    # The link text names a real company site and the link goes elsewhere: the
+    # named site is the disguise, and blocking it would block the company itself.
+    a = triage_bytes(build_eml(html=(
+        '<p>Or sign in at https://pay-portal.top/login</p>'
+        '<a href="https://payroll-check.top/s">https://hr.northwind-traders.com/payroll</a>')))
+    values = {(i["type"], i["value"]) for i in a.iocs()}
+    assert ("url", "https://payroll-check.top/s") in values
+    assert ("url", "https://pay-portal.top/login") in values  # written out for the reader: kept
+    assert not any("northwind-traders" in v for _, v in values)
+
+
+def test_iocs_leave_out_hosts_that_cannot_exist_on_the_internet():
+    a = triage_bytes(build_eml(html=(
+        '<a href="https://185.243.115.22/s">Open the statement</a>'
+        '<p>Copies: https://files.company-intranet.internal/q3 and http://nas.local/q3</p>')))
+    values = {(i["type"], i["value"]) for i in a.iocs()}
+    assert ("url", "https://185.243.115.22/s") in values
+    assert not any(".internal" in v or ".local" in v for _, v in values)
+
+
 def test_a_message_without_links_is_judged_on_its_words():
     # No link and no attachment is as common in legitimate mail as in phishing,
     # so that alone is not scored; the payment request still is.
