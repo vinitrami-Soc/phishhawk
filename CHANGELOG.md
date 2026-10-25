@@ -7,6 +7,18 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-25
+
+PhishHawk is now a web app as well as a command line: the same engine behind
+a browser and a REST API, for a SOC team on a server it controls. Analysts
+submit reported mail by upload, by paste or from a read-only report mailbox
+(IMAP, Microsoft 365 or Gmail), and every analysis lands in a shared queue,
+with campaigns across the team's history. Admins choose the reputation
+providers once for the whole workspace. Stored mail is encrypted and kept 30 days by
+default, every action goes into a hash-chained audit log, and `deploy/` runs
+it all on one small server behind a Cloudflare Tunnel, with no web port open.
+The command line, its options and its exit codes are unchanged.
+
 ### Added
 
 - **Email and password reset, in the frontend.** When the server sends mail,
@@ -879,7 +891,9 @@ repository: a single-file IOC extractor (20 September 2026) and the
 `phishtriage` package (versioned 2.0.0, 23 September 2026). Version numbering
 restarted at 1.0.0 with the new name.
 
-[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v3.0.0
+[2.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.2.0
 [2.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.1.0
 [2.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.0.0
 [1.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v1.2.0
