@@ -6,9 +6,21 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from .extract import defang_url, registrable_domain
+from .extract import defang_url, host_of, registrable_domain, urls_from_text
 from .hosting import hosting_kind
 from .knowledge import FREEMAIL, SHORTENERS, known_legit_domains
+
+# Top-level names never delegated on the internet: kept for tests, examples and
+# private networks (RFC 2606, 6761, 6762 and 8375, and ICANN's .internal), or left
+# undelegated because private networks already use them. A host under one is a
+# machine on someone's own network, not an indicator to block or share.
+PRIVATE_TLDS = frozenset({"internal", "local", "localhost", "localdomain", "lan", "home", "corp", "mail",
+                          "test", "example", "invalid", "arpa"})
+
+
+def on_the_internet(host: str) -> bool:
+    return host.rstrip(".").rsplit(".", 1)[-1].lower() not in PRIVATE_TLDS
+
 
 SEVERITY_WEIGHT = {"high": 3, "medium": 2, "low": 1}
 LOW_CAP = 3  # low-severity signals add at most this many points between them
@@ -254,7 +266,10 @@ class Analysis:
         Known-legitimate brand domains (the decoy login.microsoftonline.com in
         a spoof), your own protected domains, shorteners and free-mail
         providers are never emitted at domain level: blocking bit.ly or
-        gmail.com company-wide would do more harm than the phish.
+        gmail.com company-wide would do more harm than the phish. Nor are hosts
+        on private top-level names, or the site a link's text claims to open
+        when the link goes elsewhere: that is the disguise, often the reader's
+        own company, not where the phish lives.
         """
         if self.verdict == "NO STRONG INDICATORS":
             return []
@@ -271,7 +286,11 @@ class Analysis:
             elif context and context not in existing["context"].split(", "):
                 existing["context"] += ", " + context  # an IP that is both a link host and the origin
 
-        for ioc in self.urls:
+        claimed = {host_of(shown) for ioc in self.urls for text in ioc.anchor_texts
+                   for shown in urls_from_text(text) if registrable_domain(host_of(shown)) != ioc.domain}
+        urls = [ioc for ioc in self.urls if on_the_internet(ioc.host) and not (
+            ioc.host in claimed and not ioc.flagged and all(s.endswith("text") for s in ioc.sources))]
+        for ioc in urls:
             # A Google Drive or Forms link is blockable as a URL even though
             # google.com obviously is not.
             if not self.is_trusted_domain(ioc.host) or hosting_kind(ioc.url):
@@ -280,10 +299,11 @@ class Analysis:
         domain_roles = [(self.from_domain, "sender domain"),
                         (self.reply_to_domain, "reply-to domain"),
                         (self.return_path_domain, "return-path domain")]
-        domain_roles += [(ioc.host, "url host") for ioc in self.urls]
+        domain_roles += [(ioc.host, "url host") for ioc in urls]
         for domain, role in domain_roles:
             base = registrable_domain(domain)
             if (not base or base in SHORTENERS or base in FREEMAIL or self.is_trusted_domain(base)
+                    or not on_the_internet(domain)
                     or hosting_kind("https://%s/" % domain) in ("free hosting", "file sharing")):
                 continue
             kind = "ipv6" if ":" in domain else "ipv4" if domain.replace(".", "").isdigit() else "domain"
@@ -291,7 +311,8 @@ class Analysis:
 
         for address, role in ((self.from_address, "sender address"),
                               (self.reply_to, "reply-to address")):
-            if address and not self.is_trusted_domain(address.rsplit("@", 1)[-1]):
+            domain = address.rsplit("@", 1)[-1] if address else ""
+            if address and not self.is_trusted_domain(domain) and on_the_internet(domain):
                 add("email", address, role)
 
         if self.originating_ip:
