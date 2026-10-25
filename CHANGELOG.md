@@ -294,6 +294,16 @@ The command line, its options and its exit codes are unchanged.
 
 ### Fixed
 
+- **The disguise of a link is no longer exported as an indicator.** When a
+  link's text shows one site and the link opens another, the site shown is
+  what the phish pretends to be, often the reader's own company or intranet.
+  It went into the STIX, MISP, CSV, JSON and Markdown indicators as
+  malicious, so importing them could block the company's own site. The site
+  the link opens is still exported, and so is an address written out for the
+  reader to visit. Hosts on top-level names that exist only on private
+  networks (`.internal`, `.local`, `.corp`, `.lan`, `.home.arpa` and the
+  names reserved for tests and examples) are left out too: no block list
+  outside that network could match them. Verdicts and findings are unchanged.
 - **Sign out had no name for a screen reader** where the top bar shows its
   icon alone, on narrow screens. It is now "Sign out" at every width. A long
   section description in Settings no longer pushes Save below it.
