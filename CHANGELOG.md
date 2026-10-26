@@ -13,8 +13,10 @@ the JSON and STIX output are the public interface.
   account's analysis page shows the verdict in plain words, up to three
   reasons and what to do now, including what to do after clicking a link or
   sharing card details. Its upload page explains how to get the email out of
-  Gmail, Outlook or Apple Mail. "Show technical details" brings back the full
-  pages while the tab is open. Organization accounts are unchanged.
+  Gmail, Outlook or Apple Mail. Its top bar has "Check an email" and "My
+  emails", without Campaigns, Audit and the admin pages. "Show technical
+  details" brings back the full pages and the full top bar while the tab is
+  open. Organization accounts are unchanged.
 
 ### Security
 

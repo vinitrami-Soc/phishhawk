@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { rememberForTab, switchable, tabChoice, technicalView } from '../app/technical';
+import { onTabChoice, rememberForTab, switchable, tabChoice, technicalView } from '../app/technical';
 
 const organization = { workspace: { id: 1, name: 'Ana Labs', kind: 'organization' as const } };
 const individual = { workspace: { id: 2, name: 'noor', kind: 'individual' as const } };
@@ -29,4 +29,17 @@ test("the tab's choice starts off and keeps what was last remembered", () => {
   assert.equal(tabChoice(), true);
   rememberForTab(false);
   assert.equal(tabChoice(), false);
+});
+
+test('everyone listening hears a new choice, so the top bar changes with the page, until they stop', () => {
+  let heard = 0;
+  const stop = onTabChoice(() => {
+    heard += 1;
+  });
+  rememberForTab(true);
+  rememberForTab(false);
+  stop();
+  rememberForTab(true);
+  rememberForTab(false);
+  assert.equal(heard, 2);
 });

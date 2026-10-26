@@ -16,6 +16,7 @@ import { BackToTop } from '@/components/phishhawk/BackToTop';
 import { PublicFooter, PublicHeader } from '@/components/phishhawk/PublicChrome';
 import { ThemeToggle } from '@/components/phishhawk/ThemeToggle';
 import { FeedbackDialog } from '@/components/phishhawk/FeedbackDialog';
+import { useTechnicalView } from '@/components/phishhawk/TechnicalSwitch';
 import { ToastProvider } from '@/components/ui/toast';
 import { Skeleton } from '@/components/ui/ui';
 import { useAuth } from '@/app/useAuth';
@@ -106,6 +107,8 @@ export default function App() {
   const path = usePath();
   const route = parseRoute(path);
   const session = auth.status === 'signed-in' ? auth.session : null;
+  // someone on their own sees the simple top bar until they turn on "Show technical details"
+  const { technical } = useTechnicalView(session);
   const expired = auth.status === 'signed-out' && auth.expired;
   // a session that ended on the start page shows the sign-in form, with why
   const view = expired && route.name === 'triage' ? 'login' : signedOutView(route);
@@ -143,19 +146,29 @@ export default function App() {
   }, [path, session, auth.status]);
 
   const items = useMemo<CommandBarItem[]>(() => {
-    const list: CommandBarItem[] = [
-      { href: '/app/', label: 'Triage', icon: <Inbox className={icon} strokeWidth={1.5} /> },
-      { href: '/app/analyses', label: 'Queue', icon: <ListChecks className={icon} strokeWidth={1.5} /> },
-      { href: '/app/campaigns', label: 'Campaigns', icon: <Network className={icon} strokeWidth={1.5} /> },
-      { href: '/app/audit', label: 'Audit', icon: <ScrollText className={icon} strokeWidth={1.5} /> },
-    ];
+    const settings = { href: '/app/settings', label: 'Settings', icon: <Settings className={icon} strokeWidth={1.5} /> };
+    const list: CommandBarItem[] = technical
+      ? [
+          { href: '/app/', label: 'Triage', icon: <Inbox className={icon} strokeWidth={1.5} /> },
+          { href: '/app/analyses', label: 'Queue', icon: <ListChecks className={icon} strokeWidth={1.5} /> },
+          { href: '/app/campaigns', label: 'Campaigns', icon: <Network className={icon} strokeWidth={1.5} /> },
+          { href: '/app/audit', label: 'Audit', icon: <ScrollText className={icon} strokeWidth={1.5} /> },
+        ]
+      : [
+          { href: '/app/', label: 'Check an email', icon: <Inbox className={icon} strokeWidth={1.5} /> },
+          { href: '/app/analyses', label: 'My emails', icon: <ListChecks className={icon} strokeWidth={1.5} /> },
+        ];
     if (session?.role === 'admin') {
       list.push(
-        { href: '/app/health', label: 'Health', icon: <Activity className={icon} strokeWidth={1.5} /> },
-        { href: '/app/settings', label: 'Settings', icon: <Settings className={icon} strokeWidth={1.5} /> },
-        { href: '/app/users', label: 'Users', icon: <Users className={icon} strokeWidth={1.5} /> },
-        { href: '/app/tokens', label: 'Tokens', icon: <KeyRound className={icon} strokeWidth={1.5} /> },
-        { href: '/app/mailboxes', label: 'Mailboxes', icon: <Mailbox className={icon} strokeWidth={1.5} /> },
+        ...(technical
+          ? [
+              { href: '/app/health', label: 'Health', icon: <Activity className={icon} strokeWidth={1.5} /> },
+              settings,
+              { href: '/app/users', label: 'Users', icon: <Users className={icon} strokeWidth={1.5} /> },
+              { href: '/app/tokens', label: 'Tokens', icon: <KeyRound className={icon} strokeWidth={1.5} /> },
+              { href: '/app/mailboxes', label: 'Mailboxes', icon: <Mailbox className={icon} strokeWidth={1.5} /> },
+            ]
+          : [settings]),
       );
     }
     if (session) {
@@ -163,7 +176,7 @@ export default function App() {
       list.push({ href: '/app/feedback', label: 'Feedback', icon: <MessageSquare className={icon} strokeWidth={1.5} /> });
     }
     return list;
-  }, [session]);
+  }, [session, technical]);
 
   let body;
   if (auth.status === 'checking') {
@@ -290,7 +303,7 @@ export default function App() {
             signingOut.current = true;
             void signOut();
           }}
-          primaryCount={4}
+          primaryCount={technical ? 4 : 2}
         />
         <ProgressiveBlur direction="top" blurLayers={6} blurIntensity={0.6} className="pointer-events-none fixed inset-x-0 top-0 z-30 h-12 print:hidden" />
         <main id="main" tabIndex={-1} className="relative mx-auto w-full max-w-[1280px] px-4 pb-10 pt-6 focus:outline-none md:px-6 lg:px-8">

@@ -12,6 +12,7 @@ import { Link } from '@/app/router';
 import { VERDICTS } from '@/app/vocabulary';
 import { showIndicator } from '@/security/safe';
 import { Button, Card, EmptyState, ErrorState, PageHeader, SkeletonRows, Time, VerdictBadge } from '@/components/ui/ui';
+import { useTechnicalView } from '@/components/phishhawk/TechnicalSwitch';
 import { cn } from '@/lib/utils';
 
 const PAGE = 50;
@@ -38,6 +39,7 @@ const pill = (on: boolean) =>
 const dateInput = 'h-9 rounded-full border border-line-strong bg-surface px-3 text-xs text-ink focus:border-accent/60 focus:outline-none';
 
 export default function QueueScreen({ session }: { session: Session }) {
+  const { technical } = useTechnicalView(session);
   const [query, setQuery] = useState('');
   const [search, setSearch] = useState('');
   const [verdict, setVerdict] = useState<Verdict | ''>('');
@@ -99,9 +101,9 @@ export default function QueueScreen({ session }: { session: Session }) {
   return (
     <div className="grid grid-cols-1 gap-8">
       <PageHeader
-        eyebrow="Queue"
-        title="Analyses"
-        description="Every analysed message, newest first."
+        eyebrow={technical ? 'Queue' : 'PhishHawk'}
+        title={technical ? 'Analyses' : 'My emails'}
+        description={technical ? 'Every analysed message, newest first.' : 'Every email you checked, newest first.'}
         actions={
           state.phase !== 'loading' && state.phase !== 'error' ? (
             <span className="inline-flex items-center gap-1 rounded-full border border-line bg-surface px-3 py-1.5 font-mono text-xs tabular-nums text-ink-dim">

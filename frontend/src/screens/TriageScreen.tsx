@@ -37,7 +37,7 @@ function Elapsed({ since }: { since: number }) {
   return <SlidingNumber value={Math.max(0, Math.floor((now - since) / 1000))} />;
 }
 
-function RecentAnalyses() {
+function RecentAnalyses({ simple }: { simple: boolean }) {
   const [rows, setRows] = useState<AnalysisSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -55,7 +55,9 @@ function RecentAnalyses() {
 
   return (
     <section className="grid gap-4">
-      <SectionTitle aside={<Link href="/app/analyses" className="inline-flex min-h-6 items-center text-accent hover:underline">Open the queue</Link>}>Recent analyses</SectionTitle>
+      <SectionTitle aside={<Link href="/app/analyses" className="inline-flex min-h-6 items-center text-accent hover:underline">{simple ? 'See all' : 'Open the queue'}</Link>}>
+        {simple ? 'Your recent checks' : 'Recent analyses'}
+      </SectionTitle>
       {error ? (
         <ErrorState detail={error} onRetry={() => setAttempt((a) => a + 1)} />
       ) : rows === null ? (
@@ -310,7 +312,7 @@ export default function TriageScreen({ session }: { session: Session }) {
 
       {simple && <GetTheEmail />}
 
-      <RecentAnalyses />
+      <RecentAnalyses simple={simple} />
     </div>
   );
 }

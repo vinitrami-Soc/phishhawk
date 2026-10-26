@@ -37,6 +37,18 @@ held in memory only. The frontend's locked rules (`src/__tests__/rules.test.ts`)
 keep browser storage for the theme alone, and the user chose this over changing
 them (2026-10-26). Nothing is stored on the server.
 
+**The top bar follows the same choice** (added on 2026-10-26, at the user's
+request). With the switch off, an individual's bar has "Check an email"
+(Triage) and "My emails" (Queue), and More holds Settings, Profile and
+Feedback. Campaigns, Audit, Health, Users, Tokens and Mailboxes are left out:
+the pages still answer at their addresses, and turning the switch on brings
+them back to the bar at once. The Queue page is then called "My emails",
+Triage's "Recent analyses" becomes "Your recent checks" with "See all", and
+the simple analysis page's back link reads "My emails". The browser tab's
+title stays as it is, because `src/app/routes.ts` is locked. Every page and the
+bar read one shared choice (`onTabChoice` in `src/app/technical.ts`), so the
+switch changes them together.
+
 ## 3. The simple analysis page
 
 Top to bottom:
@@ -231,7 +243,8 @@ still checks every request, so the simple view is presentation only, like
 - Languages other than English.
 - A simple HTML report, simple downloads, or a simple command line.
 - Remembering the choice after a reload, or on another device.
-- Simpler words on the Queue, Batch and Campaign pages.
+- Simpler words inside the Queue's filters and on the Batch and Campaign
+  pages, and in the tour after sign-up.
 - An interactive "Did you click?" flow. The fixed steps cover both cases.
 
 ## 8. Sources for the upload guide

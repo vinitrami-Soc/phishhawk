@@ -603,7 +603,7 @@ export default function AnalysisScreen({ id, session }: { id: number; session: S
     return (
       <div className="grid grid-cols-1 gap-8 pb-20 lg:pb-24">
         <Link href="/app/analyses" className="inline-flex min-h-8 w-max items-center gap-2 text-sm text-ink-muted hover:text-ink">
-          <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> Queue
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> My emails
         </Link>
         <TechnicalSwitch view={view} />
         <SimpleAnalysis analysis={analysis} />

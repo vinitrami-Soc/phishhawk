@@ -79,10 +79,12 @@ The simple view: someone on their own sees two pages in plain words. Triage
 becomes "Check an email", with a guide to getting the email out of Gmail,
 Outlook or Apple Mail (`GetTheEmail`), and an analysis shows the verdict, up to
 three reasons and what to do now (`SimpleAnalysis`); the words are in
-`src/app/plain.ts`. "Show technical details" (`TechnicalSwitch`) brings back
-the technical pages while the tab is open: browser storage is kept for the
-theme, so a reload starts simple again (`src/app/technical.ts`). An
-organization always sees the technical pages, with no switch. Design:
+`src/app/plain.ts`. The top bar has "Check an email" and "My emails", and More
+holds Settings, Profile and Feedback. "Show technical details"
+(`TechnicalSwitch`) brings back the technical pages and the full bar while the
+tab is open: browser storage is kept for the theme, so a reload starts simple
+again (`src/app/technical.ts`). An organization always sees the technical
+pages, with no switch. Design:
 `docs/superpowers/specs/2026-10-26-simple-view-design.md`.
 
 To bring in a change made in Google AI Studio, export the project as a ZIP and

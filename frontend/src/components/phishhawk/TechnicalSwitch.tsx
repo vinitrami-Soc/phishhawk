@@ -1,22 +1,18 @@
 /* "Show technical details", for someone on their own (app/technical.ts). */
 
-import { useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import type { Session } from '@/api/types';
-import { rememberForTab, switchable, tabChoice, technicalView } from '@/app/technical';
+import { onTabChoice, rememberForTab, switchable, tabChoice, technicalView } from '@/app/technical';
 import { Card, Switch } from '@/components/ui/ui';
 
 export type TechnicalView = { technical: boolean; switchable: boolean; setTechnical: (next: boolean) => void };
 
-export function useTechnicalView(session: Session): TechnicalView {
-  const [choice, setChoice] = useState(tabChoice);
-  return {
-    technical: technicalView(session, choice),
-    switchable: switchable(session),
-    setTechnical: (next) => {
-      rememberForTab(next);
-      setChoice(next);
-    },
-  };
+/** Every page and the top bar read the same choice, so turning the switch changes them together.
+    Signed out (no session), everything is technical. */
+export function useTechnicalView(session: Pick<Session, 'workspace'> | null): TechnicalView {
+  const choice = useSyncExternalStore(onTabChoice, tabChoice);
+  const who = session ?? { workspace: null };
+  return { technical: technicalView(who, choice), switchable: switchable(who), setTechnical: rememberForTab };
 }
 
 export function TechnicalSwitch({ view }: { view: TechnicalView }) {
