@@ -31,21 +31,22 @@ The app's text stays in English.
 | Individual, switch off | Simple | Yes | Simple page (section 3) | Simple page (section 4) |
 | Individual, switch on | Technical | Yes | Today's page, plus the switch | Today's page, plus the switch |
 
-One saved choice drives both pages. It is kept in the browser's storage under
-the key `phishhawk-technical` (`"on"` or `"off"`), read and written inside
-`try`/`catch` the way `app/theme.ts` keeps the theme. If storage is blocked, the
-choice lasts until the page is reloaded. Nothing is stored on the server.
+One choice drives both pages, and it lasts while the tab is open: moving
+between pages keeps it, and a reload or a new visit starts simple again. It is
+held in memory only. The frontend's locked rules (`src/__tests__/rules.test.ts`)
+keep browser storage for the theme alone, and the user chose this over changing
+them (2026-10-26). Nothing is stored on the server.
 
 ## 3. The simple analysis page
 
 Top to bottom:
 
-1. **Which email this is:** the subject, the sender and the date, shown exactly
-   as today (as text, the address through `showIndicator`).
-2. **The switch**, "Show technical details". Its description reads:
+1. **The switch**, "Show technical details". Its description reads:
    "Indicators, authentication checks, ATT&CK, the full report and downloads."
-3. **The verdict** in plain words (3.1), in the verdict's colour, with the
+2. **The verdict** in plain words (3.1), in the verdict's colour, with the
    words always written out, so colour is never the only signal.
+3. **Which email this is:** the subject, the sender and when it was checked,
+   shown as text (the address through `showIndicator`, as today).
 4. **Why we think so** (3.2), for every verdict except NO STRONG INDICATORS.
 5. **What to do now** (3.3).
 6. **"Was this verdict right?"**: the existing `VerdictQuestion`, unchanged.
@@ -57,7 +58,9 @@ ATT&CK, Report, Files), technique IDs, SHA-256 values, the Analysis status and
 Limitations cards, the command bar's copy actions and the quick-actions dock.
 
 A message that is still being analysed, or whose analysis failed, shows the
-same states as today.
+same states as today. Once a message is deleted its findings are gone, so "Why
+we think so" says "The details were deleted with the message." instead of
+guessing; the verdict and the steps still show.
 
 ### 3.1 The verdict
 
@@ -127,10 +130,12 @@ The steps are fixed text. None of them contains a value from the message.
 - **Title:** "Check an email".
 - **Description:** "Save the email from your email app and drop it here, or
   copy and paste it."
-- **Drop zone:** "Drop the email file here, or choose it". It accepts the same
-  files as today (`.eml`, `.msg`, `.mbox`, `.zip`), so nothing a person already
-  does stops working; only the words change.
-- **Paste box label:** "Or paste the whole email".
+- **Drop zone:** "Drop the email file here, or choose it", and under it "Not
+  sure how? See How do I get the email? below." It accepts the same files as
+  today (`.eml`, `.msg`, `.mbox`, `.zip`), so nothing a person already does
+  stops working; only the words change.
+- **Paste:** the Upload files / Paste the message toggle stays as it is. The
+  paste box's placeholder becomes "Paste the whole email here."
 - **The switch**, as on the analysis page.
 - **A note:** "Check emails you received. Don't upload confidential work email."
 - **"How do I get the email?"**: three collapsible sections.
@@ -181,12 +186,15 @@ All changes are in `frontend/`.
 
 | File | Change |
 |---|---|
-| `src/app/plain.ts` (new) | `plainVerdict(verdict)` returns `{ headline, detail }`. `plainReasons(signals)` returns up to 3 strings (section 3.2). `plainSteps(verdict)` returns `{ lead?: string; text: string }[]` (section 3.3). Pure functions, no React. |
-| `src/app/technical.ts` (new) | `technicalByDefault(session)`: true unless the workspace is an individual one. `useTechnicalView(session)` returns `{ technical, switchable, setTechnical }`, backed by the `phishhawk-technical` key. |
-| `src/components/phishhawk/SimpleAnalysis.tsx` (new) | The page in section 3, from the `Analysis` and `Report` the screen already loads. |
+| `src/app/plain.ts` (new) | `plainVerdict(verdict)` returns `{ headline, detail }`. `plainReasons(verdict, signals)` returns up to 3 strings (section 3.2). `plainSteps(verdict)` returns `{ lead?: string; text: string }[]` (section 3.3). Pure functions, no React. |
+| `src/app/technical.ts` (new) | `switchable(session)`: true for an individual workspace. `technicalView(session, choice)`: true unless the workspace is an individual one whose choice is off. `tabChoice()` and `rememberForTab(next)` hold this tab's choice in memory. |
+| `src/components/phishhawk/TechnicalSwitch.tsx` (new) | `useTechnicalView(session)` returns `{ technical, switchable, setTechnical }`; `TechnicalSwitch` draws the switch, or nothing when the session is not switchable. |
+| `src/components/phishhawk/SimpleAnalysis.tsx` (new) | The verdict, the email, the reasons and the steps (section 3), from the `Analysis` the screen already loads. |
 | `src/components/phishhawk/GetTheEmail.tsx` (new) | The guide in section 4. |
-| `src/screens/AnalysisScreen.tsx` | When `technical` is false, render `SimpleAnalysis` in place of the tabs. Show the switch when `switchable` is true. |
-| `src/screens/TriageScreen.tsx` | When `technical` is false, use section 4's words and show `GetTheEmail`. Show the switch when `switchable` is true. |
+| `src/screens/AnalysisScreen.tsx` | When `technical` is false, render the switch, `SimpleAnalysis`, `VerdictQuestion` and the delete button in place of today's page. Otherwise today's page, with the switch under the Queue link. |
+| `src/screens/TriageScreen.tsx` | Takes the session. When `technical` is false, use section 4's words and show `GetTheEmail`. Shows the switch when `switchable` is true. |
+| `src/App.tsx` | Passes the session to `TriageScreen`. |
+| `tests/test_plain_words.py` (new) | Every family in the engine's `FAMILIES` has a reason in `plain.ts`, so a new family cannot be forgotten. |
 | `docs/FRONTEND.md`, `CHANGELOG.md` | Describe the simple view; CHANGELOG under Unreleased, Added. |
 
 The switch is the existing `Switch` component from `components/ui/ui.tsx`.
@@ -204,24 +212,25 @@ still checks every request, so the simple view is presentation only, like
     per family, highest severity first; unknown and empty families are
     skipped; the fallback reason appears only when nothing else does; no
     verdict text contains the word "safe" except in "doesn't prove it's safe".
-  - `technical.test.ts`: organization sessions are always technical and not
-    switchable; individual sessions default to simple and are switchable; a
-    saved `"on"` or `"off"` wins over the default; blocked storage falls back
-    to the default.
+  - `technical.test.ts`: organization sessions, and sessions without a
+    workspace, are always technical and not switchable; individual sessions are
+    simple until their choice is on; the tab's choice starts off and keeps what
+    was last remembered.
 - **Browser test** (`tests/server/test_frontend_browser.py`, run by the CI job
   "The server and a browser"):
-  - An individual account submits a sample. The page shows the plain headline
-    and the steps, and no ATT&CK tab. Turning the switch on shows the tabs.
-    After a reload, the tabs are still shown.
-  - An organization account sees the tabs and no switch.
+  - An individual account sees the guide on the upload page and submits a
+    sample. The analysis page shows the plain headline and the steps, and no
+    ATT&CK tab. Turning the switch on shows the tabs; going to the Queue and
+    back keeps them; a reload shows the simple page again.
+  - An organization account sees the tabs and no switch, on both pages.
 - `npx tsc --noEmit`, `npm run build` and the existing Python tests stay
-  green.
-
+  green. The existing test for someone who signs up alone waits for the plain
+  headline instead of "LIKELY PHISHING".
 ## 7. Out of scope
 
 - Languages other than English.
 - A simple HTML report, simple downloads, or a simple command line.
-- Saving the choice on the server, so it follows the person between devices.
+- Remembering the choice after a reload, or on another device.
 - Simpler words on the Queue, Batch and Campaign pages.
 - An interactive "Did you click?" flow. The fixed steps cover both cases.
 
