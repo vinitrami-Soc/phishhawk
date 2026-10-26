@@ -178,10 +178,10 @@ def serve(settings: ServerSettings) -> int:
     import uvicorn
 
     migrate(settings.db_url)
-    code = _setup_code(settings)
-    if code is not None:
-        print("phishhawk: no one has an account yet. Open /app/setup in a browser and enter the setup code %s "
-              "(it works once)" % code, file=sys.stderr, flush=True)
+    # the code itself stays out of the log: logs travel, and whoever enters it first owns the server
+    if _setup_code(settings) is not None:
+        print("phishhawk: no one has an account yet. Run `phishhawk server setup-code` for the one-time "
+              "setup code, then open /app/setup in a browser and enter it", file=sys.stderr, flush=True)
     # uvicorn raises the signal again once it has shut down; this turns it into
     # an exception, so the finally block below stops the worker
     signal.signal(signal.SIGTERM, _exit_cleanly)

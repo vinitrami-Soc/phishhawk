@@ -315,7 +315,7 @@ export type Health = {
 /** A new account's own fields. A 422 or 409 `detail` starts with the field it is about ("last_name: required"). */
 export type AccountFields = Profile & { username: string; password: string; email: string };
 
-/** POST /api/v1/setup: the owner's account, with the code from the server's log. */
+/** POST /api/v1/setup: the owner's account, with the code `phishhawk server setup-code` prints. */
 export type SetupFields = AccountFields & { code: string; organization: string; signup_open: boolean };
 
 /** POST /api/v1/signup. `organization` is needed for an organization, and optional for an individual. */

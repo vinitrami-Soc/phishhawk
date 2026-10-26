@@ -200,7 +200,7 @@ tokens. Bandit was run again over the server.
 | Another workspace's rows in lists and searches | The Queue's search by SHA-256, report ID or indicator, its filters by user and by dispute, campaigns, the audit log, users, tokens, mailboxes, invitations, feedback, the summary of answers and the settings (provider keys included) show only the caller's workspace, in the API and on the built-in pages |
 | IDs in request bodies | A token for another workspace's user, and an answer removed through another analysis, are refused (404) |
 | Invitation tokens | 32 random bytes, stored as a hash; one use, enforced by an atomic update, so six joins raced at once make one account; revoked, used and expired ones answer 404 |
-| The setup code | Compared in constant time, throttled, sealed with the encryption key, and closed (404) once anyone has an account |
+| The setup code | Compared in constant time, throttled, sealed with the encryption key, kept out of the server's log, and closed (404) once anyone has an account |
 | Sign-up from one address | Three an hour per address and a daily cap for the server; `X-Forwarded-For` counts only from a trusted proxy, so forged addresses from anywhere else are throttled as one |
 | Markup and formulas in feedback, notes and names | Kept as text and shown as text; nothing is rendered as HTML. The owner's CSV holds no message, note or person, only numbers, hashes, report IDs and verdicts, and no cell starts with a formula character |
 | Bidirectional overrides and control characters | Refused in feedback, notes, profile fields and organization names |

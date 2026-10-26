@@ -95,14 +95,16 @@ def test_the_command_line_prints_the_setup_code_until_setup_is_done(monkeypatch,
     assert "set up already" in capsys.readouterr().err
 
 
-def test_a_server_no_one_has_an_account_on_prints_its_setup_code_at_start(tmp_path):
+def test_a_server_no_one_has_an_account_on_says_how_to_get_the_setup_code_but_keeps_it_out_of_its_log(tmp_path):
+    # Logs are often shipped elsewhere, and whoever enters the code first owns the server.
     import re
 
     from .serverkit import running_server
 
     with running_server(tmp_path) as server:  # it makes "root" once the server answers
         log = server.log.read_text("utf-8", "replace")
-    assert re.search(r"setup code [A-Z2-7]{4}(-[A-Z2-7]{4}){3} \(it works once\)", log), log
+    assert "no one has an account yet" in log and "phishhawk server setup-code" in log, log
+    assert not re.search(r"[A-Z2-7]{4}(-[A-Z2-7]{4}){3}", log), log
 
 
 PERSON = {"username": "sam", "password": PASSWORD, "first_name": "Sam", "last_name": "Lee", "location": "Leeds",

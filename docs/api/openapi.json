@@ -2755,7 +2755,7 @@
         "summary": "Setup State"
       },
       "post": {
-        "description": "The owner's account and organization, with the code from the server's log or `phishhawk server setup-code`.\n403 for a wrong code (and wrong codes are throttled), 404 once the server is set up.",
+        "description": "The owner's account and organization, with the code `phishhawk server setup-code` prints.\n403 for a wrong code (and wrong codes are throttled), 404 once the server is set up.",
         "operationId": "set_up_api_v1_setup_post",
         "requestBody": {
           "content": {
