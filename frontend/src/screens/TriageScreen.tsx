@@ -10,10 +10,12 @@ import { BorderTrail } from '@/components/core/border-trail';
 import { TextShimmer } from '@/components/core/text-shimmer';
 import { SlidingNumber } from '@/components/core/sliding-number';
 import { LiquidMetalButton } from '@/components/threeui/liquid-metal/LiquidMetalButton';
+import { GetTheEmail } from '@/components/phishhawk/GetTheEmail';
+import { TechnicalSwitch, useTechnicalView } from '@/components/phishhawk/TechnicalSwitch';
 import { isBatch, listAnalyses, submit } from '@/api/client';
 import { waitForSubmission } from '@/api/poll';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
-import type { AnalysisSummary } from '@/api/types';
+import type { AnalysisSummary, Session } from '@/api/types';
 import { Link, navigate } from '@/app/router';
 import { showIndicator } from '@/security/safe';
 import { formatBytes } from '@/lib/format';
@@ -103,7 +105,9 @@ function RecentAnalyses() {
   );
 }
 
-export default function TriageScreen() {
+export default function TriageScreen({ session }: { session: Session }) {
+  const view = useTechnicalView(session);
+  const simple = !view.technical;
   const [mode, setMode] = useState<'upload' | 'paste'>('upload');
   const [files, setFiles] = useState<File[]>([]);
   const [raw, setRaw] = useState('');
@@ -155,7 +159,16 @@ export default function TriageScreen() {
 
   return (
     <div className="grid grid-cols-1 gap-10">
-      <PageHeader eyebrow="Triage" title="Analyze a reported message" description="Upload one or more .eml or .msg files, an .mbox or a .zip, or paste the full message with its headers." />
+      <PageHeader
+        eyebrow={simple ? 'PhishHawk' : 'Triage'}
+        title={simple ? 'Check an email' : 'Analyze a reported message'}
+        description={
+          simple
+            ? 'Save the email from your email app and drop it here, or copy and paste it.'
+            : 'Upload one or more .eml or .msg files, an .mbox or a .zip, or paste the full message with its headers.'
+        }
+      />
+      <TechnicalSwitch view={view} />
 
       <Panel>
         {/* grid-cols-1: the column may shrink below a long file name, which is cut with … instead */}
@@ -229,8 +242,8 @@ export default function TriageScreen() {
                     <span className="grid h-12 w-12 place-items-center rounded-2xl border border-line bg-surface text-ink-dim">
                       <FileUp className="h-5 w-5" strokeWidth={1.5} />
                     </span>
-                    <span className="text-sm font-medium text-ink">Drop .eml, .msg, .mbox or .zip files, or choose them</span>
-                    <span className="text-xs text-ink-muted">Several messages are analysed as a batch</span>
+                    <span className="text-sm font-medium text-ink">{simple ? 'Drop the email file here, or choose it' : 'Drop .eml, .msg, .mbox or .zip files, or choose them'}</span>
+                    <span className="text-xs text-ink-muted">{simple ? 'Not sure how? See How do I get the email? below.' : 'Several messages are analysed as a batch'}</span>
                   </span>
                   {dragging && <BorderTrail className="bg-linear-to-l from-cyan-200 via-cyan-400 to-cyan-200" size={120} />}
                 </label>
@@ -244,7 +257,7 @@ export default function TriageScreen() {
                 onChange={(e) => setRaw(e.target.value)}
                 onFocus={() => setPasteFocus(true)}
                 onBlur={() => setPasteFocus(false)}
-                placeholder="Paste the full message, headers first."
+                placeholder={simple ? 'Paste the whole email here.' : 'Paste the full message, headers first.'}
                 spellCheck={false}
                 className="block w-full resize-y bg-transparent px-5 py-4 font-mono text-[13px] leading-relaxed text-ink placeholder:text-ink-muted focus:outline-none"
               />
@@ -294,6 +307,8 @@ export default function TriageScreen() {
           </div>
         </div>
       </Panel>
+
+      {simple && <GetTheEmail />}
 
       <RecentAnalyses />
     </div>

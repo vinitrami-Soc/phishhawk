@@ -245,7 +245,7 @@ export default function App() {
           }}
         />
       );
-    else if (route.name === 'triage' || route.name === 'login' || route.name === 'setup' || route.name === 'signup') screen = <TriageScreen />;
+    else if (route.name === 'triage' || route.name === 'login' || route.name === 'setup' || route.name === 'signup') screen = <TriageScreen session={session} />;
     else if (route.name === 'queue') screen = <QueueScreen session={session} />;
     else if (route.name === 'analysis') screen = <AnalysisScreen id={route.id} session={session} />;
     else if (route.name === 'batch') screen = <BatchScreen id={route.id} />;
