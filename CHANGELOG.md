@@ -17,6 +17,19 @@ the JSON and STIX output are the public interface.
   emails", without Campaigns, Audit and the admin pages. "Show technical
   details" brings back the full pages and the full top bar while the tab is
   open. Organization accounts are unchanged.
+- **Search engines can find a public PhishHawk.** With
+  `PHISHHAWK_INDEX_PUBLIC_PAGES=true`, the site's own address is the product
+  page for a visitor without a session, and the product, privacy and help
+  pages are sent with their own title, description, canonical address and
+  link preview, plus a schema.org `SoftwareApplication` block and a summary of
+  the product page in the HTML itself. With `PHISHHAWK_PUBLIC_URL` set,
+  `/sitemap.xml` lists them and `robots.txt` names it. The link-preview image
+  is `frontend/public/brand/og-image.png` (`tools/make_og_image.py`). Every
+  other page and answer stays out of search engines, and with the setting off
+  nothing changes.
+- **The Help page shows how to download an email as .eml** from Gmail, Outlook
+  and Apple Mail, and what to do on a phone. Its sign-in answer now mentions
+  Forgot password?, which a server that sends email offers.
 
 ### Security
 

@@ -1,6 +1,9 @@
-"""Launch checks: HTTPS behind a reverse proxy, no search engine indexing,
-compressed and cached frontend files, a login throttle that cannot grow
-without bound, and domain settings that must be domains."""
+"""Launch checks: HTTPS behind a reverse proxy, no search engine indexing
+unless the owner allows it (then only the public pages, with their own head
+tags, and a sitemap), compressed and cached frontend files, a login throttle
+that cannot grow without bound, and domain settings that must be domains."""
+
+import re
 
 import pytest
 
@@ -77,6 +80,7 @@ def frontend(services, tmp_path):
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text('<!doctype html><title>PhishHawk</title>\n'
+                                     '<meta name="description" content="Phishing triage." />\n'
                                      '<meta name="robots" content="noindex, nofollow" />\n<div id="root"></div>')
     (dist / "assets" / "index-3f9a1c.js").write_text("console.log('PhishHawk');\n" * 200)
     services.settings.frontend_dir = str(dist)
@@ -113,8 +117,8 @@ def test_until_the_owner_lets_them_in_the_public_pages_stay_out_of_search_engine
 def test_with_indexing_on_only_the_product_privacy_and_help_pages_are_indexed(frontend):
     frontend.app.state.services.settings.index_public_pages = True
     robots = frontend.get("/robots.txt").text
-    assert robots == ("User-agent: *\nAllow: /app/about$\nAllow: /app/privacy$\nAllow: /app/help$\n"
-                      "Allow: /app/assets/\nAllow: /app/brand/\nDisallow: /\n")
+    assert robots == ("User-agent: *\nAllow: /$\nAllow: /app/about$\nAllow: /app/privacy$\nAllow: /app/help$\n"
+                      "Allow: /app/assets/\nAllow: /app/brand/\nDisallow: /\n")  # no public address: no sitemap
     for path in PUBLIC_PAGES:
         page = frontend.get(path)
         assert page.status_code == 200 and page.headers["x-robots-tag"] == "all", path  # no restriction
@@ -126,6 +130,107 @@ def test_with_indexing_on_only_the_product_privacy_and_help_pages_are_indexed(fr
             assert '<meta name="robots" content="noindex, nofollow" />' in page.text, path
 
 
+PUBLIC_URL = "https://phishhawk.example.org"
+
+
+def _indexed(frontend, public_url=PUBLIC_URL):
+    settings = frontend.app.state.services.settings
+    settings.index_public_pages = True
+    settings.public_url = public_url
+    return frontend
+
+
+def test_robots_txt_names_the_sitemap_once_the_public_address_is_known(frontend):
+    robots = _indexed(frontend).get("/robots.txt").text
+    assert robots.startswith("User-agent: *\nAllow: /$\n")
+    assert robots.endswith("Disallow: /\nSitemap: https://phishhawk.example.org/sitemap.xml\n")
+
+
+def test_with_indexing_on_a_visitor_without_a_session_gets_the_product_page_at_the_home_page(frontend):
+    home = _indexed(frontend).get("/", follow_redirects=False)
+    assert home.status_code == 200 and home.headers["x-robots-tag"] == "all"
+    assert home.headers["vary"] == "Cookie" and home.headers["cache-control"] == "no-cache"
+    page = home.text
+    assert 'name="robots"' not in page and page.count('name="description"') == 1
+    assert "<title>Phishing email triage · PhishHawk</title>" in page
+    assert '<link rel="canonical" href="https://phishhawk.example.org/" />' in page
+    assert '<meta property="og:image" content="https://phishhawk.example.org/app/brand/og-image.png" />' in page
+    assert '<meta name="twitter:card" content="summary_large_image" />' in page
+    assert '<script type="application/ld+json">' in page and '"@type": "SoftwareApplication"' in page
+    assert "<h1>Every reported email, triaged and explained.</h1>" in page  # the landing page's own words
+    assert frontend.head("/").status_code == 200
+
+
+def test_with_a_session_the_home_page_still_opens_the_console(frontend):
+    _indexed(frontend).cookies.set("phishhawk_session", "anything")
+    home = frontend.get("/", follow_redirects=False)
+    assert home.status_code == 307 and home.headers["location"] == "/app/" and home.headers["vary"] == "Cookie"
+
+
+def test_each_public_page_names_its_own_address_and_the_product_page_points_at_the_home_page(frontend):
+    _indexed(frontend)
+    pages = {path: frontend.get(path).text for path in ("/", *PUBLIC_PAGES)}
+    assert '<link rel="canonical" href="https://phishhawk.example.org/" />' in pages["/app/about"]
+    assert '<link rel="canonical" href="https://phishhawk.example.org/app/help" />' in pages["/app/help"]
+    assert '<link rel="canonical" href="https://phishhawk.example.org/app/privacy" />' in pages["/app/privacy"]
+    titles = {path: re.search(r"<title>(.*?)</title>", page).group(1) for path, page in pages.items()}
+    assert titles["/app/help"] != titles["/app/privacy"] != titles["/"]
+    assert all("SoftwareApplication" not in pages[path] for path in PUBLIC_PAGES)  # the home page alone
+
+
+def test_the_sitemap_lists_the_public_pages_once_indexing_is_on_and_the_address_is_known(frontend):
+    assert frontend.get("/sitemap.xml").status_code == 404  # indexing off
+    assert _indexed(frontend, public_url="").get("/sitemap.xml").status_code == 404
+    sitemap = _indexed(frontend).get("/sitemap.xml")
+    assert sitemap.status_code == 200 and sitemap.headers["content-type"].startswith("application/xml")
+    assert sitemap.headers["cache-control"] == "public, max-age=3600"
+    assert re.findall(r"<loc>(.*?)</loc>", sitemap.text) == [PUBLIC_URL + "/", PUBLIC_URL + "/app/privacy",
+                                                             PUBLIC_URL + "/app/help"]
+
+
+def test_with_indexing_off_the_home_page_and_the_public_pages_are_as_they_were(frontend):
+    frontend.app.state.services.settings.public_url = PUBLIC_URL
+    home = frontend.get("/", follow_redirects=False)
+    assert home.status_code == 307 and home.headers["location"] == "/app/" and "vary" not in home.headers
+    for path in PUBLIC_PAGES:
+        page = frontend.get(path).text
+        assert "canonical" not in page and "og:" not in page and "<title>PhishHawk</title>" in page, path
+
+
+def test_the_head_of_each_public_page_is_short_and_escaped():
+    from phishhawk.server.frontend import HEADS, with_head
+
+    for name, head in HEADS.items():
+        assert len(head.title) <= 60 and len(head.share_title) <= 60 and len(head.description) <= 155, name
+    hostile = 'https://x.example/"><script>alert(1)</script>'
+    page = with_head('<title>PhishHawk</title>\n<div id="root"></div>', "", hostile)
+    assert "<script>alert" not in page and "&quot;&gt;&lt;script&gt;" in page and "\\u003cscript" in page
+
+
+def test_the_server_titles_are_the_ones_the_frontend_sets():
+    from pathlib import Path
+
+    from phishhawk.server.frontend import HEADS
+
+    routes = (Path(__file__).parents[2] / "frontend" / "src" / "app" / "routes.ts").read_text(encoding="utf-8")
+    titles = dict(re.findall(r"^\s+(about|privacy|help): '([^']+)',$", routes, re.M))
+    assert {name: head.title for name, head in HEADS.items()} == {
+        "": "%s · PhishHawk" % titles["about"], "about": "%s · PhishHawk" % titles["about"],
+        "privacy": "%s · PhishHawk" % titles["privacy"], "help": "%s · PhishHawk" % titles["help"]}
+
+
+def test_the_product_page_summary_says_what_the_landing_page_says():
+    # Search engines compare the HTML with the drawn page: different words would look like cloaking.
+    from pathlib import Path
+
+    from phishhawk.server.frontend import PRODUCT
+
+    landing = Path(__file__).parents[2] / "frontend" / "src" / "screens" / "LandingScreen.tsx"
+    drawn = " ".join(landing.read_text(encoding="utf-8").split())
+    for words in re.findall(r">([^<]+)<", PRODUCT.summary):
+        assert words in drawn, words
+
+
 def test_the_built_frontend_carries_the_robots_tag_the_server_takes_out():
     from pathlib import Path
 
@@ -133,6 +238,9 @@ def test_the_built_frontend_carries_the_robots_tag_the_server_takes_out():
 
     page = (Path(__file__).parents[2] / "frontend" / "index.html").read_text(encoding="utf-8")
     assert page.count(NOINDEX) == 1
+    # and the title, description and empty root the server fills in for the public pages
+    assert page.count("<title>PhishHawk</title>") == 1 and page.count('<meta name="description"') == 1
+    assert page.count('<div id="root"></div>') == 1
 
 
 def test_anyone_can_read_who_runs_this_server_once_its_operator_says(anon):

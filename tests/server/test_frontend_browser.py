@@ -166,6 +166,26 @@ def test_a_visitor_reads_who_runs_the_server_and_where_to_write_on_the_privacy_p
         assert errors == []
 
 
+def test_with_indexing_on_the_address_itself_is_the_product_page_search_engines_read(browser, tmp_path):
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve()),
+                        PHISHHAWK_INDEX_PUBLIC_PAGES="true",
+                        PHISHHAWK_PUBLIC_URL="https://phishhawk.example.org") as server:
+        page, errors = _visitor(browser)
+        page.goto(server.base + "/")
+        headline = page.get_by_role("heading", level=1, name=HEADLINE)
+        headline.wait_for()
+        assert page.url == server.base + "/"  # no redirect: this address is the one search engines list
+        sync_api.expect(headline).to_have_count(1)  # the server's summary made way for the drawn page
+        assert page.title() == "Phishing email triage · PhishHawk"  # the server's title, kept by the script
+
+        # the help page search traffic comes to: how to get an email out of each mail app
+        page.goto(server.base + "/app/help")
+        page.get_by_role("heading", name="Download an email as .eml from Gmail").wait_for()
+        for where in ("from Outlook", "from Apple Mail", "on a phone"):
+            sync_api.expect(page.get_by_role("heading", name="Download an email as .eml " + where)).to_be_visible()
+        assert errors == []  # the JSON-LD block and the head tags break no rule of the CSP
+
+
 def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_path):
     with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
         page, errors = _signed_in(browser, server)

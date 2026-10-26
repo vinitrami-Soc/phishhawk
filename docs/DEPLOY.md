@@ -159,6 +159,26 @@ docker compose -f deploy/compose.yaml exec phishhawk phishhawk server audit veri
 A rollback to an older tag does not undo database migrations: to go back past
 one, restore the backup the deploy made before it.
 
+## Search engines
+
+With `PHISHHAWK_INDEX_PUBLIC_PAGES=true` and `PHISHHAWK_PUBLIC_URL` set in
+`deploy/.env` (`setup.sh` asks for both), search engines may list the product
+page at the site's address, the privacy page and the help page; see
+[SERVER.md](SERVER.md#https-through-a-reverse-proxy). After a deploy, check:
+
+```bash
+curl -sI https://phishhawk.example.org/ | grep -i x-robots-tag   # all
+curl -s https://phishhawk.example.org/robots.txt                 # ends with the Sitemap line
+curl -s https://phishhawk.example.org/sitemap.xml                # three addresses
+```
+
+Then add the site to Google Search Console (a Domain property, verified with a
+TXT record in Cloudflare's DNS) and Bing Webmaster Tools, and submit
+`/sitemap.xml` to both. In Cloudflare, leave verified bots (Googlebot, Bingbot)
+unchallenged, and keep Rocket Loader, Email Address Obfuscation and the Web
+Analytics script turned off for this hostname: they add scripts to the page,
+and PhishHawk's content security policy blocks them.
+
 ## Day to day
 
 ```bash

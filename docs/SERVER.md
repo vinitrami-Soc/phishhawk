@@ -80,9 +80,22 @@ machine or in another container comes from. With that:
 Every answer carries `X-Robots-Tag: noindex, nofollow` and `/robots.txt`
 disallows everything, so a server reachable from the internet stays out of
 search engines. For a public PhishHawk that people should find,
-`PHISHHAWK_INDEX_PUBLIC_PAGES=true` lets them list the three pages anyone can
-read before signing in: `/app/about`, `/app/privacy` and `/app/help`.
-Everything else stays out. The frontend's files are sent compressed; its hashed files in
+`PHISHHAWK_INDEX_PUBLIC_PAGES=true` lets them list the pages anyone can read
+before signing in: the product page, `/app/privacy` and `/app/help`. Then:
+
+- the server's own address, `/`, is the product page for a visitor without a
+  session (with one, it still opens the console), and `/app/about` names `/`
+  as its address;
+- each of those pages is sent with its own title, description, canonical
+  address and link preview (`og:` and `twitter:` tags, with
+  `/app/brand/og-image.png`), and the product page also with a short summary
+  of what it says and a schema.org `SoftwareApplication` block;
+- with `PHISHHAWK_PUBLIC_URL` set, `/sitemap.xml` lists the three pages and
+  `/robots.txt` names it. Addresses are built from that setting, never from
+  the request; without it, the pages leave the addresses out.
+
+Everything else stays out: the console, every API answer, reports, `/login`,
+`/setup` and `/healthz`. The frontend's files are sent compressed; its hashed files in
 `/app/assets/` are cached for a year and its page is checked on every load.
 
 **Keep a copy of `secrets/phishhawk_encryption_key` somewhere safe.** Every
@@ -144,7 +157,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_COOKIE_SECURE` | `true` | See above. |
 | `PHISHHAWK_TRUSTED_PROXIES` | `127.0.0.1` (Compose: `127.0.0.1,172.16.0.0/12`) | Addresses or networks, comma-separated, of reverse proxies whose `X-Forwarded-*` headers count. See "HTTPS through a reverse proxy". |
 | `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
-| `PHISHHAWK_INDEX_PUBLIC_PAGES` | `false` | `true` lets search engines list the frontend's product, privacy and help pages; see "HTTPS through a reverse proxy". |
+| `PHISHHAWK_INDEX_PUBLIC_PAGES` | `false` | `true` lets search engines list the frontend's product page (at `/`), privacy and help pages, with their own head tags, and with `PHISHHAWK_PUBLIC_URL` set, a sitemap; see "HTTPS through a reverse proxy". |
 | `PHISHHAWK_OPERATOR_NAME`, `PHISHHAWK_OPERATOR_EMAIL` | empty | Who runs this server, such as `Example Security Ltd, United Kingdom`, and where people write about their data. The privacy page shows them; set both on a server open to the public. |
 | `PHISHHAWK_PUBLIC_URL` | empty | The address people open, such as `https://phishhawk.example.org`. Links in mail are built from it. |
 | `PHISHHAWK_SMTP_HOST`, `PHISHHAWK_SMTP_PORT`, `PHISHHAWK_SMTP_SECURITY`, `PHISHHAWK_SMTP_USERNAME`, `PHISHHAWK_SMTP_PASSWORD`, `PHISHHAWK_SMTP_FROM` | empty, `587`, `starttls`, empty, empty, empty | The mail server for confirming addresses and resetting passwords; see [Email and password reset](#email-and-password-reset). |
