@@ -178,6 +178,7 @@ def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_
         page.wait_for_url("**/app/analyses/*", timeout=60000)
         page.get_by_text("LIKELY PHISHING").first.wait_for(timeout=30000)
         analysis = page.url
+        sync_api.expect(page.get_by_role("switch", name="Show technical details")).to_have_count(0)
 
         page.get_by_role("tab", name="Report").click()
         report = page.frame_locator("iframe[title='Full report']").locator("body")
@@ -471,7 +472,31 @@ def test_someone_who_signs_up_alone_is_set_up_shown_around_and_analyses_a_first_
             page.fill("textarea[aria-label='Raw message']", message.read())
         page.get_by_role("button", name="Analyze").click()
         page.wait_for_url("**/app/analyses/*", timeout=60000)
-        page.get_by_text("LIKELY PHISHING").first.wait_for(timeout=30000)
+
+        # someone on their own gets the verdict in plain words and what to do, not the tabs
+        headline = page.get_by_role("heading", level=1, name="This email is very likely a scam.")
+        headline.wait_for(timeout=30000)
+        sync_api.expect(page.get_by_role("heading", name="Why we think so")).to_be_visible()
+        sync_api.expect(page.get_by_role("heading", name="What to do now")).to_be_visible()
+        sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_have_count(0)
+        simple = page.url
+
+        # the switch brings back the technical page while the tab is open; a reload starts simple again
+        page.get_by_role("switch", name="Show technical details").click()
+        sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_be_visible()
+        page.locator("main a[href='/app/analyses']").first.click()
+        page.locator("main table a[href^='/app/analyses/']").first.click()
+        sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_be_visible()
+        page.reload()
+        headline.wait_for()
+        sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_have_count(0)
+        for width in WIDTHS:
+            page.set_viewport_size({"width": width, "height": 900})
+            page.goto(simple)
+            headline.wait_for()
+            page.wait_for_timeout(400)
+            assert page.evaluate(PAST_EDGE, "body") == [], (width, "the simple analysis")
+        page.set_viewport_size({"width": 1280, "height": 900})
 
         # from now on the console opens at Triage
         page.goto(server.base + "/app/")
