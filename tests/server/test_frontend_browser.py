@@ -482,6 +482,20 @@ def test_someone_who_signs_up_alone_is_set_up_shown_around_and_analyses_a_first_
             assert page.evaluate(PAST_EDGE, "body") == [], (width, "the simple upload page")
         page.set_viewport_size({"width": 1280, "height": 900})
 
+        # and so does the top bar: the technical pages are in it only with the switch on
+        bar = page.locator(".ph-commandbar")
+        sync_api.expect(bar.get_by_role("link", name="Check an email")).to_be_visible()
+        sync_api.expect(bar.get_by_role("link", name="My emails")).to_be_visible()
+        for technical in ("Triage", "Queue", "Campaigns", "Audit"):
+            sync_api.expect(bar.get_by_role("link", name=technical, exact=True)).to_have_count(0)
+        page.get_by_role("button", name="More").click()
+        menu = page.locator(".ph-commandbar__menu")
+        sync_api.expect(menu.get_by_role("link", name="Settings")).to_be_visible()
+        for technical in ("Health", "Users", "Tokens", "Mailboxes"):
+            sync_api.expect(menu.get_by_role("link", name=technical, exact=True)).to_have_count(0)
+        page.get_by_role("button", name="More").click()
+        sync_api.expect(page.get_by_role("heading", name="Your recent checks")).to_be_visible()
+
         # the first analysis
         page.get_by_role("button", name="Paste the message").click()
         with open(sample("sample_phish.eml"), encoding="utf-8") as message:
@@ -500,12 +514,16 @@ def test_someone_who_signs_up_alone_is_set_up_shown_around_and_analyses_a_first_
         # the switch brings back the technical page while the tab is open; a reload starts simple again
         page.get_by_role("switch", name="Show technical details").click()
         sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_be_visible()
+        sync_api.expect(bar.get_by_role("link", name="Campaigns")).to_be_visible()  # the bar changes with the page
         page.locator("main a[href='/app/analyses']").first.click()
         page.locator("main table a[href^='/app/analyses/']").first.click()
         sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_be_visible()
         page.reload()
         headline.wait_for()
         sync_api.expect(page.get_by_role("tab", name="ATT&CK")).to_have_count(0)
+        sync_api.expect(bar.get_by_role("link", name="My emails")).to_be_visible()
+        page.locator("main a[href='/app/analyses']").first.click()
+        page.get_by_role("heading", level=1, name="My emails").wait_for()
         for width in WIDTHS:
             page.set_viewport_size({"width": width, "height": 900})
             page.goto(simple)

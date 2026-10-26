@@ -9,6 +9,7 @@ import type { Session } from '@/api/types';
 type WithWorkspace = Pick<Session, 'workspace'>;
 
 let chosen = false;
+const listeners = new Set<() => void>();
 
 /** Only someone on their own has the switch. */
 export function switchable(session: WithWorkspace): boolean {
@@ -26,4 +27,13 @@ export function tabChoice(): boolean {
 
 export function rememberForTab(next: boolean): void {
   chosen = next;
+  for (const listener of listeners) listener();
+}
+
+/** Calls `listener` after every new choice, so the top bar changes with the page; returns how to stop. */
+export function onTabChoice(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
