@@ -1,8 +1,10 @@
-/* Help: common questions, each one opening in place, and what PhishHawk is.
-   Readable before signing in. The answers describe what the M1 server and the
+/* Help: common questions, each one opening in place, how to get an email out
+   of a mail app, and what PhishHawk is. Readable before signing in, and the
+   page search engines may list. The answers describe what the server and the
    engine do; change them only with the code. */
 
 import { ScrollProgress } from '@/components/core/scroll-progress';
+import { MAIL_APPS, ON_A_PHONE } from '@/components/phishhawk/GetTheEmail';
 import { Question } from '@/components/phishhawk/Question';
 import { Link } from '@/app/router';
 import { VERDICT_MEANING } from '@/app/vocabulary';
@@ -66,9 +68,35 @@ export default function HelpScreen() {
         </Question>
         <Question question="I cannot sign in.">
           <p>
-            Ask your PhishHawk admin, who creates and manages the accounts; there is no reset by email. After several wrong tries, each new try has to wait a little longer.
+            If this server sends email, choose Forgot password? on the sign-in page. Otherwise ask your PhishHawk admin, who manages the accounts. After several wrong tries, each new
+            try has to wait a little longer.
           </p>
         </Question>
+      </Card>
+
+      <Card className="grid gap-6 p-6 text-sm leading-relaxed text-ink-dim sm:p-7">
+        <div className="grid gap-2">
+          <h2 className="text-lg font-semibold tracking-tight text-ink">Get the email out of your mail app</h2>
+          <p>
+            PhishHawk checks the whole email, with the hidden lines at its top that show who really sent it. Save it as an .eml file, or copy all of it, and give it to PhishHawk.
+          </p>
+        </div>
+        {MAIL_APPS.map((mail) => (
+          <section key={mail.app} className="grid gap-2">
+            <h3 className="text-[15px] font-semibold tracking-tight text-ink">Download an email as .eml from {mail.app}</h3>
+            <p className="text-[13px] text-ink-muted">{mail.where[0].toUpperCase() + mail.where.slice(1)}</p>
+            <ol className="grid list-decimal gap-1 pl-5">
+              {mail.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <p className="text-[13px] text-ink-muted">{mail.after}</p>
+          </section>
+        ))}
+        <section className="grid gap-2">
+          <h3 className="text-[15px] font-semibold tracking-tight text-ink">Download an email as .eml on a phone</h3>
+          <p>{ON_A_PHONE}</p>
+        </section>
       </Card>
 
       <Card className="grid gap-3 p-6 text-sm leading-relaxed text-ink-dim sm:p-7">

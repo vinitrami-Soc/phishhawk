@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from html import escape
 from importlib.resources import files
 from typing import Any
 
@@ -121,15 +122,34 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     async def invalid(request: Request, exc: RequestValidationError) -> Response:
         return JSONResponse({"error": "invalid", "detail": "the request is not valid"}, status_code=422)
 
+    def listed() -> str:
+        """The public address search engines are given, when the owner lets them in; "" otherwise."""
+        settings = services.settings
+        return settings.public_url.rstrip("/") if settings.index_public_pages and settings.frontend_dir else ""
+
     @app.get("/robots.txt", include_in_schema=False)
     def robots() -> PlainTextResponse:
-        """Nothing, unless the owner lets search engines list the frontend's public pages and the files those
-        pages need."""
+        """Nothing, unless the owner lets search engines list the frontend's public pages (the server's own
+        address among them) and the files those pages need."""
         allowed = ""
         if services.settings.index_public_pages and services.settings.frontend_dir:
-            allowed = "".join("Allow: /app/%s$\n" % page for page in PUBLIC_PAGES)
+            allowed = "Allow: /$\n" + "".join("Allow: /app/%s$\n" % page for page in PUBLIC_PAGES)
             allowed += "Allow: /app/assets/\nAllow: /app/brand/\n"
-        return PlainTextResponse("User-agent: *\n" + allowed + "Disallow: /\n")
+        sitemap = "Sitemap: %s/sitemap.xml\n" % listed() if listed() else ""
+        return PlainTextResponse("User-agent: *\n" + allowed + "Disallow: /\n" + sitemap)
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    def sitemap() -> Response:
+        """The public pages, once search engines may list them and the public address is known. The product
+        page is listed at the server's own address, where /app/about points."""
+        base = listed()
+        if not base:
+            raise HTTPException(404)
+        urls = "".join("  <url><loc>%s</loc></url>\n" % escape(base + path)
+                       for path in ("/", "/app/privacy", "/app/help"))
+        body = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n%s</urlset>\n' % urls)
+        return Response(body, media_type="application/xml", headers={"Cache-Control": "public, max-age=3600"})
 
     @app.get("/healthz")
     def healthz() -> dict[str, Any]:
@@ -143,12 +163,23 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
 
     from .routes import accounts, api, feedback, pages
 
+    frontend = None
     if services.settings.frontend_dir:
-        @app.get("/", include_in_schema=False)
-        def open_frontend() -> RedirectResponse:
+        frontend = Frontend(services.settings.frontend_dir, indexed=lambda: services.settings.index_public_pages,
+                            public_url=lambda: services.settings.public_url)
+
+        @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+        def open_frontend(request: Request) -> Response:
             """With a frontend of its own, the server's address opens it; the built-in pages stay at /login,
-            /queue and the rest, as the backup and admin interface."""
-            return RedirectResponse("/app/", status_code=307)
+            /queue and the rest, as the backup and admin interface. When search engines may list the public
+            pages, a visitor without a session gets the product page here, so the address itself is listed."""
+            if not services.settings.index_public_pages:
+                return RedirectResponse("/app/", status_code=307)
+            assert frontend is not None
+            response: Response = (RedirectResponse("/app/", status_code=307) if COOKIE in request.cookies
+                                  else frontend.public_page(""))
+            response.headers["Vary"] = "Cookie"
+            return response
 
     app.include_router(api.router)
     app.include_router(accounts.router)
@@ -157,8 +188,7 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
     # files only: they hold no secret, so compressing them cannot leak one (BREACH); API answers stay as they are
     static = StaticFiles(directory=str(files("phishhawk.server") / "static"))
     app.mount("/static", GZipMiddleware(static, minimum_size=1024), name="static")
-    if services.settings.frontend_dir:
-        frontend = Frontend(services.settings.frontend_dir, indexed=lambda: services.settings.index_public_pages)
+    if frontend is not None:
         app.mount("/app", GZipMiddleware(frontend, minimum_size=1024), name="frontend")
     # outermost: the scheme and the client's address come from a trusted reverse proxy's X-Forwarded-* headers
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=services.settings.trusted_proxies)
