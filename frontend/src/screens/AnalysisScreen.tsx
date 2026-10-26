@@ -18,6 +18,8 @@ import { TextShimmer } from '@/components/core/text-shimmer';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/core/dialog';
 import { FileDownloads } from '@/components/phishhawk/FileDownloads';
 import { ReportFrame } from '@/components/phishhawk/ReportFrame';
+import { SimpleAnalysis } from '@/components/phishhawk/SimpleAnalysis';
+import { TechnicalSwitch, useTechnicalView } from '@/components/phishhawk/TechnicalSwitch';
 import { deleteMessage, getAnalysis, holdMessage, reanalyze, releaseMessage } from '@/api/client';
 import { waitForSubmission } from '@/api/poll';
 import { ApiError, NETWORK_MESSAGE, isAbort } from '@/api/errors';
@@ -431,6 +433,7 @@ function Attack({ report }: { report: Report }) {
 
 export default function AnalysisScreen({ id, session }: { id: number; session: Session }) {
   const toast = useToast();
+  const view = useTechnicalView(session);
   const reduceMotion = useReducedMotion();
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loadError, setLoadError] = useState<ApiError | null>(null);
@@ -582,6 +585,41 @@ export default function AnalysisScreen({ id, session }: { id: number; session: S
     ...(can.downloads ? [{ label: 'Downloads', icon: <Download className="h-full w-full" strokeWidth={1.5} />, run: () => openTab('Files') }] : []),
   ];
 
+  const deleteNowDialog = (
+    <ConfirmDialog
+      open={confirm === 'tier1'}
+      onOpenChange={(open) => !open && setConfirm(null)}
+      title="Delete this message now?"
+      body="This removes the message and its reports. The verdict and this record are kept."
+      confirmLabel="Delete now"
+      danger
+      busy={busy}
+      error={confirm === 'tier1' ? actionError : null}
+      onConfirm={() => run(() => deleteMessage(analysis.message_id, 'tier1'), 'Message deleted. The verdict and record are kept.')}
+    />
+  );
+
+  if (!view.technical) {
+    return (
+      <div className="grid grid-cols-1 gap-8 pb-20 lg:pb-24">
+        <Link href="/app/analyses" className="inline-flex min-h-8 w-max items-center gap-2 text-sm text-ink-muted hover:text-ink">
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> Queue
+        </Link>
+        <TechnicalSwitch view={view} />
+        <SimpleAnalysis analysis={analysis} />
+        <VerdictQuestion analysisId={analysis.id} session={session} />
+        {can.deleteNow && (
+          <div>
+            <Button size="sm" variant="danger" onClick={() => setConfirm('tier1')} disabled={busy}>
+              Delete this message
+            </Button>
+          </div>
+        )}
+        {deleteNowDialog}
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 gap-8 pb-20 lg:pb-24">
       <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 overflow-hidden print:hidden">
@@ -591,6 +629,8 @@ export default function AnalysisScreen({ id, session }: { id: number; session: S
       <Link href="/app/analyses" className="inline-flex min-h-8 w-max items-center gap-2 text-sm text-ink-muted hover:text-ink">
         <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> Queue
       </Link>
+
+      <TechnicalSwitch view={view} />
 
       {/* verdict hero */}
       <div className="relative">
@@ -809,17 +849,7 @@ export default function AnalysisScreen({ id, session }: { id: number; session: S
         </DialogContent>
       </Dialog>
 
-      <ConfirmDialog
-        open={confirm === 'tier1'}
-        onOpenChange={(open) => !open && setConfirm(null)}
-        title="Delete this message now?"
-        body="This removes the message and its reports. The verdict and this record are kept."
-        confirmLabel="Delete now"
-        danger
-        busy={busy}
-        error={confirm === 'tier1' ? actionError : null}
-        onConfirm={() => run(() => deleteMessage(analysis.message_id, 'tier1'), 'Message deleted. The verdict and record are kept.')}
-      />
+      {deleteNowDialog}
       <ConfirmDialog
         open={confirm === 'all'}
         onOpenChange={(open) => !open && setConfirm(null)}
