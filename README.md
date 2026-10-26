@@ -21,6 +21,7 @@
 </p>
 
 <p align="center">
+  <a href="https://phishhawk.vinitrami.co.in"><b>Try it live</b></a> ·
   <a href="#installation">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="docs/USAGE.md">Usage guide</a> ·
@@ -255,7 +256,7 @@ A public server, with Postgres, a Cloudflare Tunnel, backups and deploys from Gi
 
 ```console
 $ phishhawk doctor
-PhishHawk 3.0.0 doctor
+PhishHawk 3.1.0 doctor
 
   OK    Python             3.12.4
   OK    requests           2.32.3
