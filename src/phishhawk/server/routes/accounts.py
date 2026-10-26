@@ -72,7 +72,7 @@ def setup_user(request: Request, db: DB, data: dict[str, Any]) -> User:
 
 @router.post("/setup", status_code=201)
 def set_up(request: Request, db: DB, body: Setup) -> Response:
-    """The owner's account and organization, with the code from the server's log or `phishhawk server setup-code`.
+    """The owner's account and organization, with the code `phishhawk server setup-code` prints.
     403 for a wrong code (and wrong codes are throttled), 404 once the server is set up."""
     return signed_in(request, db, setup_user(request, db, body.model_dump()))
 

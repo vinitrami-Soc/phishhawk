@@ -7,6 +7,14 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Security
+
+- The server no longer writes the one-time setup code to its log. Logs are
+  often copied to other systems, and whoever enters the code first owns the
+  server. At start, a server no one has an account on now says to run
+  `phishhawk server setup-code`, which prints the code on the operator's own
+  terminal. Docker installs already used that command.
+
 ## [3.0.0] - 2026-10-25
 
 PhishHawk is now a web app as well as a command line: the same engine behind

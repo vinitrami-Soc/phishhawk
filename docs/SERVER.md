@@ -100,7 +100,8 @@ pip install "phishhawk[server]"
 export PHISHHAWK_DATA_DIR=/var/lib/phishhawk
 export PHISHHAWK_SECRET_KEY="$(openssl rand -base64 32)"
 export PHISHHAWK_ENCRYPTION_KEY="$(openssl rand -base64 32)"   # keep a copy
-phishhawk server run      # prints the setup code: open /setup and enter it
+phishhawk server run      # then, in another terminal: phishhawk server setup-code
+                          # and enter the code it prints at /setup
 ```
 
 `run` brings the database up to date, then starts the web app and one worker.
@@ -205,8 +206,10 @@ organization", and works as before. Its first admin becomes the owner.
 ## Setup and sign-up
 
 **Setup.** While no one has an account, the server makes a one-time setup
-code. `run` prints it to the log at start, and `phishhawk server setup-code`
-prints it again. At `/setup` the owner enters it and makes
+code, and `phishhawk server setup-code` prints it. `run` only says the server
+is waiting to be set up: the code stays out of the log, because logs are often
+copied elsewhere and whoever enters the code first owns the server. At
+`/setup` the owner enters it and makes
 their account: username, password, first and last name, location,
 organization and job title, and whether people may create accounts. That
 makes the owner the admin of their organization. The code then stops working

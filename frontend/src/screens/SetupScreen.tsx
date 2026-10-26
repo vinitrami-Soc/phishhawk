@@ -1,5 +1,5 @@
-/* Setting the server up: the first account, made with the one-time code the
-   server prints to its log (and `phishhawk server setup-code` prints again).
+/* Setting the server up: the first account, made with the one-time code that
+   `phishhawk server setup-code` prints (the server keeps it out of its log).
    That person owns the server and is the admin of their organization. Once
    anyone has an account, the page says so and leads to sign in. */
 
@@ -54,8 +54,8 @@ export default function SetupScreen({ onEntered }: { onEntered: (session: Sessio
       title="Set up PhishHawk"
       intro={
         <>
-          No one has an account on this server yet. Enter the setup code from the server&apos;s log (or run{' '}
-          <code className="rounded bg-sunken px-1.5 py-0.5 text-[13px]">phishhawk server setup-code</code>), then make your account. You will own this server.
+          No one has an account on this server yet. Run{' '}
+          <code className="rounded bg-sunken px-1.5 py-0.5 text-[13px]">phishhawk server setup-code</code> on the server, enter the code it prints, then make your account. You will own this server.
         </>
       }
     >
