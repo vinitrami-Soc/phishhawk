@@ -33,7 +33,8 @@ it; one message from paste to report and files; a batch of two from upload to it
 combined reports, its campaign and the queue's filters; a mailbox added on
 the Mailboxes screen, polled from a test IMAP server, its reports in the queue;
 an organization that signs up, invites a second person and sees them join;
-someone who signs up alone, goes through the setup and analyses a first message;
+someone who signs up alone, goes through the setup, gets the simple pages and the
+switch back to the technical ones, and analyses a first message;
 and an answer on a verdict, found by the Queue's Disputed filter, with feedback
 sent from the footer and read on the owner's Feedback page.
 
@@ -73,6 +74,16 @@ More > Feedback (`/app/feedback`) lists what you sent. The owner sees
 everyone's there and marks it done; admins also see their workspace's answers
 on verdicts, and the owner downloads every workspace's disputed verdicts as
 CSV.
+
+The simple view: someone on their own sees two pages in plain words. Triage
+becomes "Check an email", with a guide to getting the email out of Gmail,
+Outlook or Apple Mail (`GetTheEmail`), and an analysis shows the verdict, up to
+three reasons and what to do now (`SimpleAnalysis`); the words are in
+`src/app/plain.ts`. "Show technical details" (`TechnicalSwitch`) brings back
+the technical pages while the tab is open: browser storage is kept for the
+theme, so a reload starts simple again (`src/app/technical.ts`). An
+organization always sees the technical pages, with no switch. Design:
+`docs/superpowers/specs/2026-10-26-simple-view-design.md`.
 
 To bring in a change made in Google AI Studio, export the project as a ZIP and
 replace `frontend/` with it, keeping `public/brand/report-*.webp`, then run the

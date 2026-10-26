@@ -7,6 +7,15 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- **A simple view for someone checking their own mail.** An individual
+  account's analysis page shows the verdict in plain words, up to three
+  reasons and what to do now, including what to do after clicking a link or
+  sharing card details. Its upload page explains how to get the email out of
+  Gmail, Outlook or Apple Mail. "Show technical details" brings back the full
+  pages while the tab is open. Organization accounts are unchanged.
+
 ### Security
 
 - The server no longer writes the one-time setup code to its log. Logs are
