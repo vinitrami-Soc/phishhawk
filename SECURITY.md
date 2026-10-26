@@ -7,11 +7,12 @@ matter. Thank you for reporting them responsibly.
 
 | Version | Supported |
 |---|---|
-| 3.0.x | Yes |
-| 2.2.x | Upgrade: 3.0.0 stops an IMAP server that understates a message's size from making `phishhawk imap` read past the limit (#67 in [the security review](docs/SECURITY-REVIEW.md)) |
-| 2.1.x | No: upgrade to 3.0.0. 2.2.0 stops `graph` and `gmail` paging for ever when an API keeps offering empty pages, and `scan --json` crashing on a file name that is not UTF-8 (#53 and #57 in [the security review](docs/SECURITY-REVIEW.md)) |
-| 2.0.x | No: upgrade to 3.0.0. 2.1.0 fixed two crashes and a hang on hostile mail that 2.0 has (#32, #34 and #52 in [the security review](docs/SECURITY-REVIEW.md)) |
-| 1.x | No: upgrade to 3.0.0. 2.0.0 fixed the issues in [the security review](docs/SECURITY-REVIEW.md) |
+| 3.1.x | Yes |
+| 3.0.x | Upgrade: 3.1.0 keeps the one-time setup code out of the server's log, where anyone who reads the log could claim a server no one has set up yet |
+| 2.2.x | Upgrade to 3.1.0. 3.0.0 stopped an IMAP server that understates a message's size from making `phishhawk imap` read past the limit (#67 in [the security review](docs/SECURITY-REVIEW.md)) |
+| 2.1.x | No: upgrade to 3.1.0. 2.2.0 stops `graph` and `gmail` paging for ever when an API keeps offering empty pages, and `scan --json` crashing on a file name that is not UTF-8 (#53 and #57 in [the security review](docs/SECURITY-REVIEW.md)) |
+| 2.0.x | No: upgrade to 3.1.0. 2.1.0 fixed two crashes and a hang on hostile mail that 2.0 has (#32, #34 and #52 in [the security review](docs/SECURITY-REVIEW.md)) |
+| 1.x | No: upgrade to 3.1.0. 2.0.0 fixed the issues in [the security review](docs/SECURITY-REVIEW.md) |
 | Earlier prototypes (`phishtriage`, the single-file extractor) | No |
 
 ## Reporting a vulnerability

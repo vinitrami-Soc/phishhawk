@@ -1,7 +1,7 @@
 #!/bin/sh
 # Brings this server to a version of PhishHawk (docs/DEPLOY.md): a backup, the code at REF (a branch, a tag or a
 # commit; main when none is given), a new build, then the health check and the audit log's verification. The
-# GitHub "Deploy" workflow runs it over SSH; it can be run here by hand too: sh deploy/update.sh v3.0.0
+# GitHub "Deploy" workflow runs it over SSH; it can be run here by hand too: sh deploy/update.sh v3.1.0
 set -eu
 cd "$(dirname "$0")/.."
 ref=${1:-main}

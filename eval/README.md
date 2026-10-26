@@ -284,8 +284,8 @@ not for unsolicited offers, so this number is expected to stay low.
   The SpamAssassin ham (below) is the benchmark now.
 * **`hard_ham` is legitimate mail chosen because it looks like spam**:
   commercial newsletters, offers, mailing-list digests. It is the hardest
-  legitimate mail there is for a phishing detector, and about one in six is
-  still flagged.
+  legitimate mail there is for a phishing detector, and 13.6% of it (17 of 125)
+  is still flagged.
 * **Nazario's phishing is from 2005 to 2007**: bank and PayPal credential
   phishing with no modern authentication headers and plenty of plain-text
   lures that name no brand. It shows how the detections carry over to an older

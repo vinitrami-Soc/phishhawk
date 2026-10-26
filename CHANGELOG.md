@@ -7,6 +7,16 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-26
+
+PhishHawk now speaks plainly to someone checking their own mail: an
+individual account sees the verdict in plain words, why, and what to do, with
+a guide to getting the email out of Gmail, Outlook or Apple Mail, and a switch
+back to the full technical pages. A public server can let search engines find
+its product, privacy and help pages, each with its own title, description and
+link preview, and a sitemap. The setup code no longer goes to the server's
+log. The command line, its options and its exit codes are unchanged.
+
 ### Added
 
 - **A simple view for someone checking their own mail.** An individual
@@ -933,7 +943,8 @@ repository: a single-file IOC extractor (20 September 2026) and the
 `phishtriage` package (versioned 2.0.0, 23 September 2026). Version numbering
 restarted at 1.0.0 with the new name.
 
-[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v3.1.0
 [3.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v3.0.0
 [2.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.2.0
 [2.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.1.0
