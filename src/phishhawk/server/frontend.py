@@ -25,7 +25,9 @@ from starlette.types import Scope
 IMMUTABLE = "public, max-age=31536000, immutable"
 NOINDEX = '<meta name="robots" content="noindex, nofollow" />'  # in frontend/index.html
 PUBLIC_PAGES = ("about", "privacy", "help")  # readable before signing in (frontend/src/app/routes.ts)
-REPOSITORY = "https://github.com/vinitrami-Soc/phishhawk"
+# What those pages ask the API before anyone signs in (frontend/src/api/client.ts). A search engine draws a
+# page with the answers, so robots.txt lets it ask: refused, it would read "PhishHawk is not answering".
+PUBLIC_READS = ("session", "setup", "signup", "password-reset", "operator")
 SHARE_IMAGE = "/app/brand/og-image.png"  # 1200 x 630, made by tools/make_og_image.py
 
 
@@ -74,14 +76,11 @@ TITLE = re.compile(r"<title>.*?</title>", re.S)
 DESCRIPTION = re.compile(r'<meta name="description"[^>]*>\s*')
 
 
-def _software(description: str, url: str) -> str:
-    """What the product is, for search engines (schema.org), as a data block: it never runs, so the CSP allows it.
-    No rating or review: PhishHawk has none to show."""
-    data = {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "PhishHawk",
-            "description": description, **({"url": url} if url else {}),
-            "applicationCategory": "SecurityApplication", "operatingSystem": "Web, Linux, macOS, Windows",
-            "offers": {"@type": "Offer", "price": "0", "priceCurrency": "GBP"},
-            "license": "https://opensource.org/licenses/MIT", "sameAs": [REPOSITORY]}
+def _website(url: str) -> str:
+    """The site's name for search results (schema.org WebSite, on the home page), as a data block: it never
+    runs, so the CSP allows it. Not SoftwareApplication: Google reports that as an invalid item without a
+    rating or review, and PhishHawk has none to show."""
+    data = {"@context": "https://schema.org", "@type": "WebSite", "name": "PhishHawk", "url": url}
     text = json.dumps(data, ensure_ascii=False)
     # nothing in it can close the script element
     return text.replace("&", "\\u0026").replace("<", "\\u003c").replace(">", "\\u003e")
@@ -111,8 +110,8 @@ def with_head(page: str, name: str, public_url: str) -> str:
                  '<meta name="twitter:card" content="summary_large_image" />']
     else:
         tags.append('<meta name="twitter:card" content="summary" />')
-    if name == "":
-        tags.append('<script type="application/ld+json">%s</script>' % _software(head.description, url))
+    if name == "" and url:
+        tags.append('<script type="application/ld+json">%s</script>' % _website(url))
     page = DESCRIPTION.sub("", page, count=1)
     page = TITLE.sub(lambda _: "<title>%s</title>\n%s" % (attr(head.title), "\n".join(tags)), page, count=1)
     if head.summary:

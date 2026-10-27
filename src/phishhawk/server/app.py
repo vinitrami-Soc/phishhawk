@@ -27,7 +27,7 @@ from .config import ServerSettings, load_settings
 from .crypto import Box
 from .db import make_engine, make_sessionmaker, transaction
 from .deps import COOKIE
-from .frontend import PUBLIC_PAGES, Frontend
+from .frontend import PUBLIC_PAGES, PUBLIC_READS, Frontend
 from .models import Job
 from .processing import Services
 from .security import APP_CSP, BASE_HEADERS, HSTS
@@ -127,18 +127,22 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
         settings = services.settings
         return settings.public_url.rstrip("/") if settings.index_public_pages and settings.frontend_dir else ""
 
-    @app.get("/robots.txt", include_in_schema=False)
+    @app.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
     def robots() -> PlainTextResponse:
         """Nothing, unless the owner lets search engines list the frontend's public pages (the server's own
-        address among them) and the files those pages need."""
+        address among them) and the files and answers those pages need."""
         allowed = ""
         if services.settings.index_public_pages and services.settings.frontend_dir:
             allowed = "Allow: /$\n" + "".join("Allow: /app/%s$\n" % page for page in PUBLIC_PAGES)
             allowed += "Allow: /app/assets/\nAllow: /app/brand/\n"
-        sitemap = "Sitemap: %s/sitemap.xml\n" % listed() if listed() else ""
+            allowed += "".join("Allow: /api/v1/%s$\n" % read for read in PUBLIC_READS)
+        sitemap = ""
+        if listed():  # search engines obey robots.txt when they fetch the sitemap as well
+            allowed += "Allow: /sitemap.xml$\n"
+            sitemap = "Sitemap: %s/sitemap.xml\n" % listed()
         return PlainTextResponse("User-agent: *\n" + allowed + "Disallow: /\n" + sitemap)
 
-    @app.get("/sitemap.xml", include_in_schema=False)
+    @app.api_route("/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
     def sitemap() -> Response:
         """The public pages, once search engines may list them and the public address is known. The product
         page is listed at the server's own address, where /app/about points."""
@@ -160,6 +164,9 @@ def create_app(settings: ServerSettings | None = None, services: Services | None
         disk = shutil.disk_usage(services.settings.data_dir)
         return {"status": "ok", "version": __version__, "queue": queued,
                 "last_heartbeat": beat.isoformat() if beat else None, "disk_free_mb": disk.free // (1024 * 1024)}
+
+    # uptime monitors often ask with HEAD; one operation in the API document is enough
+    app.add_api_route("/healthz", healthz, methods=["HEAD"], include_in_schema=False)
 
     from .routes import accounts, api, feedback, pages
 

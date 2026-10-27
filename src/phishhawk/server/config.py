@@ -6,8 +6,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SECRETS_DIR = "/run/secrets"
@@ -47,6 +48,20 @@ class ServerSettings(BaseSettings):
     smtp_username: str = ""
     smtp_password: SecretStr = SecretStr("")
     smtp_from: str = ""  # PhishHawk <no-reply@example.org>
+
+    @field_validator("public_url")
+    @classmethod
+    def _site_address(cls, value: str) -> str:
+        """The site's address and nothing more: links in mail, the sitemap and each public page's address are
+        built from it, so a wrong one stops the server at start instead of breaking them all."""
+        value = value.strip().rstrip("/")
+        if value:
+            parts = urlsplit(value)
+            if (parts.scheme not in ("https", "http") or not parts.hostname or parts.path or parts.query
+                    or parts.fragment or "@" in parts.netloc or any(c.isspace() for c in value)
+                    or parts.port == 0):  # reading the port refuses one that is not a number
+                raise ValueError("the site's address, such as https://phishhawk.example.org")
+        return value
 
     @property
     def db_url(self) -> str:

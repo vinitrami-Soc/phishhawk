@@ -118,7 +118,10 @@ def test_with_indexing_on_only_the_product_privacy_and_help_pages_are_indexed(fr
     frontend.app.state.services.settings.index_public_pages = True
     robots = frontend.get("/robots.txt").text
     assert robots == ("User-agent: *\nAllow: /$\nAllow: /app/about$\nAllow: /app/privacy$\nAllow: /app/help$\n"
-                      "Allow: /app/assets/\nAllow: /app/brand/\nDisallow: /\n")  # no public address: no sitemap
+                      "Allow: /app/assets/\nAllow: /app/brand/\n"
+                      "Allow: /api/v1/session$\nAllow: /api/v1/setup$\nAllow: /api/v1/signup$\n"
+                      "Allow: /api/v1/password-reset$\nAllow: /api/v1/operator$\n"
+                      "Disallow: /\n")  # no public address: no sitemap
     for path in PUBLIC_PAGES:
         page = frontend.get(path)
         assert page.status_code == 200 and page.headers["x-robots-tag"] == "all", path  # no restriction
@@ -146,6 +149,38 @@ def test_robots_txt_names_the_sitemap_once_the_public_address_is_known(frontend)
     assert robots.endswith("Disallow: /\nSitemap: https://phishhawk.example.org/sitemap.xml\n")
 
 
+def test_robots_txt_lets_search_engines_fetch_the_sitemap_it_names(frontend):
+    # Google obeys robots.txt when it fetches a sitemap too: behind Disallow: / alone, Search Console says
+    # "Couldn't fetch"
+    robots = _indexed(frontend).get("/robots.txt").text
+    assert robots == ("User-agent: *\nAllow: /$\nAllow: /app/about$\nAllow: /app/privacy$\nAllow: /app/help$\n"
+                      "Allow: /app/assets/\nAllow: /app/brand/\n"
+                      "Allow: /api/v1/session$\nAllow: /api/v1/setup$\nAllow: /api/v1/signup$\n"
+                      "Allow: /api/v1/password-reset$\nAllow: /api/v1/operator$\nAllow: /sitemap.xml$\n"
+                      "Disallow: /\nSitemap: https://phishhawk.example.org/sitemap.xml\n")
+
+
+def test_robots_txt_lets_search_engines_ask_what_the_public_pages_ask_before_sign_in(frontend):
+    # Google draws a page with its script, and fetches nothing robots.txt refuses: refused these, the public
+    # pages show "PhishHawk is not answering" (the browser test checks the drawn pages)
+    from phishhawk.server.frontend import PUBLIC_READS
+
+    robots = _indexed(frontend).get("/robots.txt").text
+    assert PUBLIC_READS == ("session", "setup", "signup", "password-reset", "operator")
+    for read in PUBLIC_READS:
+        assert "Allow: /api/v1/%s$\n" % read in robots, read
+    assert "Allow: /api/v1/\n" not in robots  # each one exactly, nothing more of the API
+
+
+def test_robots_txt_the_sitemap_and_the_health_check_answer_head_as_well(frontend):
+    # uptime monitors and some crawlers ask with HEAD first: the same answer, without the body
+    client = _indexed(frontend)
+    for path in ("/robots.txt", "/sitemap.xml", "/healthz"):
+        whole, head = client.get(path), client.head(path)
+        assert head.status_code == whole.status_code == 200, path
+        assert head.headers["content-type"] == whole.headers["content-type"] and head.content == b"", path
+
+
 def test_with_indexing_on_a_visitor_without_a_session_gets_the_product_page_at_the_home_page(frontend):
     home = _indexed(frontend).get("/", follow_redirects=False)
     assert home.status_code == 200 and home.headers["x-robots-tag"] == "all"
@@ -156,7 +191,11 @@ def test_with_indexing_on_a_visitor_without_a_session_gets_the_product_page_at_t
     assert '<link rel="canonical" href="https://phishhawk.example.org/" />' in page
     assert '<meta property="og:image" content="https://phishhawk.example.org/app/brand/og-image.png" />' in page
     assert '<meta name="twitter:card" content="summary_large_image" />' in page
-    assert '<script type="application/ld+json">' in page and '"@type": "SoftwareApplication"' in page
+    # the site's name for search results (schema.org WebSite). Not SoftwareApplication: Search Console reports
+    # that as an invalid item without a rating or review, and PhishHawk has none to show
+    assert ('<script type="application/ld+json">{"@context": "https://schema.org", "@type": "WebSite", '
+            '"name": "PhishHawk", "url": "https://phishhawk.example.org/"}</script>') in page
+    assert "SoftwareApplication" not in page and "aggregateRating" not in page
     assert "<h1>Every reported email, triaged and explained.</h1>" in page  # the landing page's own words
     assert frontend.head("/").status_code == 200
 
@@ -175,7 +214,7 @@ def test_each_public_page_names_its_own_address_and_the_product_page_points_at_t
     assert '<link rel="canonical" href="https://phishhawk.example.org/app/privacy" />' in pages["/app/privacy"]
     titles = {path: re.search(r"<title>(.*?)</title>", page).group(1) for path, page in pages.items()}
     assert titles["/app/help"] != titles["/app/privacy"] != titles["/"]
-    assert all("SoftwareApplication" not in pages[path] for path in PUBLIC_PAGES)  # the home page alone
+    assert all("ld+json" not in pages[path] for path in PUBLIC_PAGES)  # the home page alone
 
 
 def test_the_sitemap_lists_the_public_pages_once_indexing_is_on_and_the_address_is_known(frontend):
@@ -195,6 +234,14 @@ def test_with_indexing_off_the_home_page_and_the_public_pages_are_as_they_were(f
     for path in PUBLIC_PAGES:
         page = frontend.get(path).text
         assert "canonical" not in page and "og:" not in page and "<title>PhishHawk</title>" in page, path
+
+
+def test_without_the_public_address_the_home_page_names_no_site():
+    # WebSite needs the home page's address: without one, no block at all rather than one Google calls invalid
+    from phishhawk.server.frontend import with_head
+
+    page = with_head('<title>PhishHawk</title>\n<div id="root"></div>', "", "")
+    assert "ld+json" not in page and "<title>Phishing email triage · PhishHawk</title>" in page
 
 
 def test_the_head_of_each_public_page_is_short_and_escaped():

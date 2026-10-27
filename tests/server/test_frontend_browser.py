@@ -12,9 +12,13 @@ PHISHHAWK_FRONTEND_BUILD names the build (CI's frontend job makes it);
 PHISHHAWK_CHROMIUM may name the browser's executable."""
 
 import os
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
+import requests
 
 from .serverkit import PASSWORD, running_server, smtp_sink
 from conftest import build_eml, sample
@@ -184,6 +188,104 @@ def test_with_indexing_on_the_address_itself_is_the_product_page_search_engines_
         for where in ("from Outlook", "from Apple Mail", "on a phone"):
             sync_api.expect(page.get_by_role("heading", name="Download an email as .eml " + where)).to_be_visible()
         assert errors == []  # the JSON-LD block and the head tags break no rule of the CSP
+
+
+PUBLIC_URL = "https://phishhawk.example.org"
+GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+SITEMAP = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+
+
+def _robots_allow(robots, path):
+    """Whether robots.txt lets a crawler fetch `path`, read the way Google reads it (RFC 9309): the longest
+    matching rule wins and Allow wins a tie; * matches anything, and a final $ the end of the path."""
+    best = (0, True)  # no rule matches: allowed
+    for line in robots.splitlines():
+        field, _, value = line.partition(":")
+        field, value = field.strip().lower(), value.strip()
+        if field in ("allow", "disallow") and value:
+            pattern = re.escape(value.rstrip("$")).replace(r"\*", ".*") + ("$" if value.endswith("$") else "")
+            if re.match(pattern, path):
+                best = max(best, (len(value), field == "allow"))
+    return best[1]
+
+
+def test_robots_allow_reads_rules_the_way_google_does():
+    # the same answers as protego, the parser Scrapy uses to read robots.txt as Google does
+    robots = ("User-agent: *\nAllow: /$\nAllow: /app/help$\nAllow: /app/assets/\nDisallow: /\n"
+              "Disallow: /app/assets/*.map\n")
+    assert _robots_allow(robots, "/") and _robots_allow(robots, "/app/help")
+    assert _robots_allow(robots, "/app/assets/index.js") and not _robots_allow(robots, "/app/assets/index.js.map")
+    assert not _robots_allow(robots, "/app/help/") and not _robots_allow(robots, "/app/")
+    assert not _robots_allow(robots, "/sitemap.xml")
+    assert _robots_allow("User-agent: *\nDisallow: /\nAllow: /\n", "/anything")  # a tie goes to Allow
+    assert _robots_allow("User-agent: *\n", "/anything")
+
+
+def test_a_search_engine_fetches_and_draws_every_page_the_sitemap_lists(browser, tmp_path):
+    """What Googlebot does, against the real build: robots.txt, the sitemap it names, each page the sitemap
+    lists and every file that page and its styles load, all allowed and all there, with HEAD as well as GET;
+    then each page drawn by its script while every request robots.txt refuses is refused, as Google draws
+    it. Search Console's "Couldn't fetch" and a page indexed as an error page both start here."""
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve()),
+                        PHISHHAWK_INDEX_PUBLIC_PAGES="true", PHISHHAWK_PUBLIC_URL=PUBLIC_URL) as server:
+        bot = requests.Session()
+        bot.headers["User-Agent"] = GOOGLEBOT
+        robots = bot.get(server.base + "/robots.txt").text
+
+        def fetch(path):
+            assert _robots_allow(robots, path), "robots.txt keeps search engines from " + path
+            for method in ("HEAD", "GET"):
+                answer = bot.request(method, server.base + path, allow_redirects=False)
+                assert answer.status_code == 200, (method, path, answer.status_code)
+            return answer
+
+        named = re.findall(r"^sitemap:\s*(\S+)$", robots, re.I | re.M)
+        assert named == [PUBLIC_URL + "/sitemap.xml"]
+        sitemap = fetch("/sitemap.xml")
+        assert sitemap.headers["content-type"] == "application/xml"
+        locs = [loc.text for loc in ET.fromstring(sitemap.content).iter(SITEMAP + "loc")]
+        assert locs == [PUBLIC_URL + "/", PUBLIC_URL + "/app/privacy", PUBLIC_URL + "/app/help"]
+
+        for loc in locs:
+            page = fetch(loc[len(PUBLIC_URL):])
+            assert page.headers["content-type"].startswith("text/html") and page.headers["x-robots-tag"] == "all"
+            assert "noindex" not in page.text and '<link rel="canonical" href="%s" />' % loc in page.text
+            loaded = re.findall(r'(?:src|href|content)="(?:%s)?(/[^"]*)"' % re.escape(PUBLIC_URL), page.text)
+            assert "/app/brand/og-image.png" in loaded and any(path.endswith(".css") for path in loaded)
+            for path in loaded:
+                answer = fetch(path)
+                if path.endswith(".css"):  # the fonts and pictures the styles load
+                    for inner in re.findall(r"url\((/[^)]+)\)", answer.text):
+                        fetch(inner)
+            assert fetch("/app/brand/og-image.png").headers["content-type"] == "image/png"
+
+        for private in ("/app/", "/app/queue", "/app/analyses/1", "/login", "/api/v1/analyses",
+                        "/api/v1/password-reset/a-token", "/api/v1/sessions"):
+            assert not _robots_allow(robots, private), private
+
+        # drawn as Google draws them: every request robots.txt refuses is refused
+        refused = []
+
+        def as_robots_say(route):
+            parts = urlsplit(route.request.url)
+            path = parts.path + ("?" + parts.query if parts.query else "")
+            if route.request.url.startswith(server.base) and not _robots_allow(robots, path):
+                refused.append(path)
+                return route.abort()
+            return route.continue_()
+
+        context = browser.new_context(user_agent=GOOGLEBOT, viewport={"width": 1280, "height": 900})
+        context.route("**/*", as_robots_say)
+        page, errors = context.new_page(), []
+        page.on("pageerror", lambda exc: errors.append(str(exc)))
+        headings = {"/": HEADLINE, "/app/about": HEADLINE, "/app/privacy": "Privacy and terms",
+                    "/app/help": "Help"}
+        for path, heading in headings.items():
+            page.goto(server.base + path, wait_until="networkidle")
+            page.get_by_role("heading", level=1, name=heading, exact=True).wait_for()
+            sync_api.expect(page.get_by_text("PhishHawk is not answering.")).to_have_count(0)
+        context.close()
+        assert refused == [] and errors == []
 
 
 def test_an_analyst_works_a_message_in_the_frontend_at_every_width(browser, tmp_path):

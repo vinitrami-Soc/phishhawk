@@ -50,3 +50,22 @@ def test_a_postgres_url_uses_the_psycopg_driver(secrets_dir, monkeypatch):
                   "postgresql+psycopg://phishhawk@db:5432/phishhawk"):
         monkeypatch.setenv("PHISHHAWK_DATABASE_URL", given)
         assert config.load_settings().db_url == "postgresql+psycopg://phishhawk@db:5432/phishhawk", given
+
+
+def test_the_public_url_is_the_sites_address_and_nothing_more(secrets_dir, monkeypatch):
+    # links in mail, the sitemap and each public page's address are built from it: a wrong one breaks them all,
+    # so the server says so when it starts instead
+    monkeypatch.setenv("PHISHHAWK_SECRET_KEY", "s")
+    monkeypatch.setenv("PHISHHAWK_ENCRYPTION_KEY", "e")
+    for given, kept in (("https://phishhawk.example.org", "https://phishhawk.example.org"),
+                        (" https://phishhawk.example.org/ ", "https://phishhawk.example.org"),
+                        ("http://localhost:8000", "http://localhost:8000"), ("", "")):
+        monkeypatch.setenv("PHISHHAWK_PUBLIC_URL", given)
+        assert config.load_settings().public_url == kept, given
+    for bad in ("phishhawk.example.org", "https://", "ftp://phishhawk.example.org", "https://example.org/phishhawk",
+                "https://user@phishhawk.example.org", "https://phishhawk.example.org/?q=1",
+                "https://phishhawk.example.org/#top", "https://phishhawk example.org", "https://phishhawk.example.org:443x"):
+        monkeypatch.setenv("PHISHHAWK_PUBLIC_URL", bad)
+        with pytest.raises(ValidationError) as caught:
+            config.load_settings()
+        assert [error["loc"][0] for error in caught.value.errors()] == ["public_url"], bad
