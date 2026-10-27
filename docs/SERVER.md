@@ -89,13 +89,19 @@ before signing in: the product page, `/app/privacy` and `/app/help`. Then:
 - each of those pages is sent with its own title, description, canonical
   address and link preview (`og:` and `twitter:` tags, with
   `/app/brand/og-image.png`), and the product page also with a short summary
-  of what it says and a schema.org `SoftwareApplication` block;
-- with `PHISHHAWK_PUBLIC_URL` set, `/sitemap.xml` lists the three pages and
-  `/robots.txt` names it. Addresses are built from that setting, never from
-  the request; without it, the pages leave the addresses out.
+  of what it says and a schema.org `WebSite` block with the site's name;
+- `/robots.txt` lets search engines fetch those pages, the files they load
+  and the five answers they read before anyone signs in (who is signed in,
+  whether setup, sign-up and password reset are open, and who runs the
+  server), so a search engine that draws a page sees what a visitor sees;
+- with `PHISHHAWK_PUBLIC_URL` set, `/sitemap.xml` lists the three pages, and
+  `/robots.txt` names it and lets search engines fetch it. Addresses are
+  built from that setting, never from the request; without it, the pages
+  leave the addresses out.
 
-Everything else stays out: the console, every API answer, reports, `/login`,
-`/setup` and `/healthz`. The frontend's files are sent compressed; its hashed files in
+Everything else stays out: the console, every other API answer, reports,
+`/login`, `/setup` and `/healthz`; the five answers above still carry
+`noindex`. The frontend's files are sent compressed; its hashed files in
 `/app/assets/` are cached for a year and its page is checked on every load.
 
 **Keep a copy of `secrets/phishhawk_encryption_key` somewhere safe.** Every
@@ -159,7 +165,7 @@ in lower case (Docker secrets). A variable wins over a file.
 | `PHISHHAWK_FRONTEND_DIR` | empty (the image: its built-in `frontend/`) | A frontend build, served at `/app/`, which the server's address then opens; see [FRONTEND.md](FRONTEND.md). |
 | `PHISHHAWK_INDEX_PUBLIC_PAGES` | `false` | `true` lets search engines list the frontend's product page (at `/`), privacy and help pages, with their own head tags, and with `PHISHHAWK_PUBLIC_URL` set, a sitemap; see "HTTPS through a reverse proxy". |
 | `PHISHHAWK_OPERATOR_NAME`, `PHISHHAWK_OPERATOR_EMAIL` | empty | Who runs this server, such as `Example Security Ltd, United Kingdom`, and where people write about their data. The privacy page shows them; set both on a server open to the public. |
-| `PHISHHAWK_PUBLIC_URL` | empty | The address people open, such as `https://phishhawk.example.org`. Links in mail are built from it. |
+| `PHISHHAWK_PUBLIC_URL` | empty | The address people open, such as `https://phishhawk.example.org`, and nothing more: the server does not start with a path, a login or a missing `https://`. Links in mail, the sitemap and the public pages' addresses are built from it. |
 | `PHISHHAWK_SMTP_HOST`, `PHISHHAWK_SMTP_PORT`, `PHISHHAWK_SMTP_SECURITY`, `PHISHHAWK_SMTP_USERNAME`, `PHISHHAWK_SMTP_PASSWORD`, `PHISHHAWK_SMTP_FROM` | empty, `587`, `starttls`, empty, empty, empty | The mail server for confirming addresses and resetting passwords; see [Email and password reset](#email-and-password-reset). |
 
 An admin can change the retention period and the campaign window of their
