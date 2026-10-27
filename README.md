@@ -5,7 +5,7 @@
 <h1 align="center">PhishHawk</h1>
 
 <p align="center">
-  <b>Phishing email triage tool for SOC analysts.</b><br>
+  <b>Phishing email triage for SOC teams and anyone checking their own mail: web app and CLI.</b><br>
   Give it a reported email. It pulls out every indicator, checks the ones that matter,<br>
   maps what it finds to MITRE ATT&amp;CK and tells the analyst what to do next.
 </p>
