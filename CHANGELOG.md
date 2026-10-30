@@ -7,6 +7,26 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- `PHISHHAWK_OPERATOR_HOSTING` says where a server runs, such as "a cloud
+  server in London, behind Cloudflare", and the privacy page shows it, so the
+  people who use a PhishHawk someone else runs know where their mail goes.
+  `deploy/setup.sh` asks for it.
+
+### Fixed
+
+- The product, sign-in, help and privacy pages no longer say more than is
+  true. They said mail is analysed "on a server your organisation runs" and
+  "not in someone else's cloud", which is not so for anyone using a PhishHawk
+  someone else runs; that there is no sign-up and no password reset by email,
+  though both exist; that everyone who can sign in sees every analysis, though
+  each workspace sees only its own; and that every action is audited, though
+  reading an analysis is not. The privacy page now also says that email for
+  address confirmation and password reset goes out through the operator's mail
+  provider, that a network in front of the server, such as Cloudflare, may set
+  cookies of its own, and its terms fit someone checking their own mail.
+
 ## [3.1.0] - 2026-10-26
 
 PhishHawk now speaks plainly to someone checking their own mail: an

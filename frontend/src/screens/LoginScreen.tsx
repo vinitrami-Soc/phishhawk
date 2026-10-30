@@ -20,9 +20,9 @@ import { usePicturesLoaded } from '@/hooks/usePicturesLoaded';
 import { useGettingIn } from '@/hooks/useGettingIn';
 
 const FACTS = [
-  { icon: Server, title: 'Runs on your server', text: 'Messages are analysed on the machine you run PhishHawk on.' },
-  { icon: FileCheck2, title: 'Reported mail stays with you', text: 'With Offline analysis, no indicator is sent to an outside service.' },
-  { icon: ScrollText, title: 'Every action is audited', text: 'Sign-ins, downloads and deletions are written to the audit log.' },
+  { icon: Server, title: 'Analysed on this server', text: 'Messages are analysed on the server that runs this PhishHawk. Reputation providers only ever see indicators.' },
+  { icon: FileCheck2, title: 'Offline when you need it', text: 'With Offline analysis, no indicator is sent to an outside service.' },
+  { icon: ScrollText, title: 'Sign-ins and downloads audited', text: 'Sign-ins, downloads and deletions are written to the audit log.' },
 ];
 
 function Showcase() {
@@ -136,7 +136,7 @@ export default function LoginScreen({ onSignIn, expired = false }: { onSignIn: (
               <img src={asset('brand/phishhawk-mark.svg')} alt="" className="h-14 w-14" />
               <TextRoll className="text-2xl font-semibold tracking-[-0.018em] text-ink">PhishHawk</TextRoll>
             </Link>
-            <p className="relative mt-5 text-[15px] text-ink-dim">Phishing triage for your security team, on your own server.</p>
+            <p className="relative mt-5 text-[15px] text-ink-dim">Phishing triage for your security team, built to run on your own server.</p>
 
             {expired && (
               <p className="relative mt-5 rounded-2xl border border-v-suspicious/30 bg-v-suspicious/10 px-4 py-3 text-sm text-ink" role="status">

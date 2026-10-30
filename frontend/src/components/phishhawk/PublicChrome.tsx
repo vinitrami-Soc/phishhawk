@@ -185,7 +185,7 @@ export function PublicFooter({ signedIn = false, onLanding = false }: { signedIn
             <img src={asset('brand/phishhawk-mark.svg')} alt="" className="h-11 w-11 rounded-xl" />
             <div>
               <p className="text-base font-semibold tracking-[-0.01em] text-ink">PhishHawk</p>
-              <p className="text-[13px] text-ink-muted">Phishing triage, on a server your organisation runs.</p>
+              <p className="text-[13px] text-ink-muted">Open-source phishing triage you can run yourself.</p>
             </div>
           </div>
           <EnterLink signedIn={signedIn} />
@@ -215,8 +215,8 @@ export function PublicFooter({ signedIn = false, onLanding = false }: { signedIn
         </div>
 
         <div className="mt-12 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-line pt-6 text-[13px] text-ink-muted">
-          <p>Run by your organisation, on your own server.</p>
-          <p>Offline by default · Every action audited · Open source, MIT licence</p>
+          <p>Built to run on your own server.</p>
+          <p>Offline by default · Tamper-evident audit log · Open source, MIT licence</p>
         </div>
       </div>
     </footer>

@@ -2391,7 +2391,7 @@
     },
     "/api/v1/operator": {
       "get": {
-        "description": "Who runs this server and where to write about one's data, for the privacy page; empty until its operator\nsets them (PHISHHAWK_OPERATOR_NAME and PHISHHAWK_OPERATOR_EMAIL).",
+        "description": "Who runs this server, where to write about one's data and where it runs, for the privacy page; empty until\nits operator sets them (PHISHHAWK_OPERATOR_NAME, PHISHHAWK_OPERATOR_EMAIL and PHISHHAWK_OPERATOR_HOSTING).",
         "operationId": "operator_api_v1_operator_get",
         "responses": {
           "200": {

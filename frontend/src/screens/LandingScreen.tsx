@@ -295,7 +295,7 @@ function Hero({ signedIn }: { signedIn: boolean }) {
               <span className="relative inline-flex h-2 w-2 rounded-full bg-ok" />
             </span>
             <TextShimmer as="span" duration={2.4} className="text-[12px] font-medium [--base-color:var(--text-dim)] [--base-gradient-color:var(--text)]">
-              Phishing email triage, on your own server
+              Open-source phishing email triage
             </TextShimmer>
           </motion.span>
 
@@ -327,7 +327,7 @@ function Hero({ signedIn }: { signedIn: boolean }) {
             className="mt-6 max-w-[54ch] text-base leading-relaxed text-ink-dim sm:text-[17px]"
           >
             An analyst drops in a reported email. PhishHawk reads its headers, links, attachments and QR codes, and gives back a verdict with the evidence behind it, a full report
-            and files for your other tools. All of it on a server your organisation runs.
+            and files for your other tools. Open source, so all of it can run on your own server.
           </motion.p>
 
           <motion.div
@@ -353,7 +353,7 @@ function Hero({ signedIn }: { signedIn: boolean }) {
             transition={{ duration: 0.8, delay: 0.9 }}
             className="mt-9 flex flex-wrap gap-x-6 gap-y-3 text-[13px] text-ink-dim"
           >
-            {['Runs on your server', 'Offline by default', 'Every action audited'].map((fact) => (
+            {['Self-hostable', 'Offline by default', 'Tamper-evident audit log'].map((fact) => (
               <li key={fact} className="flex items-center gap-2">
                 <CircleCheck className="h-4 w-4 text-ok" strokeWidth={1.75} aria-hidden="true" />
                 {fact}
@@ -1105,14 +1105,14 @@ function Ways({ signedIn }: { signedIn: boolean }) {
 /* ---- built for sensitive mail ---- */
 
 const TRUST = [
-  { icon: Server, title: 'Runs on your server', text: 'Messages are analysed on the machine your organisation runs PhishHawk on, not in someone else’s cloud.' },
+  { icon: Server, title: 'Runs where you choose', text: 'Self-host it, and messages are analysed on a server you control. On a PhishHawk someone else runs, they are analysed on that server: Privacy says whose, and where.' },
   { icon: WifiOff, title: 'Offline by default', text: 'A new installation sends nothing anywhere. With providers on, only indicators are looked up, never the message, and Offline analysis turns them off for one message.' },
   { icon: Lock, title: 'Encrypted at rest', text: 'Each message, its report and its export files are stored encrypted, and so are mailbox credentials and provider keys.' },
   { icon: Hourglass, title: 'Kept only as long as needed', text: 'Messages are deleted after 30 days unless your admin changes it. Hold keeps one longer; Delete now removes it at once.' },
   { icon: ScrollText, title: 'An audit log you can check', text: 'Sign-ins, downloads, deletions and setting changes are recorded, each chained to the one before, so a changed or missing record is detected.' },
   { icon: ShieldCheck, title: 'Defanged and sandboxed', text: 'Links are shown as hxxp and [.] so they cannot be opened by mistake, and the HTML report opens in a sandbox.' },
   { icon: Users, title: 'Two roles, clear limits', text: 'Analysts submit and read analyses. Admins also manage users, tokens, mailboxes and settings. Only the submitter and admins can download the original message.' },
-  { icon: Cookie, title: 'One cookie, no tracking', text: 'A single sign-in cookie that scripts cannot read. No analytics, no advertising, nothing loaded from other sites.' },
+  { icon: Cookie, title: 'One cookie, no tracking', text: 'PhishHawk sets a single sign-in cookie that scripts cannot read. No analytics, no advertising, nothing loaded from other sites.' },
 ];
 
 function Trust() {
@@ -1121,7 +1121,7 @@ function Trust() {
       <div className="ph-glow-bg pointer-events-none absolute inset-0 opacity-80" aria-hidden="true" />
       <div className={cn(WRAP, 'relative py-24 sm:py-28')}>
         <SectionHead center eyebrow="Built for sensitive mail" title="Reported email holds personal data and live attacks." titleId="trust-title">
-          PhishHawk is built to keep both contained: on your server, encrypted, recorded, and deleted on schedule.
+          PhishHawk is built to keep both contained: on the server that runs it, encrypted, recorded, and deleted on schedule.
         </SectionHead>
         <ul className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {TRUST.map(({ icon, title, text }, i) => (
@@ -1172,7 +1172,7 @@ function Faq() {
           <Card className="ph-edge ph-glow overflow-hidden">
             <Question question="What is PhishHawk?">
               <p>
-                A phishing triage tool your organisation runs on its own server. An analyst gives it a reported email; it reads the headers, links, attachments and QR codes, and
+                An open-source phishing triage tool, built to run on your organisation&apos;s own server. An analyst gives it a reported email; it reads the headers, links, attachments and QR codes, and
                 gives back a verdict, the findings behind it, a full HTML report and export files. It is open-source software under the MIT licence.
               </p>
             </Question>
@@ -1182,9 +1182,13 @@ function Faq() {
                 the message with them, such as links, domains and IP addresses. It never sends them the message itself.
               </p>
               <p>To send nothing for one message, turn on Offline analysis when you submit it. Each analysis records which providers were asked.</p>
+              <p>If you use a PhishHawk someone else runs, the email you submit goes to their server: Privacy says who runs it and where.</p>
             </Question>
             <Question question="How do I get an account?">
-              <p>Ask your PhishHawk admin, who creates accounts on the Users page. There is no sign-up and no password reset by email.</p>
+              <p>
+                If this server is open for sign-up, choose Create account. Otherwise, ask your PhishHawk admin, who adds people on the Users page or sends them an invitation. If
+                this server sends email, Forgot password? on the sign-in form resets a lost password.
+              </p>
             </Question>
             <Question question="Which files can I submit?">
               <p>
@@ -1206,7 +1210,8 @@ function Faq() {
             </Question>
             <Question question="Who can see what?">
               <p>
-                Everyone who can sign in sees every analysis and can download its reports. The original message can be downloaded by the analyst who submitted it and by admins.
+                Everyone in your workspace sees its analyses and can download their reports; no one sees another workspace&apos;s. The original message can be downloaded by the analyst who
+                submitted it and by admins.
                 Analysts see their own entries in the audit log; admins see all of it, and also Health, Settings, Users, API tokens and Mailboxes.
               </p>
             </Question>
@@ -1256,7 +1261,7 @@ function FinalCall({ signedIn }: { signedIn: boolean }) {
               <p className="max-w-[52ch] text-[15px] leading-relaxed text-ink-dim">
                 {signedIn
                   ? 'Your console is one click away.'
-                  : 'Sign in with the account your PhishHawk admin gave you. No account yet? Ask your admin to add you on the Users page.'}
+                  : 'Sign in, or create an account if this server is open for sign-up. No account yet? Ask your PhishHawk admin.'}
               </p>
               <EnterButton signedIn={signedIn} />
             </div>
