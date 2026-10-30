@@ -102,7 +102,7 @@ export default function HelpScreen() {
       <Card className="grid gap-3 p-6 text-sm leading-relaxed text-ink-dim sm:p-7">
         <h2 className="text-lg font-semibold tracking-tight text-ink">About PhishHawk</h2>
         <p>
-          PhishHawk analyses reported phishing email on a server your organisation runs: it reads the message, checks its headers, links, attachments and QR codes, and gives a verdict with
+          PhishHawk analyses reported phishing email on the server that runs it: it reads the message, checks its headers, links, attachments and QR codes, and gives a verdict with
           the evidence, a full HTML report and exports for other tools. It is open-source software under the MIT licence.
         </p>
       </Card>

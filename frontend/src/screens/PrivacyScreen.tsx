@@ -41,7 +41,7 @@ export default function PrivacyScreen() {
         title="Privacy and terms"
         description={
           <>
-            What PhishHawk keeps, what leaves this server, and the one cookie it sets. Last updated <time dateTime="2026-10-24">24 October 2026</time>.
+            What PhishHawk keeps, what leaves this server, and the one cookie it sets. Last updated <time dateTime="2026-10-30">30 October 2026</time>.
           </>
         }
       />
@@ -60,6 +60,11 @@ export default function PrivacyScreen() {
                 .
               </>
             )}
+          </p>
+        )}
+        {operator?.hosting && (
+          <p>
+            It runs on <B>{operator.hosting}</B>. What you submit goes there, and is analysed and stored there, encrypted.
           </p>
         )}
         <p>
@@ -119,6 +124,10 @@ export default function PrivacyScreen() {
         <p>
           To send nothing for one message, turn on Offline analysis when you submit it. Each analysis records which providers were asked.
         </p>
+        <p>
+          If this server sends email, to confirm an address or reset a password, that email goes out through the mail provider its operator chose, with your address, your username
+          and a one-time link.
+        </p>
       </Section>
 
       <Section title="Deleting your account">
@@ -138,14 +147,20 @@ export default function PrivacyScreen() {
           PhishHawk sets one cookie when you sign in, only to keep you signed in. Scripts cannot read it, it goes only to this server, and it is removed when you sign out.
         </p>
         <p>
-          If you use the light and dark switch, your choice is kept in this browser&apos;s storage. Nothing else is stored on your device. There are no analytics, advertising or tracking
-          cookies, and the app loads nothing from other sites.
+          If you use the light and dark switch, your choice is kept in this browser&apos;s storage. PhishHawk stores nothing else on your device. It has no analytics, advertising or
+          tracking cookies, and loads nothing from other sites.
+        </p>
+        <p>
+          A network in front of this server, such as Cloudflare, may set cookies of its own, to tell people from automated traffic. Who runs this PhishHawk, above, says where it runs.
         </p>
       </Section>
 
       <Section title="Terms of use">
         <ul className="grid list-disc gap-2.5 pl-5 marker:text-ink-muted">
-          <li>PhishHawk is for your organisation&apos;s security work. Submit only messages you are allowed to handle under your organisation&apos;s policies.</li>
+          <li>
+            Submit only messages you are allowed to share: mail you received yourself, or mail your organisation lets you handle. On a PhishHawk someone else runs, do not submit
+            confidential work email.
+          </li>
           <li>Treat reports, indicators and exports as confidential: they can hold personal data from the reported message.</li>
           <li>A verdict comes from automated checks and can be wrong. Check the evidence before you act on it.</li>
           <li>PhishHawk is open-source software under the MIT licence and comes without warranty.</li>

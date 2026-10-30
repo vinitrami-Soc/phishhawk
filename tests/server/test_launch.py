@@ -290,12 +290,15 @@ def test_the_built_frontend_carries_the_robots_tag_the_server_takes_out():
     assert page.count('<div id="root"></div>') == 1
 
 
-def test_anyone_can_read_who_runs_this_server_once_its_operator_says(anon):
-    assert anon.get("/api/v1/operator").json() == {"name": "", "email": ""}
+def test_anyone_can_read_who_runs_this_server_and_where_once_its_operator_says(anon):
+    # someone using a PhishHawk they did not set up sends their mail to someone else's server: the privacy page
+    # says whose, and where it runs
+    assert anon.get("/api/v1/operator").json() == {"name": "", "email": "", "hosting": ""}
     settings = anon.app.state.services.settings
     settings.operator_name, settings.operator_email = "Example Security Ltd, United Kingdom", "privacy@example.org"
+    settings.operator_hosting = hosting = "a cloud server in London, reached through Cloudflare"
     assert anon.get("/api/v1/operator").json() == {"name": "Example Security Ltd, United Kingdom",
-                                                    "email": "privacy@example.org"}
+                                                    "email": "privacy@example.org", "hosting": hosting}
 
 
 def test_the_login_throttle_forgets_the_oldest_names_beyond_its_limit():

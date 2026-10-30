@@ -1,8 +1,8 @@
 #!/bin/sh
 # First setup of PhishHawk on this server (docs/DEPLOY.md). Makes the two keys and the database password, asks for
-# the site's address, the Cloudflare Tunnel token, who runs it and the mail settings, and writes deploy/secrets/ and
-# deploy/.env. Run it again to change an answer: an empty answer keeps the one already given, and keys already made
-# are never replaced (a new encryption key would leave every stored file unreadable).
+# the site's address, the Cloudflare Tunnel token, who runs it and where, and the mail settings, and writes
+# deploy/secrets/ and deploy/.env. Run it again to change an answer: an empty answer keeps the one already given, and
+# keys already made are never replaced (a new encryption key would leave every stored file unreadable).
 set -eu
 cd "$(dirname "$0")"
 umask 077
@@ -41,6 +41,7 @@ public_url=$(ask PHISHHAWK_PUBLIC_URL "  Its address, such as https://phishhawk.
 ask_secret cloudflare_tunnel_token "  The Cloudflare Tunnel token (docs/DEPLOY.md, step 2)"
 operator_name=$(ask PHISHHAWK_OPERATOR_NAME "  Who runs it, for the privacy page, such as Example Security Ltd, United Kingdom")
 operator_email=$(ask PHISHHAWK_OPERATOR_EMAIL "  Where people write about their data, such as privacy@example.org")
+operator_hosting=$(ask PHISHHAWK_OPERATOR_HOSTING "  Where it runs, for the privacy page, such as a server in London, behind Cloudflare")
 indexed=$(ask PHISHHAWK_INDEX_PUBLIC_PAGES "  Let search engines list its product, privacy and help pages? (true or false)")
 echo "Mail, for password reset links (leave empty for none; docs/SERVER.md, \"Email and password reset\")" >&2
 smtp_host=$(ask PHISHHAWK_SMTP_HOST "  SMTP server, such as smtp-relay.brevo.com")
@@ -54,6 +55,7 @@ ask_secret phishhawk_smtp_password "  SMTP password or key"
   echo "PHISHHAWK_PUBLIC_URL=$public_url"
   echo "PHISHHAWK_OPERATOR_NAME=$operator_name"
   echo "PHISHHAWK_OPERATOR_EMAIL=$operator_email"
+  echo "PHISHHAWK_OPERATOR_HOSTING=$operator_hosting"
   echo "PHISHHAWK_INDEX_PUBLIC_PAGES=${indexed:-false}"
   echo "PHISHHAWK_SMTP_HOST=$smtp_host"
   echo "PHISHHAWK_SMTP_PORT=${smtp_port:-587}"

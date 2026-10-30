@@ -324,10 +324,10 @@ class NewPassword(BaseModel):
 
 @router.get("/operator")
 def operator(request: Request) -> dict[str, Any]:
-    """Who runs this server and where to write about one's data, for the privacy page; empty until its operator
-    sets them (PHISHHAWK_OPERATOR_NAME and PHISHHAWK_OPERATOR_EMAIL)."""
+    """Who runs this server, where to write about one's data and where it runs, for the privacy page; empty until
+    its operator sets them (PHISHHAWK_OPERATOR_NAME, PHISHHAWK_OPERATOR_EMAIL and PHISHHAWK_OPERATOR_HOSTING)."""
     settings = services(request).settings
-    return {"name": settings.operator_name, "email": settings.operator_email}
+    return {"name": settings.operator_name, "email": settings.operator_email, "hosting": settings.operator_hosting}
 
 
 @router.get("/password-reset")

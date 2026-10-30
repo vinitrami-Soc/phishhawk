@@ -48,11 +48,11 @@ PRODUCT = Head(
     description="Check if an email is phishing in seconds. Free, open-source triage for people checking their own "
                 "mail and SOC teams: a verdict, evidence and next steps.",
     path="/",
-    summary="<main><p>Phishing email triage, on your own server</p>"
+    summary="<main><p>Open-source phishing email triage</p>"
             "<h1>Every reported email, triaged and explained.</h1>"
             "<p>An analyst drops in a reported email. PhishHawk reads its headers, links, attachments and QR "
             "codes, and gives back a verdict with the evidence behind it, a full report and files for your other "
-            "tools. All of it on a server your organisation runs.</p></main>",
+            "tools. Open source, so all of it can run on your own server.</p></main>",
 )
 HEADS = {
     "": PRODUCT,  # the server's own address, for a visitor without a session
