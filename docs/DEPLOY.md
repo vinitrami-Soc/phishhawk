@@ -54,6 +54,11 @@ Add a **public hostname**: subdomain `phishhawk`, your domain, service type
 certificate. Then, under the domain's **SSL/TLS → Edge Certificates**, turn on
 **Always Use HTTPS**.
 
+Keep that DNS record **Proxied** (the orange cloud), also when you change
+other records in bulk. Set to DNS only, the name points at an address that
+answers nothing: the tunnel stays healthy, yet every visitor and uptime check
+gets a connection timeout.
+
 The tunnel passes each visitor's address in `X-Forwarded-For`, and
 `compose.yaml` trusts it from the project's own network only, so the login and
 reset throttles slow down each visitor, not the tunnel.
@@ -178,6 +183,13 @@ TXT record in Cloudflare's DNS) and Bing Webmaster Tools, and submit
 unchallenged, and keep Rocket Loader, Email Address Obfuscation and the Web
 Analytics script turned off for this hostname: they add scripts to the page,
 and PhishHawk's content security policy blocks them.
+
+To keep AI training crawlers out, open **Security → Settings → Configure AI bot
+policies**, keep **Search** on Allow and set **Training** to **Disallow**, not
+Block. Since 15 September 2026, Block (and Block on pages with ads) also stops
+crawlers that index for search and training alike, Googlebot, Bingbot and
+Applebot among them: Search Console then reports the sitemap as a 403 and
+Cloudflare's security events name the rule "Block AI training crawlers".
 
 ## Day to day
 
