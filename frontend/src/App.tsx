@@ -199,7 +199,8 @@ export default function App() {
       <>
         <PublicHeader signedIn={Boolean(session)} onLanding />
         <main id="main" tabIndex={-1} className="relative w-full focus:outline-none">
-          <Suspense fallback={<div className="mx-auto max-w-[1120px] px-4 pt-10 md:px-8"><PageFallback /></div>}>
+          {/* a screen tall while the page loads, so the footer is not seen and then pushed away (layout shift) */}
+          <Suspense fallback={<div className="mx-auto min-h-dvh max-w-[1120px] px-4 pt-10 md:px-8"><PageFallback /></div>}>
             <LandingScreen signedIn={Boolean(session)} />
           </Suspense>
         </main>
@@ -213,7 +214,9 @@ export default function App() {
       <>
         <PublicHeader />
         <main id="main" tabIndex={-1} className="relative mx-auto w-full max-w-[1280px] px-4 pt-10 focus:outline-none md:px-8">
-          <Suspense fallback={<PageFallback />}>{route.name === 'privacy' ? <PrivacyScreen /> : <HelpScreen />}</Suspense>
+          <Suspense fallback={<div className="min-h-dvh"><PageFallback /></div>}>
+            {route.name === 'privacy' ? <PrivacyScreen /> : <HelpScreen />}
+          </Suspense>
         </main>
         <PublicFooter />
         <BackToTop />

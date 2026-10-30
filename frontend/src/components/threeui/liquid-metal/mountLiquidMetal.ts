@@ -9,7 +9,9 @@
    - body.hot / body.press became classes on the component's root element;
    - every listener, observer, frame and GL object is released by dispose();
    - no window.__ tuning hooks, and no innerHTML fallback (the caller shows a
-     CSS fallback when this returns null). */
+     CSS fallback when this returns null);
+   - WebGL drawn by the processor (SwiftShader, llvmpipe) is refused: there
+     every frame blocks the page, so the caller shows the CSS fallback. */
 
 import {
   DEFAULT_C,
@@ -45,6 +47,11 @@ export function mountLiquidMetal(
     powerPreference: 'high-performance',
   });
   if (!gl) return null;
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  if (info && /swiftshader|llvmpipe|software/i.test(String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)))) {
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return null;
+  }
 
   const P: Record<string, number> = { ...DEFAULT_P };
   const PKEYS = Object.keys(P);

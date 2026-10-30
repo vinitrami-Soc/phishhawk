@@ -202,6 +202,49 @@ def test_with_indexing_on_the_address_itself_is_the_product_page_search_engines_
         assert errors == []  # the JSON-LD block and the head tags break no rule of the CSP
 
 
+# adds up every layout shift the visitor did not cause, as Google's Cumulative Layout Shift does
+SHIFTS = """window.__shift = 0;
+new PerformanceObserver(list => {
+  for (const e of list.getEntries()) if (!e.hadRecentInput) window.__shift += e.value;
+}).observe({type: 'layout-shift', buffered: true});"""
+
+
+def test_the_pages_search_engines_list_do_not_jump_while_they_load(browser, tmp_path):
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve()),
+                        PHISHHAWK_INDEX_PUBLIC_PAGES="true",
+                        PHISHHAWK_PUBLIC_URL="https://phishhawk.example.org") as server:
+        for path, heading in (("/", HEADLINE), ("/app/privacy", "Privacy and terms"),
+                              ("/app/help", "Help")):
+            page, errors = _visitor(browser)
+            page.add_init_script(SHIFTS)
+            page.goto(server.base + path)
+            page.get_by_role("heading", level=1, name=heading, exact=True).wait_for()
+            page.wait_for_timeout(2000)  # the pictures and the reveals settle
+            assert page.evaluate("window.__shift") < 0.1, path  # Google's line for a page that holds still
+            assert errors == []
+            page.close()
+
+
+RENDERER = """() => { const gl = document.createElement('canvas').getContext('webgl2');
+  const info = gl && gl.getExtension('WEBGL_debug_renderer_info');
+  return info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : ''; }"""
+
+
+def test_without_a_gpu_the_sign_in_button_is_drawn_still(browser, tmp_path):
+    # WebGL drawn by the processor (SwiftShader) made every frame of the liquid-metal effect a long task:
+    # PageSpeed measured 11 to 27 seconds of blocking time on the product page
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve())) as server:
+        page, errors = _visitor(browser)
+        page.goto(server.base + "/app/")
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        if not re.search("swiftshader|llvmpipe|software", page.evaluate(RENDERER), re.I):
+            pytest.skip("this browser draws WebGL on a GPU")
+        page.wait_for_timeout(1000)  # the effect starts once the button is on screen
+        sync_api.expect(page.locator(".lm-fx")).to_have_count(0)  # no canvas, no WebGL context
+        assert page.locator(".lm").first.get_attribute("data-render") == "static"
+        assert errors == []
+
+
 PUBLIC_URL = "https://phishhawk.example.org"
 GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 SITEMAP = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
