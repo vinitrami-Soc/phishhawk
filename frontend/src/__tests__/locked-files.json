@@ -60,7 +60,7 @@
   "src/components/threeui/command-bar/topDockController.js": "a707ea45bd495e7283848afddcd074773c55898981c78c3b9ee4590a2bf36be4",
   "src/components/threeui/liquid-metal/LiquidMetalButton.tsx": "413306d3e0f0d83dc8eabde6e9739e879b4944169e25e00b58a0da8de7a1fcfd",
   "src/components/threeui/liquid-metal/liquid-metal.css": "967bda44c9b3a36cc8ef712d5f592eae0b1218d5e7d85e67527745ae5759fef8",
-  "src/components/threeui/liquid-metal/mountLiquidMetal.ts": "4c59e73b4da1fb4c382939d005def7864b4cb2d29990f6178190ea7741f6f156",
+  "src/components/threeui/liquid-metal/mountLiquidMetal.ts": "d499a95aadd9fec7fee2083015266d8d3c5eb9f31c6287cd2c3bffa10d994bf3",
   "src/components/threeui/liquid-metal/shaders.ts": "40838d1de38ae813eb15fe64aaf35a88993fc60420c767bd3c0305f3ed8c5ac4",
   "src/components/ui/toast.tsx": "100cf5d0847fbb585df3d18acf5784fa5838daad4f49e416262303909f346408",
   "src/components/ui/ui.tsx": "ba4f4ccb222c38fb8c8ac82df4bf9bad1f822a1a4524c0dbaf04eeefde37c629",

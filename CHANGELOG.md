@@ -26,6 +26,14 @@ the JSON and STIX output are the public interface.
   address confirmation and password reset goes out through the operator's mail
   provider, that a network in front of the server, such as Cloudflare, may set
   cookies of its own, and its terms fit someone checking their own mail.
+- The product, privacy and help pages no longer jump as they load: the footer
+  showed under the loading placeholder and was then pushed away. PageSpeed
+  measured a layout shift of 0.35; Chromium now measures none.
+- The "Sign in" button's liquid metal effect no longer runs where WebGL is
+  drawn by the processor (SwiftShader, llvmpipe), such as a computer or
+  virtual desktop without a graphics card; the button is drawn still there.
+  Each frame blocked the page: PageSpeed measured 11 to 27 seconds of blocking
+  time on the product page.
 
 ## [3.1.0] - 2026-10-26
 
