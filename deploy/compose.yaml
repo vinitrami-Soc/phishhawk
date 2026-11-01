@@ -54,7 +54,7 @@ services:
     restart: unless-stopped
 
   tunnel:
-    image: cloudflare/cloudflared:2026.10.3
+    image: cloudflare/cloudflared:2026.10.6
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN_FILE: /run/secrets/cloudflare_tunnel_token
