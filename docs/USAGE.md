@@ -39,6 +39,7 @@ phishhawk [-h] [-V] <command> ...
   campaign     group reported messages into campaigns by what they share, offline
   sweep        find the other copies of a reported message in mailboxes, read-only
   evidence     verify the messages and custody log kept with --evidence
+  sandbox      submit the packs written with --sandbox to a self-hosted CAPE sandbox
   doctor       check dependencies, API keys, cache and network
   cache        show or clear the lookup cache
   techniques   list the MITRE ATT&CK techniques PhishHawk can evidence
@@ -262,7 +263,19 @@ is only ever sent to the API's own host: a Graph `@odata.nextLink` pointing
 anywhere else is not followed. It needs `Mail.Read` (Graph) or
 `gmail.readonly` (Gmail); getting one is left to your identity platform. For a
 quick test with Microsoft Graph, `az account get-access-token --resource-type
-ms-graph` prints one. A refused token is reported with the permission it needs.
+ms-graph` prints one.
+
+`phishhawk graph --sign-in` gets one instead, with the device code flow
+Microsoft's own libraries use: it shows a code and a web address, you sign in
+in a browser on any device, and the token is used for this run only, kept in
+memory and written nowhere. It needs `--client-id` (or
+`PHISHHAWK_GRAPH_CLIENT_ID`): the client id of an app registration of your
+own in your Microsoft Entra tenant that allows this flow for a public client
+and the delegated permission `Mail.Read`, plus `Mail.Read.Shared` for another
+user's mailbox. `--tenant` names your tenant by id or domain (default
+`organizations`, any work or school account). The token lasts as long as
+Microsoft issues it for; a long `--watch` run stops with the refused-token
+error when it ends. A refused token is reported with the permission it needs.
 A message larger than `--max-size` is skipped, never cut short; Gmail's size
 is checked before anything is downloaded.
 
@@ -270,6 +283,8 @@ is checked before anything is downloaded.
 export PHISHHAWK_GRAPH_TOKEN='...'
 phishhawk graph --mailbox soc@example.com --folder "Phish reports" --unread --out reports/
 phishhawk graph --mailbox soc@example.com --watch 300 --quiet
+
+phishhawk graph --sign-in --client-id 11111111-2222-3333-4444-555555555555 --mailbox soc@example.com
 
 export PHISHHAWK_GMAIL_TOKEN='...'
 phishhawk gmail --label "Phish reports" --since 2026-09-01
@@ -291,6 +306,22 @@ more:
 ```bash
 phishhawk scan reported/ --quiet --evidence /cases/4711 --sandbox /cases/4711/sandbox
 phishhawk evidence verify /cases/4711
+```
+
+`phishhawk sandbox submit --cape URL PACK.zip ...` sends packs to a
+self-hosted [CAPE](https://github.com/kevoreilly/CAPEv2) sandbox through its
+REST API: each one to `POST /apiv2/tasks/create/file/` as the `file` field
+with the option `password=infected`, and it prints the task ids CAPE made
+(CAPE unpacks the pack and makes a task per file it can run). The API token is
+read from `PHISHHAWK_CAPE_TOKEN`, never the command line, and goes as
+`Authorization: Token <key>`; a CAPE that asks for none gets no header. It is
+sent over HTTPS, or over plain HTTP only to this machine or a private
+address, and redirects are not followed. Exit code `0` when CAPE took every
+pack, `3` when one was refused or could not be read.
+
+```bash
+export PHISHHAWK_CAPE_TOKEN='...'
+phishhawk sandbox submit --cape https://cape.example.org /cases/4711/sandbox/*.zip
 ```
 
 The sandbox pack is encrypted with ZipCrypto and the password `infected`,
@@ -511,6 +542,8 @@ phishhawk techniques --json    # the same, machine-readable
 | `PHISHHAWK_IMAP_TOKEN` | An OAuth access token for IMAP (`XOAUTH2`), instead of a password |
 | `PHISHHAWK_GRAPH_TOKEN` | The access token for `phishhawk graph` (`Mail.Read`) |
 | `PHISHHAWK_GMAIL_TOKEN` | The access token for `phishhawk gmail` (`gmail.readonly`) |
+| `PHISHHAWK_GRAPH_CLIENT_ID` | Your app registration's client id, for `phishhawk graph --sign-in` |
+| `PHISHHAWK_CAPE_TOKEN` | The CAPE API token for `phishhawk sandbox submit` |
 | `PHISHHAWK_PSL` | A copy of the Public Suffix List, as `--psl` |
 | `PHISHHAWK_ANALYST` | The analyst named in `--evidence` custody records (default: the login name) |
 | `PHISHHAWK_NO_BANNER` | Any value turns the banner off |

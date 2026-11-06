@@ -31,6 +31,7 @@ from . import (
     campaign,
     cape,
     config,
+    devicecode,
     evidence,
     extract,
     imapfetch,
@@ -383,6 +384,14 @@ def build_parser() -> _Parser:
         box.add_argument("--mailbox", default="me", help="a user id or address (default 'me': the token's own)")
         if name == "graph":
             box.add_argument("--folder", default="", help="folder name or id (default the Inbox)")
+            sign = api.add_argument_group("sign in (instead of $PHISHHAWK_GRAPH_TOKEN)")
+            sign.add_argument("--sign-in", action="store_true",
+                              help="sign in with a code shown here, in a browser on any device; the token is kept "
+                                   "in memory for this run only")
+            sign.add_argument("--client-id", default=os.environ.get("PHISHHAWK_GRAPH_CLIENT_ID", ""),
+                              help="your app registration's client id (default $PHISHHAWK_GRAPH_CLIENT_ID)")
+            sign.add_argument("--tenant", default="organizations",
+                              help="tenant id or domain (default organizations: any work or school account)")
         else:
             box.add_argument("--label", dest="folder", default="", help="label (default the inbox)")
             box.add_argument("--query", default="", help="more Gmail search terms, e.g. 'has:attachment'")
@@ -889,8 +898,19 @@ def cmd_mail_api(args: argparse.Namespace, parser: _Parser) -> int:
     err = console.Palette(_colour_ok(sys.stderr, args.no_color))
     variable = "PHISHHAWK_%s_TOKEN" % args.command.upper()
     token = os.environ.get(variable, "").strip()
+    if getattr(args, "sign_in", False):
+        if not args.client_id.strip():
+            command.error("--sign-in needs --client-id or $PHISHHAWK_GRAPH_CLIENT_ID: your app registration")
+        try:
+            token = devicecode.sign_in(args.client_id.strip(), tenant=args.tenant,
+                                       shared=(args.mailbox or "me") != "me",
+                                       show=lambda message: print(err(message, "yellow"), file=sys.stderr))
+        except devicecode.SignInError as exc:
+            print(err("[!] %s" % printable(str(exc)), "red"), file=sys.stderr)
+            return EXIT_ERROR
     if not token:
-        command.error("set %s to an access token (it is never taken on the command line)" % variable)
+        command.error("set %s to an access token (it is never taken on the command line)%s"
+                      % (variable, ", or sign in with --sign-in" if args.command == "graph" else ""))
     since = None
     if args.since:
         try:

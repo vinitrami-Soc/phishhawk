@@ -49,6 +49,17 @@ the JSON and STIX output are the public interface.
   than a new sender domain. A recruitment scam's signature named a website
   registered weeks before; offline it is listed, not scored.
 
+- `phishhawk sandbox submit --cape URL PACK.zip ...` sends the packs written
+  with `--sandbox` to a self-hosted CAPE sandbox through its REST API
+  (`POST /apiv2/tasks/create/file/`, with the option `password=infected`) and
+  prints the task ids. The token comes from `PHISHHAWK_CAPE_TOKEN` and is
+  sent only over HTTPS or to a local or private address.
+- `phishhawk graph --sign-in` signs in to Microsoft Graph with the device
+  code flow: a code to enter in a browser on any device, a token kept in
+  memory for that run only. It needs the client id of an app registration of
+  your own (`--client-id` or `PHISHHAWK_GRAPH_CLIENT_ID`) and takes
+  `--tenant`.
+
 ### Changed
 
 - `eval/README.md` has the held-out results of the detection changes in this
