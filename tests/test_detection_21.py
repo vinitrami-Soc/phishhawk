@@ -226,3 +226,26 @@ def test_the_html_report_states_the_rule_that_decided():
     page = html.render([backed])
     assert "a second high signal or evidence of another kind" in page
     assert "<i>one per kind</i>" in page and "<i>capped</i>" not in page  # 2 low signals, 1 point: merged
+
+
+def test_a_short_sign_in_word_inside_a_tracking_token_is_chance():
+    # A transport newsletter's click tracker: "sso" and "mfa" sit inside a
+    # random token, as they did in a real Transport for London mailing.
+    html = ('<a href="https://click.email.transit.example/?qs=ABt7ImQiOjUwNTIsInQi2_vvzW3kKTOssoJGPpwdjL8Df">'
+            'Plan your journey</a> <a href="https://click.email.transit.example/?qs=ABt7Im3ep1mDpu1cTRmfa2J8PQR">'
+            'Station update</a>')
+    a = triage_bytes(build_eml(html=html))
+    assert not any("credential-harvesting path" in s.label for s in a.signals)
+
+
+@pytest.mark.parametrize("url", ["https://evil.example/sso/start", "https://evil.example/owa/auth.aspx",
+                                 "https://evil.example/check?otp=1", "https://evil.example/mfa-reset",
+                                 "https://evil.example/o365.html", "https://evil.example/secure-login.php"])
+def test_a_sign_in_word_standing_on_its_own_is_still_a_credential_page(url):
+    a = triage_bytes(build_eml(html='<a href="%s">Open</a>' % url))
+    assert any("credential-harvesting path" in s.label for s in a.signals)
+
+
+def test_a_phishing_kit_s_numbered_one_time_code_page_is_a_credential_page():
+    a = triage_bytes(build_eml(html='<a href="https://courier-jd.top/wp-admin/tmp/bank/otp1.php">Confirm</a>'))
+    assert any("credential-harvesting path" in s.label for s in a.signals)

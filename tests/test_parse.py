@@ -129,3 +129,16 @@ def test_zero_width_characters_are_counted():
 def test_garbage_input_does_not_crash():
     a = parse_bytes(b"\x00\xff\x13 not an email at all \r\n\r\n\x00")
     assert a.urls == [] and a.attachments == []
+
+
+def test_a_version_number_in_a_received_header_is_not_the_origin():
+    # Oracle's mail servers write their version, "8.1.0.1.20240909", into the
+    # oldest hop. Its first four numbers look like an address; they are not one.
+    a = parse_bytes(build_eml(headers=[
+        ("Received", "from aib29ajc188.phx1.oracleemaildelivery.com (aib29ajc188.phx1.oracleemaildelivery.com. "
+                     "[192.29.103.188]) by mx.google.com with ESMTPS id x1; Tue, 03 Nov 2026 01:20:08 -0800"),
+        ("Received", "by omta-ad3-fd1-1303-us-phoenix-1.omtaad3.vcndpphx.oraclevcn.com "
+                     "(Oracle Communications Messaging Server 8.1.0.1.20240909 64bit (built Sep  9 2024)) "
+                     "with ESMTPS id <0T3J00@omta>; Tue, 03 Nov 2026 09:20:07 +0000 (GMT)"),
+    ]))
+    assert a.originating_ip == "192.29.103.188"

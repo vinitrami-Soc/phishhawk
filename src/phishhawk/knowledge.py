@@ -40,6 +40,17 @@ FREEMAIL = {
     "yandex.com", "zoho.com", "mail.ru", "rediffmail.com", "tutanota.com",
 }
 
+# Mail services and clouds whose hosts are shared by every customer: a phish
+# sent through them leaves their bounce address, click and unsubscribe
+# trackers in the message, but blocking the domain would block legitimate
+# mail and sites too. The phish's own URLs are still blockable one by one.
+SHARED_INFRASTRUCTURE = {
+    "sendgrid.net", "mailgun.org", "mailgun.net", "mcsv.net", "rsgsv.net", "mcdlv.net", "list-manage.com",
+    "mandrillapp.com", "sparkpostmail.com", "postmarkapp.com", "mtasv.net", "sendinblue.com", "mailjet.com",
+    "exacttarget.com", "createsend.com", "cmail19.com", "cmail20.com", "rs6.net", "hubspotemail.net",
+    "klaviyomail.com", "zcsend.net", "maillist-manage.com", "oracleemaildelivery.com", "oraclecloud.com",
+}
+
 # The part of each free-mail domain people recognise: yahoo.com.tw and
 # hotmail.fr are free mail too, never a recipient's own organisation.
 FREEMAIL_LABELS = {domain.split(".", 1)[0] for domain in FREEMAIL}
