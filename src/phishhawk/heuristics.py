@@ -424,6 +424,13 @@ def _download(url: str) -> str:
     return extension if extension in RUNNABLE_DOWNLOADS | PACKED_DOWNLOADS else ""
 
 
+# Short sign-in words turn up by chance inside the random tokens of click
+# trackers ("sso" in "?qs=ABt7...OssoJ"), so they count only as a word of
+# their own, or numbered as a phishing kit numbers its pages ("otp1.php").
+_SHORT_CREDENTIAL_RE = re.compile(r"(?<![a-z0-9])(%s)(?![a-z])"
+                                  % "|".join(sorted(re.escape(w) for w in CREDENTIAL_WORDS if len(w) <= 4)))
+
+
 def _urls(a: Analysis) -> None:
     tracked: set[str] = set()  # destinations already reported for a plain mismatch
     for ioc in a.urls:
@@ -460,7 +467,8 @@ def _urls(a: Analysis) -> None:
             a.add_signal("low", "high-abuse TLD in %s" % defang_host(host), ("T1583.001",))
         parts = urlsplit(ioc.url)
         path = ((parts.path or "") + "?" + (parts.query or "")).lower()
-        words = sorted(w for w in CREDENTIAL_WORDS if w in path)
+        words = sorted({w for w in CREDENTIAL_WORDS if len(w) > 4 and w in path}
+                       | set(_SHORT_CREDENTIAL_RE.findall(path)))
         if words and not trusted and clicked:  # an image or stylesheet is not a sign-in page
             ioc.notes.append("credential-themed path (%s)" % ", ".join(words[:3]))
             a.add_signal("low", "credential-harvesting path on %s" % defang_host(host), ("T1598.003",))

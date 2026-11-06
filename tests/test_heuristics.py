@@ -156,3 +156,21 @@ def test_a_return_path_elsewhere_is_not_scored():
     a = triage_bytes(build_eml(sender="news@shop.example", headers=[("Return-Path", "<bounce@esp.example>")]))
     assert a.return_path_domain == "esp.example"
     assert not any("Return-Path" in label for label in labels(a))
+
+
+def test_iocs_leave_out_the_mail_service_a_phish_was_sent_through():
+    # A phish sent through a bulk-mail service: its bounce domain and its
+    # unsubscribe tracker are the service's, shared with every customer.
+    # Blocking them would block legitimate mail; the phishing link is blocked.
+    a = triage_bytes(build_eml(
+        subject="Keep your cover active - renew online",
+        sender='"TVLicensing" <donotreply-tvlicensing-support@inside.crevax-mail.top>',
+        html='<p>Your licence expires today.</p><a href="https://renew-licence.top/pay">Pay Now</a>',
+        headers=[("Return-Path", "<bounces+user=example-corp.co.uk@phx1.rp.oracleemaildelivery.com>"),
+                 ("List-Unsubscribe", "<https://cell0.track.email.us-phoenix-1.oci.oraclecloud.com/20221014/"
+                                      "track/unsubscribe?V=20&H=AAGZLwZVm1LJ>")]))
+    assert a.verdict != "NO STRONG INDICATORS"
+    values = {(i["type"], i["value"]) for i in a.iocs()}
+    assert ("url", "https://renew-licence.top/pay") in values
+    assert ("domain", "inside.crevax-mail.top") in values
+    assert not any("oracleemaildelivery" in v or "oraclecloud" in v for _, v in values)

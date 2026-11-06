@@ -8,7 +8,7 @@ from typing import Any
 
 from .extract import defang_url, host_of, registrable_domain, urls_from_text
 from .hosting import hosting_kind
-from .knowledge import FREEMAIL, SHORTENERS, known_legit_domains
+from .knowledge import FREEMAIL, SHARED_INFRASTRUCTURE, SHORTENERS, known_legit_domains
 
 # Top-level names never delegated on the internet: kept for tests, examples and
 # private networks (RFC 2606, 6761, 6762 and 8375, and ICANN's .internal), or left
@@ -265,8 +265,9 @@ class Analysis:
 
         Known-legitimate brand domains (the decoy login.microsoftonline.com in
         a spoof), your own protected domains, shorteners and free-mail
-        providers are never emitted at domain level: blocking bit.ly or
-        gmail.com company-wide would do more harm than the phish. Nor are hosts
+        providers, and mail services and clouds shared by every customer, are
+        never emitted at domain level: blocking bit.ly or gmail.com
+        company-wide would do more harm than the phish. Nor are hosts
         on private top-level names, or the site a link's text claims to open
         when the link goes elsewhere: that is the disguise, often the reader's
         own company, not where the phish lives.
@@ -292,7 +293,11 @@ class Analysis:
             ioc.host in claimed and not ioc.flagged and all(s.endswith("text") for s in ioc.sources))]
         for ioc in urls:
             # A Google Drive or Forms link is blockable as a URL even though
-            # google.com obviously is not.
+            # google.com obviously is not. A mail service's unsubscribe link
+            # in the headers is the service's, not the phish's.
+            if all(s.startswith("header:") for s in ioc.sources) and \
+                    registrable_domain(ioc.host) in SHARED_INFRASTRUCTURE:
+                continue
             if not self.is_trusted_domain(ioc.host) or hosting_kind(ioc.url):
                 add("url", ioc.url, ", ".join(ioc.sources))
 
@@ -302,7 +307,8 @@ class Analysis:
         domain_roles += [(ioc.host, "url host") for ioc in urls]
         for domain, role in domain_roles:
             base = registrable_domain(domain)
-            if (not base or base in SHORTENERS or base in FREEMAIL or self.is_trusted_domain(base)
+            if (not base or base in SHORTENERS or base in FREEMAIL or base in SHARED_INFRASTRUCTURE
+                    or self.is_trusted_domain(base)
                     or not on_the_internet(domain)
                     or hosting_kind("https://%s/" % domain) in ("free hosting", "file sharing")):
                 continue

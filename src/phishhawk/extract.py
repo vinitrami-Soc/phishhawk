@@ -11,7 +11,9 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlsplit
 
-IPV4_RE = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+# Not part of a longer dotted number: a mail server's version "8.1.0.1.20240909"
+# in a Received header once became a report's originating IP.
+IPV4_RE = re.compile(r"(?<!\d\.)\b(?:\d{1,3}\.){3}\d{1,3}\b(?!\.\d)")
 # Bounded quantifiers (RFC 5321: local part <= 64, labels <= 63) keep every match
 # attempt short. Unbounded, a 100 KB base64 image in an HTML body made this
 # regex quadratic: one real phishing sample took 60 seconds to parse. The

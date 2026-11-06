@@ -34,6 +34,25 @@ the JSON and STIX output are the public interface.
   virtual desktop without a graphics card; the button is drawn still there.
   Each frame blocked the page: PageSpeed measured 11 to 27 seconds of blocking
   time on the product page.
+- The originating IP is no longer read out of other numbers in a Received
+  header. A mail server's version, "8.1.0.1.20240909", gave a TV Licensing
+  phish the originating IP 8.1.0.1, and the time inside a Google SMTP id
+  ("...2023.09.17.18.25.00") gave five of the 2,500 phishing tuning messages
+  addresses such as 09.17.18.25. A dotted number that is part of a longer one
+  is no longer taken for an address.
+- Short sign-in words in a link ("sso", "mfa", "otp", "owa", "o365") count
+  only as a word of their own, or numbered as a kit numbers its pages
+  ("otp1.php"), not inside a click tracker's random token. A Transport for
+  London newsletter got "credential-harvesting path" from "sso" and "mfa" in
+  its tracking codes. On the tuning sets 31 phishing messages lost a signal
+  that fired by chance, which moved three verdicts down (two out of
+  SUSPICIOUS); no legitimate message changed verdict.
+- Indicators to block no longer include the bounce domain or the unsubscribe
+  link of a mail service the phish was sent through (Oracle Email Delivery,
+  SendGrid, Mailgun, Mailchimp and others), nor any domain of those services
+  or of Oracle Cloud: they are shared by every customer, and blocking them
+  would block legitimate mail. The phish's own links stay blockable one by
+  one.
 
 ## [3.1.0] - 2026-10-26
 
