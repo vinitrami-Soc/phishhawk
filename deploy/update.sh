@@ -20,4 +20,7 @@ docker compose -f deploy/compose.yaml pull --quiet db tunnel  # their security f
 docker compose -f deploy/compose.yaml build --pull            # and the base images
 docker compose -f deploy/compose.yaml up -d --wait
 docker compose -f deploy/compose.yaml exec -T phishhawk phishhawk server audit verify
+# Each build leaves the image it replaced behind, untagged; on a small server they fill the disk.
+docker image prune --force >/dev/null
+echo "deployed $(git log -1 --format='%h %s'); $(df -h . | awk 'NR == 2 {print $4}') of disk free"
 echo "PhishHawk is up at $(sed -n 's/^PHISHHAWK_PUBLIC_URL=//p' deploy/.env)"

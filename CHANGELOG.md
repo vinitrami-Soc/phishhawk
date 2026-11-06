@@ -71,6 +71,10 @@ the JSON and STIX output are the public interface.
 
 ### Changed
 
+- `deploy/update.sh` removes the untagged images each build leaves behind
+  (`docker image prune`), which otherwise fill a small server's disk one
+  deploy at a time, and ends by printing the commit deployed and the disk
+  space left.
 - `eval/README.md` has the held-out results of the detection changes in this
   release, scored once after tuning: of 5,714 held-out phishing emails from
   2022 to 2026, 81.4% are flagged (was 81.3%) and 47.8% called likely
