@@ -40,6 +40,7 @@ from .common import (
     defang_ioc,
     display_copy,
     human_size,
+    ip_owner_text,
     limitations,
     recommendations,
     report_id,
@@ -998,7 +999,9 @@ def _message(a: Analysis, anchor: str) -> str:
             ("Reply-To", mono(a.reply_to)), ("Return-Path", mono(a.return_path)), ("To", escape(a.to or "")),
             ("Date", escape(a.date or "")),
             ("Message-ID", '<span class="mono ioc sel">%s</span>' % escape(a.message_id) if a.message_id else ""),
-            ("Originating IP", mono(a.originating_ip)), ("Received hops", str(a.received_hops))]
+            ("Originating IP", mono(a.originating_ip) + (
+                ' <span class="muted">held by %s</span>' % escape(ip_owner_text(a)) if ip_owner_text(a) else "")),
+            ("Received hops", str(a.received_hops))]
     if a.reported_by:
         rb = a.reported_by
         rows.append(("Reported by", "%s &lt;%s&gt;" % (escape(rb.get("display", "")), escape(rb.get("from", "")))))

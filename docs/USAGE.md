@@ -176,7 +176,7 @@ free-mail providers are never exported as domain-level blocks.
 | `--urlscan-submit` | off | Submit each URL to urlscan.io as an **unlisted** scan. This sends the full URL, so it is never on by default. |
 | `--abuseipdb-key KEY` | `$ABUSEIPDB_API_KEY` | AbuseIPDB key, for the reputation of the sending IP |
 | `--no-abuseipdb` | | Skip AbuseIPDB |
-| `--no-rdap` | | Skip RDAP domain-age lookups |
+| `--no-rdap` | | Skip RDAP lookups: domain age, and who holds the originating IP |
 | `--timeout SECONDS` | 20 | HTTP timeout per request |
 
 Prefer environment variables to `--*-key` flags: a key on the command line ends
@@ -593,7 +593,9 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | `urls[]` | Every URL with its sources, anchor texts, notes, unwrap/redirect details, and `vt` and `urlscan` results |
 | `attachments[]` | Name, declared and true type, size, MD5/SHA-1/SHA-256, the `parent` it came out of, archive listing, HTML-attachment findings, per-format `details` (Office, PDF, RTF, shortcut, OneNote), `vt` result |
 | `lookalikes[]` | `domain`, the `target` it imitates, the `method` (homoglyph, typosquat, combosquat, tld-swap …) and `where` it appeared |
-| `domain_intel`, `ip_intel` | RDAP domain ages and AbuseIPDB results |
+| `domain_intel`, `ip_intel` | RDAP domain ages (`where` is "named in the text" for a domain only written in the message) and AbuseIPDB results |
+| `ip_owner` | Who holds the originating IP, over RDAP: `organisation`, `network`, `name`, `country` |
+| `named_domains` | Domains written in the text without a link, such as a website in a signature (at most 5) |
 | `errors[]` | Anything that could not be parsed or looked up |
 | `generated_at`, `tool_version` | Provenance |
 

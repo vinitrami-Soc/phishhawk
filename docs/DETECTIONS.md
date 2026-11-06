@@ -396,8 +396,16 @@ These need network access and, for VirusTotal and AbuseIPDB, an API key.
 | urlscan.io: earlier scans of the host were judged malicious | Medium | T1608.005 |
 | RDAP: a domain was registered under 30 days ago | High | T1583.001 |
 | RDAP: a domain is under 90 days old | Medium | T1583.001 |
+| RDAP: a domain the message only names in its text (a website in a signature, not a link or a sender) was registered under 30 days ago | Medium | T1583.001 |
+| RDAP: such a domain is under 90 days old | Low | T1583.001 |
 | AbuseIPDB: the sending IP has an abuse confidence of 75% or more | High | none |
 | AbuseIPDB: 25% to 74% | Medium | none |
+
+RDAP also says who holds the originating IP: its network, holder and country, such as
+"Oracle Corporation, US, network 192.29.0.0/16". The reports show it beside the
+address. It is context, not a signal: a mail service's address is shared by every
+customer. Up to five domains named in the text are looked up, with the same
+exclusions as other domains (brands, free mail, shorteners, your own domains).
 
 ## Protected domains
 

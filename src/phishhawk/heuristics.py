@@ -939,7 +939,13 @@ def _enrichment_signals(a: Analysis) -> None:
         age = info.get("age_days") if info.get("status") == "ok" else None
         if age is None:
             continue
-        if age < NEW_DOMAIN_DAYS:
+        if info.get("where") == "named in the text":
+            # Named, not linked or sending: a new company's site is not a phish.
+            if age < YOUNG_DOMAIN_DAYS:
+                a.add_signal("medium" if age < NEW_DOMAIN_DAYS else "low",
+                             "the message names %s, registered %d day(s) ago" % (defang_host(domain), age),
+                             ("T1583.001",))
+        elif age < NEW_DOMAIN_DAYS:
             a.add_signal("high", "%s was registered %d day(s) ago" % (defang_host(domain), age), ("T1583.001",))
         elif age < YOUNG_DOMAIN_DAYS:
             a.add_signal("medium", "%s is only %d days old" % (defang_host(domain), age), ("T1583.001",))

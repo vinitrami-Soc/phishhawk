@@ -12,6 +12,7 @@ from .common import (
     analysis_status,
     defang_ioc,
     display_copy,
+    ip_owner_text,
     limitations,
     recommendations,
     report_id,
@@ -53,7 +54,9 @@ def render(a: Analysis) -> str:
     if a.reply_to:
         out.append("| **Reply-To** | %s |" % _code(defang_host(a.reply_to)))
     if a.originating_ip:
-        out.append("| **Originating IP** | %s |" % _code(defang_host(a.originating_ip)))
+        holder = ip_owner_text(a)
+        out.append("| **Originating IP** | %s%s |" % (_code(defang_host(a.originating_ip)),
+                                                      " (%s)" % _cell(holder) if holder else ""))
     if a.hops:
         first = a.hops[0]
         out.append("| **First hop** | %s |" % _code("%s -> %s" % (defang_host(first.get("from", "?")),
