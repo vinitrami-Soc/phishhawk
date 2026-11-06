@@ -625,10 +625,12 @@ lists only the techniques seen in that message, each linked to the signals behin
   a prompt, never the command line, and TLS certificates are always verified.
 - `phishhawk graph`, `gmail` and `sweep` only send `GET` requests, to your own
   mail host. `sweep` sends it what it searches for: the reported message's
-  addresses, subject, Message-ID and phishing domains.
+  addresses, subject, Message-ID and phishing domains. `graph --sign-in` also
+  talks to Microsoft's sign-in service, `login.microsoftonline.com`.
 - `campaign`, `--evidence` and `--sandbox` send nothing. `--evidence` and
   `--sandbox` write the whole message to the folder you name: keep it where
-  your evidence goes.
+  your evidence goes. `phishhawk sandbox submit` sends the packs you name, the
+  whole message included, to the CAPE address you give, and nowhere else.
 - Answers are cached in SQLite for 24 hours, in a file only you can read;
   errors are never cached. `phishhawk cache clear` empties the cache.
 - VirusTotal is paced to the free tier's 4 requests a minute and capped at 20 per
@@ -813,8 +815,9 @@ explains how to add a detection.
 - [x] Optional full public suffix list (2.1)
 - [x] More brands and lure languages; weigh independent evidence (2.1)
 - [x] Campaign correlation, mailbox sweep, evidence custody log, sandbox handoff, authentication explained (2.2)
-- [ ] Submit a sandbox pack to a self-hosted CAPE through its API
-- [ ] Sign in to Microsoft Graph and Gmail from the command line (device-code flow)
+- [x] Submit a sandbox pack to a self-hosted CAPE through its API (unreleased: `phishhawk sandbox submit`)
+- [x] Sign in to Microsoft Graph from the command line with the device code flow (unreleased: `graph --sign-in`)
+- [ ] Sign in to Gmail from the command line
 - [ ] Decompress RAR members, not only the stored ones
 - [ ] Packages on PyPI and GHCR
 

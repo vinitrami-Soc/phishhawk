@@ -23,7 +23,7 @@ export const REASONS: Readonly<Record<string, string>> = {
   sender: 'The sender pretends to be someone you trust.',
   link: 'A link leads somewhere other than it shows, or to a kind of website often used for scams.',
   attachment: 'An attachment could harm your device or ask for your password.',
-  content: 'The wording pushes you to act fast, pay, or sign in.',
+  content: 'The wording pushes you to act fast, pay, sign in, or reply with your details.',
   auth: 'The email could not be confirmed as coming from the address it shows.',
   evasion: 'The email hides parts of itself to get past spam filters.',
   intel: 'Security services already report a link or file in this email as harmful.',
@@ -43,7 +43,7 @@ const STEPS: Record<Verdict, PlainStep[]> = {
   MALICIOUS: SCAM,
   'LIKELY PHISHING': SCAM,
   SUSPICIOUS: [
-    { text: "Don't click links or open attachments yet." },
+    { text: "Don't click links, open attachments or reply yet." },
     { text: 'Check with the sender another way: call them, or type their website address yourself.' },
     { text: 'If it turns out to be fake, report it as phishing and delete it.' },
   ],

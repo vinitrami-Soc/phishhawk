@@ -60,3 +60,10 @@ test('an unknown verdict is treated with caution', () => {
   assert.deepEqual(plainVerdict('SOMETHING NEW'), plainVerdict('SUSPICIOUS'));
   assert.deepEqual(plainSteps('toString'), plainSteps('SUSPICIOUS'));
 });
+
+test('a scam with nothing to click is answered by a reply, so the steps say not to reply', () => {
+  for (const verdict of ['MALICIOUS', 'LIKELY PHISHING', 'SUSPICIOUS'] as const) {
+    assert.match(plainSteps(verdict)[0].text, /reply/i);
+  }
+  assert.match(REASONS.content, /reply/i);
+});

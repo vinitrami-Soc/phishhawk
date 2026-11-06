@@ -280,7 +280,10 @@ phishhawk evidence verify "$CASE"
   the domains and SHA-256 values in `iocs[]`.
 - **Detonate** with the pack in `$CASE/sandbox`: CAPE, Joe Sandbox, ANY.RUN
   and Hybrid Analysis all accept a ZIP with the password `infected`, and
-  `urls.txt` inside lists the links to submit as URL tasks.
+  `urls.txt` inside lists the links to submit as URL tasks. A self-hosted CAPE
+  takes them straight from the command line:
+  `phishhawk sandbox submit --cape https://cape.example.org "$CASE"/sandbox/*.zip`
+  (token in `PHISHHAWK_CAPE_TOKEN`).
 - **Keep the chain of custody**: put `evidence verify`'s `head`, or each
   report's `evidence.custody`, in the ticket, and check the folder against it
   later with `phishhawk evidence verify "$CASE" --head <value>`.
