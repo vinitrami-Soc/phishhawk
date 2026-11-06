@@ -51,6 +51,53 @@ Before 1.2.0, the first real-mail evaluation found a parse that took 60
 seconds, and 1.1.0 flagged 23.3% of everyday legitimate mail; see the sections
 further down.
 
+## The evaluation after 3.1.0 (unreleased)
+
+3.0 and 3.1 changed no signal or verdict rule, so the 2.2.0 numbers above held
+for them. The changes after 3.1.0 do. They fix false matches, flag web pages
+on cloud storage, and add a recruitment-scam pattern. Each was developed
+against the tuning sets only, scored message by message against the code
+before it. The held-out sets were then scored once, with the final code:
+
+| Held-out set | Before (main at 3.1.0 and its fixes) | After |
+|---|---|---|
+| Real phishing 2022 to 2026 (5,714) | 81.3% flagged (4,645), 46.9% strict (2,679) | **81.4%** flagged (4,654), **47.8%** strict (2,731) |
+| Real phishing 2005 to 2007, Nazario (2,279) | 56.7% flagged, 29.7% strict | the same |
+| Everyday legitimate mail, `easy_ham_2` (1,400) | 0.5% (7) | **0.4%** (6) |
+| Spam-like legitimate mail, `hard_ham` half (125) | 13.6% (17) | the same |
+| Enron (4,279) | 0.2% (10) | the same |
+| Mail-library edge cases (136) and Outlook `.msg` files (5) | 8.8% (12), 0% | the same |
+| All held-out legitimate mail (5,945) | 0.8% (46) | **0.8% (45)** |
+| Called likely phishing among those 5,945 | 6 | 6 |
+
+On the 5,714 held-out phishing emails, 13 more are flagged and 4 fewer, and 54
+move up to likely phishing and 2 down. The new medium signal "link opens a web
+page kept on cloud storage" fired 383 times, mostly on `storage.googleapis.com`
+pages that had a low "file sharing" signal before. The 4 that are no longer
+flagged had depended on a sign-in word found by chance inside a link's random
+token: "owa" in `urly.fi/3LCU?ZGMAowA3...`, "mfa" in a click tracker. That match
+no longer counts, which also removes the one legitimate message that left the
+flagged set (`easy_ham_2`, "credential-harvesting path" on `www.suse.de`).
+
+The recruitment-scam pattern (a job offered from a free-mail address) fired on
+one held-out phishing email and no legitimate one. Neither corpus holds the
+recruitment scams it is meant for. A real one, reported by a user, went from a
+score of 0 to SUSPICIOUS. Twelve held-out legitimate messages, 2 from
+SpamAssassin and 10 from Enron, gained the low "job lure wording" signal
+(recruiting talk such as "job description" or "hiring manager"); none changed
+verdict.
+
+The legitimate mail here is from 2000 to 2002, before cloud storage was
+common, so it cannot show how often legitimate mail links to a web page on
+cloud storage. That is why the rule takes only web pages (`.html`, `.htm`,
+`.svg` and similar), not images or documents. Run `run_eval.py --benign` on an
+export of your own mail to see it on mail of today.
+
+| Tuning set (developed against) | Before | After |
+|---|---|---|
+| Real phishing 2022 to 2026, tuning part (2,500) | 82.2% flagged, 46.6% strict | 82.3% flagged, 47.8% strict |
+| Legitimate tuning mail (2,625) | 0.9% (23) | the same (23) |
+
 ## The 2.2 evaluation
 
 2.2 adds what an analyst does after the verdict (campaigns, mailbox sweeps,

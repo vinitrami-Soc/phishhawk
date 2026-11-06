@@ -51,6 +51,11 @@ the JSON and STIX output are the public interface.
 
 ### Changed
 
+- `eval/README.md` has the held-out results of the detection changes in this
+  release, scored once after tuning: of 5,714 held-out phishing emails from
+  2022 to 2026, 81.4% are flagged (was 81.3%) and 47.8% called likely
+  phishing (was 46.9%); of 5,945 held-out legitimate emails, 45 are flagged
+  (was 46).
 - The advice for a message with nothing to click or open (no link, no file,
   no QR code; images and header links aside) is about replying, not
   clicking. With no warning sign it no longer says "close as benign" without
