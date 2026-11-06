@@ -386,3 +386,21 @@ def test_html_controls_are_big_enough_to_tap(phish):
     assert "a[download]{display:inline-block;padding:4px 0}" in page  # the report-file links
     coarse = page.split("@media (pointer:coarse){", 1)[1].split("\n}", 1)[0]
     assert ".secmenu a{min-height:44px}" in coarse and ".secnav a{padding:10px 14px}" in coarse
+
+
+def test_with_nothing_to_click_the_advice_is_about_replying():
+    a = triage_bytes(build_eml(text="Hello, are you free for a quick chat this week? Thanks, Sam"))
+    assert a.verdict == "NO STRONG INDICATORS"
+    advice = " ".join(recommendations(a))
+    assert "Nothing in it to click or open" in advice and "Close as benign" not in advice
+    linked = triage_bytes(build_eml(
+        html='<p>Minutes are online:</p><a href="https://intranet.example-corp.co.uk/m">m</a>'))
+    assert recommendations(linked) == [
+        "Close as benign unless the reporter describes harm; thank them for reporting."]
+
+
+def test_a_suspicious_message_with_nothing_to_detonate_is_not_sent_to_the_sandbox():
+    from test_detection_21 import RECRUITER
+    a = triage_bytes(build_eml(subject="", sender='"Ruth Jackson" <talent.4471@gmail.com>', text=RECRUITER))
+    advice = " ".join(recommendations(a))
+    assert "sandbox" not in advice and "Do not reply" in advice

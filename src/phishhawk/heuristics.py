@@ -842,6 +842,11 @@ def _language(a: Analysis) -> None:
     if money and registrable_domain(a.from_domain) in FREEMAIL and not a.urls:
         a.add_signal("medium", "free-mail sender asks for money (%s): business email compromise pattern"
                      % money[0], ("T1656", "T1657"))
+    # Recruitment scam: a job offered from a personal free-mail address. A
+    # recruiter writes from the agency's or the employer's own domain.
+    if hits.get("job") and registrable_domain(a.from_domain) in FREEMAIL:
+        a.add_signal("medium", "free-mail sender offers a job (%s): recruitment-scam pattern" % hits["job"][0],
+                     ("T1656", "T1566"))
     # BEC: a lookalike of your own domain asking for a payment or gift cards.
     own = next((hit for hit in a.lookalikes if hit.target in a.protected_domains
                 and hit.where in ("sender", "reply-to")), None)

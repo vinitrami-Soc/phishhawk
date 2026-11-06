@@ -249,3 +249,34 @@ def test_a_sign_in_word_standing_on_its_own_is_still_a_credential_page(url):
 def test_a_phishing_kit_s_numbered_one_time_code_page_is_a_credential_page():
     a = triage_bytes(build_eml(html='<a href="https://courier-jd.top/wp-admin/tmp/bank/otp1.php">Confirm</a>'))
     assert any("credential-harvesting path" in s.label for s in a.signals)
+
+
+# ----------------------------------------------------------- reply bait --
+# A recruitment scam opens with nothing to click: a vague job from a personal
+# address, and the trap is in the reply. Worded like one reported for real.
+RECRUITER = ("Hi Vinit,\n\nI came across your professional profile and was particularly interested in your "
+             "focus on cybersecurity.\n\nMy name is Ruth, and I'm a Senior Talent Partner at Global Talent "
+             "Recruit. We are currently working on a recruitment opportunity for a Cybersecurity Analyst.\n\n"
+             "I would be pleased to share further details about the position, including its responsibilities "
+             "and compensation package. Please let me know if you would be interested in receiving the full "
+             "job description.\n\nBest regards,\nRuth")
+
+
+def test_a_free_mail_recruiter_with_nothing_to_click_is_suspicious():
+    a = triage_bytes(build_eml(subject="", sender='"Ruth Jackson" <talent.4471@gmail.com>', text=RECRUITER))
+    assert a.verdict == "SUSPICIOUS"
+    assert ("medium", "free-mail sender offers a job (recruitment opportunity): recruitment-scam pattern") in \
+        [(s.severity, s.label) for s in a.signals]
+
+
+def test_a_recruiter_writing_from_a_company_domain_is_not_that_pattern():
+    a = triage_bytes(build_eml(subject="Cybersecurity Analyst role",
+                               sender='"Ruth Jackson" <ruth@globaltalent-recruit.example>', text=RECRUITER))
+    assert a.verdict == "NO STRONG INDICATORS"
+    assert not any("recruitment-scam" in s.label for s in a.signals)
+
+
+def test_chinese_free_mail_is_free_mail():
+    a = triage_bytes(build_eml(sender="<lmybizexplore02@163.com>",
+                               text="Can you process a wire transfer today? Reply asap."))
+    assert any(s.label.startswith("free-mail sender asks for money") for s in a.signals)
