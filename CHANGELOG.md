@@ -14,6 +14,17 @@ the JSON and STIX output are the public interface.
   people who use a PhishHawk someone else runs know where their mail goes.
   `deploy/setup.sh` asks for it.
 
+- A link to a web page kept on cloud storage, an `.html`, `.htm`, `.svg` or
+  similar file in a storage bucket, is flagged as a medium signal: a bucket
+  holds files, and a page there is one someone uploaded, the commonest way to
+  put up a phishing page without a website. Object storage at Oracle Cloud,
+  DigitalOcean Spaces, Backblaze B2, Wasabi, Linode, IBM Cloud, Alibaba Cloud,
+  Supabase and bucket names on Google Cloud Storage is now recognised as well
+  as Amazon S3 and Azure; a TV Licensing phish's "Pay Now" button on Oracle
+  Cloud storage was not flagged. On the tuning sets 32 phishing messages move
+  from SUSPICIOUS to LIKELY PHISHING and 5 more are flagged; no legitimate
+  message changed, though those sets are from before cloud storage was common.
+
 ### Fixed
 
 - The product, sign-in, help and privacy pages no longer say more than is

@@ -192,9 +192,10 @@ email address in the link text names a mailbox, not a website, and is ignored.
 | URL shortener | Medium | T1608.005 |
 | A security-gateway rewrite or an open redirect on a trusted site leads to an untrusted destination | Medium | T1608.005 |
 | Link to a tunnel or IPFS gateway (ngrok, trycloudflare, `ipfs.io` …) | Medium | T1583.006 |
-| Link to free hosting, a form builder or file sharing | Low | T1583.006 |
+| Link to a web page kept on cloud storage: an `.html`, `.htm`, `.svg` or similar file in a storage bucket (Amazon S3, Azure, Google Cloud Storage, Oracle Cloud, DigitalOcean Spaces, Backblaze B2, Wasabi, Linode, IBM Cloud, Alibaba Cloud, Supabase) | Medium, and the link is flagged | T1583.006 |
+| Link to free hosting, a form builder or file sharing (any other link there) | Low | T1583.006 |
 | High-abuse TLD (`.top`, `.xyz`, `.zip`, `.click` …) | Low | T1583.001 |
-| Credential-harvesting path (`/login`, `/verify`, `/owa` …) on an untrusted host, in a link the reader can click (not an image or a style sheet) | Low | T1598.003 |
+| Credential-harvesting path (`/login`, `/verify`, `/owa` …) on an untrusted host, in a link the reader can click (not an image or a style sheet). The short words `sso`, `mfa`, `otp`, `owa` and `o365` count only as a word of their own or numbered (`otp1.php`), not inside a click tracker's random token | Low | T1598.003 |
 | A link that runs JavaScript (`javascript:`) instead of opening a website | Medium | T1027.006 |
 | A link that opens a page built into the link itself (`data:text/html`, `data:image/svg+xml`) | High | T1027.006, T1566.002 |
 
@@ -421,9 +422,9 @@ Markdown table) is built for blocking. It is empty when the verdict is
 
 | Indicator | Exported when |
 |---|---|
-| URL | Its host is not a well-known brand or a protected domain. Links on hosting and file-sharing platforms (Google Drive, Dropbox …) **are** exported, so the specific link can be blocked without blocking the platform. |
-| Domain | The sender, Reply-To, Return-Path or URL host, unless it is a well-known brand, a protected domain, a URL shortener, a free-mail provider, or a free-hosting or file-sharing platform |
-| IPv4, IPv6 | A URL host that is an IP address, and the originating IP (exported to MISP as `ip-src`) |
+| URL | Its host is not a well-known brand or a protected domain. Links on hosting and file-sharing platforms (Google Drive, Dropbox …) **are** exported, so the specific link can be blocked without blocking the platform. A shared mail service's unsubscribe link in the headers is not. |
+| Domain | The sender, Reply-To, Return-Path or URL host, unless it is a well-known brand, a protected domain, a URL shortener, a free-mail provider, a free-hosting, cloud storage or file-sharing platform, or a mail service or cloud shared by every customer (Oracle Email Delivery and Oracle Cloud, SendGrid, Mailgun, Mailchimp and others: its bounce address and trackers are in every message it sends) |
+| IPv4, IPv6 | A URL host that is an IP address, and the originating IP (exported to MISP as `ip-src`). A dotted number inside a longer one, such as a server version `8.1.0.1.20240909` or the time in an SMTP id, is not taken for an address |
 | Email address | The sender and Reply-To addresses, unless on a well-known brand or protected domain |
 | SHA-256 | Every attachment that is not an inline image, including files inside archives, disk images and documents |
 | Crypto wallet | Every wallet address found (exported to MISP as `btc` or `xmr`) |
@@ -443,6 +444,7 @@ The lists behind the checks live in `src/phishhawk/knowledge.py` and
 | Free-mail providers | 22 | BEC and organisation-name checks, export policy |
 | Risky extensions | 37 | Attachment signal |
 | Runnable and archive downloads | 22, 10 | Download-link signals |
-| Free hosting, tunnels, IPFS gateways, file sharing | 27, 8, 5, 15 | Hosting signals, export policy |
+| Free hosting, object storage, tunnels, IPFS gateways, file sharing | 27, 10 services, 8, 5, 16 | Hosting signals, export policy |
+| Shared mail services and clouds | 24 | Export policy |
 
 To add to them, or to add a new check, see [CONTRIBUTING.md](../CONTRIBUTING.md).

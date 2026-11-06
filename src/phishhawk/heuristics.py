@@ -25,7 +25,7 @@ from .extract import (
     registrable_domain,
     urls_from_text,
 )
-from .hosting import hosting_kind
+from .hosting import hosting_kind, stored_web_page
 from .knowledge import (
     ACCOUNT_CONTEXT,
     ARCHIVE_EXTENSIONS,
@@ -507,7 +507,12 @@ def _urls(a: Analysis) -> None:
                 a.add_signal("medium", "%s hides the real destination: %s"
                              % (ioc.wrapped_by, defang_host(target)), ("T1608.005",))
         kind = hosting_kind(ioc.url)
-        if kind:
+        if clicked and stored_web_page(ioc.url):
+            ioc.notes.append("a web page kept on cloud storage")
+            ioc.flagged = True
+            a.add_signal("medium", "link opens a web page kept on cloud storage: %s" % defang_host(host),
+                         ("T1583.006",))
+        elif kind:
             ioc.notes.append("%s host" % kind)
             if kind == "tunnel or IPFS":
                 ioc.flagged = True
