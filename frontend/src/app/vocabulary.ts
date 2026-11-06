@@ -57,7 +57,8 @@ export const PROVIDERS: { id: string; name: string; needsKey: boolean }[] = [
   { id: 'virustotal', name: 'VirusTotal', needsKey: true },
   { id: 'urlscan', name: 'urlscan.io', needsKey: true },
   { id: 'abuseipdb', name: 'AbuseIPDB', needsKey: true },
-  { id: 'rdap', name: 'RDAP (domain age)', needsKey: false },
+  { id: 'rdap', name: 'RDAP (domain age, IP holder)', needsKey: false },
+  { id: 'dns', name: 'DNS (sender domain, through Cloudflare 1.1.1.1)', needsKey: false },
 ];
 
 export const AUDIT_ACTION: Record<string, string> = {

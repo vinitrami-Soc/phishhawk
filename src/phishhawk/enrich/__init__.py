@@ -11,14 +11,15 @@ from urllib.parse import quote, unquote
 
 from ..extract import PRIVATE_IP_RE, is_ip, registrable_domain
 from ..knowledge import FREEMAIL, SHARED_INFRASTRUCTURE, SHORTENERS
-from ..models import Analysis
+from ..models import Analysis, on_the_internet
 from .abuseipdb import AbuseIPDB
 from .base import Provider, RateLimiter
+from .dns import Dns
 from .rdap import Rdap
 from .urlscan import UrlScan
 from .virustotal import VirusTotal
 
-__all__ = ["AbuseIPDB", "Enricher", "Provider", "RateLimiter", "Rdap", "UrlScan", "VirusTotal"]
+__all__ = ["AbuseIPDB", "Dns", "Enricher", "Provider", "RateLimiter", "Rdap", "UrlScan", "VirusTotal"]
 
 TRUSTED_SKIP = {"status": "skipped", "detail": "trusted domain, not sent to third parties"}
 BUDGET_SKIP = {"status": "skipped", "detail": "per-message VirusTotal budget used"}
@@ -57,12 +58,13 @@ class Enricher:
     urlscan: UrlScan | None = None
     rdap: Rdap | None = None
     abuseipdb: AbuseIPDB | None = None
+    dns: Dns | None = None
     urlscan_submit: bool = False
     vt_budget: int = 20  # network lookups per message; cache hits are free
 
     @property
     def sources(self) -> list[str]:
-        providers = (self.virustotal, self.urlscan, self.rdap, self.abuseipdb)
+        providers = (self.virustotal, self.urlscan, self.rdap, self.abuseipdb, self.dns)
         return [provider.name for provider in providers if provider is not None]
 
     def enrich(self, analysis: Analysis, progress: Callable[[str], None] | None = None) -> Analysis:
@@ -78,6 +80,8 @@ class Enricher:
             if ip and not PRIVATE_IP_RE.match(ip) and ":" not in ip:
                 note("RDAP %s" % ip)
                 analysis.ip_owner = self.rdap.ip_owner(ip)
+        if self.dns is not None:
+            self._dns(analysis, note)
         if self.abuseipdb is not None and ip and not PRIVATE_IP_RE.match(ip):
             note("AbuseIPDB %s" % ip)
             analysis.ip_intel = self.abuseipdb.check_ip(ip)
@@ -122,6 +126,18 @@ class Enricher:
                 ioc.urlscan["submission"] = urlscan.submit(redacted)
                 if redacted != ioc.url:
                     ioc.urlscan["submission"]["redacted"] = True
+
+    def _dns(self, a: Analysis, note: Callable[[str], None]) -> None:
+        """The sender's domain, and nothing else: does it exist, can it receive mail?"""
+        dns, domain = self.dns, a.from_domain
+        if dns is None or not domain:
+            return
+        base = registrable_domain(domain)
+        if (not base or is_ip(domain) or base in FREEMAIL or base in SHARED_INFRASTRUCTURE
+                or a.is_trusted_domain(domain) or not on_the_internet(domain)):
+            return
+        note("DNS %s" % domain)
+        a.dns_intel[domain] = dns.records(domain)
 
     def _rdap(self, a: Analysis, note: Callable[[str], None]) -> None:
         rdap = self.rdap

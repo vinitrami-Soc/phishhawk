@@ -191,7 +191,7 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
             out.append("  %s  %s in %s" % (colour("%-6s" % match.get("severity", ""), tone), match["rule"],
                                            match["where"]))
 
-    if a.domain_intel or a.ip_intel:
+    if a.domain_intel or a.ip_intel or a.dns_intel:
         out += ["", colour(_section("INFRASTRUCTURE"), "bold")]
         for domain, info in a.domain_intel.items():
             if info.get("status") == "ok":
@@ -202,6 +202,16 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
                     info.get("registrar", "")))
             else:
                 out.append("  %-34s %s" % (defang_host(domain), colour("RDAP: %s" % info.get("status"), "dim")))
+        for domain, info in a.dns_intel.items():
+            if info.get("status") != "ok":
+                out.append("  %-34s %s" % (defang_host(domain), colour("DNS: %s" % info.get("status"), "dim")))
+            elif info.get("exists") is False:
+                out.append("  %-34s %s" % (defang_host(domain), colour("does not exist in DNS", "red")))
+            elif info.get("mx") or info.get("address"):
+                out.append("  %-34s mail servers: %s" % (defang_host(domain),
+                                                         ", ".join(info.get("mx") or ["its address record"])))
+            else:
+                out.append("  %-34s %s" % (defang_host(domain), colour("no MX or A record", "amber")))
         ip = a.ip_intel
         if ip:
             if ip.get("status") == "ok":

@@ -10,7 +10,7 @@ Everything for it is in [`deploy/`](../deploy):
 | `deploy/compose.yaml` | the web app and its worker, Postgres, and the tunnel |
 | `deploy/setup.sh` | makes the keys and the database password, asks for the rest |
 | `deploy/backup.sh` | backs up the database and the stored files, keeps 14 days |
-| `deploy/update.sh` | backs up, then moves the server to a branch, tag or commit |
+| `deploy/update.sh` | backs up, then moves the server to a branch, tag or commit, and removes the images the new build replaced |
 | `.github/workflows/deploy.yml` | runs `update.sh` from GitHub, over SSH |
 
 The examples use `phishhawk.example.org`; use your own name.

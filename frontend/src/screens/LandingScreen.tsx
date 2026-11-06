@@ -383,6 +383,7 @@ const STRIP = [
   'urlscan.io',
   'AbuseIPDB',
   'RDAP',
+  'DNS',
   'MITRE ATT&CK',
   'STIX 2.1',
   'MISP',
@@ -1178,8 +1179,9 @@ function Faq() {
             </Question>
             <Question question="Does a reported email leave our server?">
               <p>
-                Nothing does, on a new installation. An admin can turn on reputation providers: VirusTotal, urlscan.io, AbuseIPDB and RDAP. PhishHawk then looks up indicators from
-                the message with them, such as links, domains and IP addresses. It never sends them the message itself.
+                Nothing does, on a new installation. An admin can turn on reputation providers: VirusTotal, urlscan.io, AbuseIPDB, RDAP, and DNS through Cloudflare&apos;s
+                resolver (1.1.1.1). PhishHawk then looks up indicators from the message with them, such as links, domains and IP addresses; DNS is asked only about the
+                sender&apos;s domain. It never sends them the message itself.
               </p>
               <p>To send nothing for one message, turn on Offline analysis when you submit it. Each analysis records which providers were asked.</p>
               <p>If you use a PhishHawk someone else runs, the email you submit goes to their server: Privacy says who runs it and where.</p>

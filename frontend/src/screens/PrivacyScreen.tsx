@@ -118,8 +118,9 @@ export default function PrivacyScreen() {
 
       <Section title="What leaves this server">
         <p>
-          Nothing, on a new installation. An admin can turn on reputation providers: VirusTotal, urlscan.io, AbuseIPDB and RDAP. PhishHawk then looks up indicators from the message with
-          them, such as links, domains and IP addresses. It never sends them the message itself.
+          Nothing, on a new installation. An admin can turn on reputation providers: VirusTotal, urlscan.io, AbuseIPDB, RDAP, and DNS through Cloudflare&apos;s resolver (1.1.1.1).
+          PhishHawk then looks up indicators from the message with them, such as links, domains and IP addresses; DNS is asked only about the sender&apos;s domain. It never sends
+          them the message itself.
         </p>
         <p>
           To send nothing for one message, turn on Offline analysis when you submit it. Each analysis records which providers were asked.

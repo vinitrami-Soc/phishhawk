@@ -1059,6 +1059,18 @@ def _actions(a: Analysis, anchor: str) -> str:
                   anchor="%s-actions" % anchor)
 
 
+def _dns_records(info: dict) -> str:
+    if info.get("status") != "ok":
+        return _tone_text(LOOKUP_WORDS.get(info.get("status", ""), "Error: %s" % info.get("status")), "dim")
+    if info.get("exists") is False:
+        return _tone_text("Does not exist", "red")
+    if info.get("mx"):
+        return "Mail servers: %s" % escape(", ".join(defang_host(h) for h in info["mx"]))
+    if info.get("address"):
+        return "No MX; receives mail at its address record"
+    return _tone_text("No mail server (no MX or A record)", "amber")
+
+
 def _reputation(a: Analysis) -> str:
     status = analysis_status(a)
     note = ("A clean or empty reputation result does not prove an indicator is safe." if a.enrichment_sources
@@ -1068,6 +1080,8 @@ def _reputation(a: Analysis) -> str:
     rows = []
     for domain, info in a.domain_intel.items():
         rows.append(("", [_mono_host(domain), "RDAP domain age", _domain_age(info)]))
+    for domain, info in a.dns_intel.items():
+        rows.append(("", [_mono_host(domain), "DNS records", _dns_records(info)]))
     ip = a.ip_intel
     if ip:
         if ip.get("status") == "ok":
