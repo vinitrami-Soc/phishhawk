@@ -176,3 +176,15 @@ def test_a_young_domain_named_only_in_the_text_is_a_medium_signal():
     assert a.domain_intel["moregrow-search.top"]["where"] == "named in the text"
     assert ("medium", "the message names moregrow-search[.]top, registered 9 day(s) ago") in \
         [(s.severity, s.label) for s in a.signals]
+
+
+def test_rdap_does_not_look_up_the_mail_service_a_phish_was_sent_through():
+    session = FakeSession(lambda m, url, k: FakeResponse(200, RDAP_BODY))
+    enricher = Enricher(rdap=Rdap(today=lambda: dt.date(2026, 9, 23), session=session, rate_per_minute=0))
+    triage_bytes(build_eml(sender='"A" <a@inside.crevax-mail.top>', text="Pay https://renew-licence.top/pay",
+                           headers=[("Return-Path", "<bounces@phx1.rp.oracleemaildelivery.com>"),
+                                    ("List-Unsubscribe", "<https://cell0.track.email.us-phoenix-1.oci.oraclecloud"
+                                                         ".com/track/unsubscribe?V=20>")]), enricher=enricher)
+    asked = " ".join(url for _, url, _ in session.calls)
+    assert "crevax-mail.top" in asked and "renew-licence.top" in asked
+    assert "oracleemaildelivery" not in asked and "oraclecloud" not in asked

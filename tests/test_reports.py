@@ -404,3 +404,8 @@ def test_a_suspicious_message_with_nothing_to_detonate_is_not_sent_to_the_sandbo
     a = triage_bytes(build_eml(subject="", sender='"Ruth Jackson" <talent.4471@gmail.com>', text=RECRUITER))
     advice = " ".join(recommendations(a))
     assert "sandbox" not in advice and "Do not reply" in advice
+
+
+def test_the_wording_finding_names_a_reply_as_well():
+    # A recruitment scam's trap is the reply, not a sign-in page.
+    assert "reply" in html.WHY_IT_MATTERS["content"]
