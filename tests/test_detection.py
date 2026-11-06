@@ -130,6 +130,18 @@ def test_open_redirect_on_a_trusted_domain_is_flagged():
         ("https://docs.google.com/forms/d/e/1/viewform", "file sharing"),
         ("https://docs.google.com/document/d/1", ""),
         ("https://www.google.com/", ""),
+        ("https://objectstorage.us-ashburn-1.oraclecloud.com/n/ns/b/redirecting/o/index.html", "free hosting"),
+        ("https://ns.objectstorage.uk-london-1.oci.customer-oci.com/n/ns/b/b/o/a.html", "free hosting"),
+        ("http://jo4dh9.blr1.cdn.digitaloceanspaces.com/lo6vy.html", "free hosting"),
+        ("https://leftingoels.s3.us-east-005.backblazeb2.com/A14r.html", "free hosting"),
+        ("https://bucket.s3.eu-central-1.wasabisys.com/a.html", "free hosting"),
+        ("https://bucket.us-east-1.linodeobjects.com/a.html", "free hosting"),
+        ("https://b.s3.eu-de.cloud-object-storage.appdomain.cloud/a.html", "free hosting"),
+        ("https://b.oss-cn-hangzhou.aliyuncs.com/a.html", "free hosting"),
+        ("https://gsdfg2df2.storage.googleapis.com/dsfg0.html", "free hosting"),
+        ("https://abcd.supabase.co/storage/v1/object/public/docs/pay.html", "file sharing"),
+        ("https://abcd.supabase.co/rest/v1/", ""),
+        ("https://www.oraclecloud.com/", ""),
     ],
 )
 def test_hosting_kind(url, kind):
@@ -301,3 +313,26 @@ def test_casino_lures_count_like_prize_lures():
 def test_ledger_in_the_display_name_needs_ledger_com():
     a = triage_bytes(build_eml(sender='"Ledger Support" <support@ledger-secure-update.example>'))
     assert has(a, "display name claims 'ledger'")
+
+
+@pytest.mark.parametrize("url", [
+    "https://objectstorage.us-ashburn-1.oraclecloud.com/n/idzq/b/redirecting/o/index.html?email=a@b.example",
+    "https://storage.googleapis.com/bucket-77/pay.html#x",
+    "https://leftingoels.s3.us-east-005.backblazeb2.com/A14r.htm",
+    "https://bucket.s3.amazonaws.com/x/invoice.svg",
+])
+def test_a_link_to_a_web_page_kept_on_cloud_storage_is_flagged(url):
+    # A bucket holds files; a web page there is one someone uploaded, the
+    # commonest way to put up a phishing page without a website of one's own.
+    a = triage_bytes(build_eml(html='<p>Your licence expires today.</p><a href="%s">Pay Now</a>' % url))
+    assert [s.severity for s in a.signals if s.label.startswith("link opens a web page kept on cloud storage")] \
+        == ["medium"]
+    assert [u.flagged for u in a.urls if u.url == url] == [True]
+
+
+def test_an_image_or_a_document_on_cloud_storage_is_not_a_web_page():
+    a = triage_bytes(build_eml(html=(
+        '<img src="https://bucket.s3.amazonaws.com/banner.html.png">'
+        '<a href="https://storage.googleapis.com/reports/annual-report.pdf">Annual report</a>'
+        '<a href="https://poorman.blogspot.com/2002_09_01_poorman_archive.html">Archive</a>')))
+    assert not any(s.label.startswith("link opens a web page kept on cloud storage") for s in a.signals)
