@@ -75,6 +75,10 @@ the JSON and STIX output are the public interface.
   channel first. A suspicious one is no longer sent to a sandbox with nothing
   to detonate: the advice is not to reply, call or send anything until the
   sender is confirmed, to quarantine it and to search for copies.
+- The simple view says not to reply, too: "Don't click links, open
+  attachments or reply yet" for a suspicious message, and the wording reason
+  now names a reply with your details, since a scam with nothing to click is
+  answered by a reply.
 
 ### Fixed
 
