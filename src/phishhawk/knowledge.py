@@ -38,6 +38,8 @@ FREEMAIL = {
     "msn.com", "yahoo.com", "ymail.com", "icloud.com", "me.com", "aol.com",
     "proton.me", "protonmail.com", "gmx.com", "gmx.de", "mail.com", "yandex.ru",
     "yandex.com", "zoho.com", "mail.ru", "rediffmail.com", "tutanota.com",
+    "163.com", "126.com", "yeah.net", "qq.com", "foxmail.com", "sina.com", "naver.com", "daum.net",
+    "hanmail.net", "web.de", "libero.it", "seznam.cz", "inbox.ru", "bk.ru", "list.ru", "rambler.ru",
 }
 
 # Mail services and clouds whose hosts are shared by every customer: a phish
@@ -466,6 +468,18 @@ LURES: dict[str, tuple[str, ...]] = {
         "spese di spedizione",
         "pakket kon niet",
         "douanekosten",
+    ),
+    # Recruitment scams: a vague job from someone who "came across your
+    # profile", with nothing to click; the trap (a fee, an "interview" on a
+    # messaging app, a copy of your passport) comes after the reply.
+    "job": (
+        "recruitment opportunity", "job opportunity", "employment opportunity", "career opportunity",
+        "job offer", "remote position", "part-time job", "part time job", "work from home job",
+        "talent partner", "talent acquisition", "hiring manager", "job description", "compensation package",
+        "salary package", "came across your profile", "came across your resume", "came across your cv",
+        "your professional profile", "send your cv", "send your resume", "updated resume", "updated résumé",
+        "updated cv", "interview on telegram", "interview via telegram", "interview on whatsapp",
+        "interview via whatsapp",
     ),
     "payment": (
         "overdue invoice", "payment failed", "payment declined", "bank details have changed",

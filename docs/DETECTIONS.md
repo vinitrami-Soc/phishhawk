@@ -333,15 +333,15 @@ also with whitespace squeezed out so `v e r i f y` still matches.
 | Signal | Severity | ATT&CK |
 |---|---|---|
 | Advance-fee or extortion wording | High with 2+ phrases, else Medium | T1566 |
-| Credential, delivery, payment or prize wording, or Portuguese, Spanish, German or French lure wording | Medium with 2+ phrases, else Low | T1566 |
+| Credential, delivery, payment, prize or job wording, or Portuguese, Spanish, German or French lure wording | Medium with 2+ phrases, else Low | T1566 |
 | Callback phishing: a fake renewal or order plus a phone number | High with no links or from free-mail, else Medium | T1566.004, T1656 |
 | QR-code lure: "scan the code" plus an image | High with no links and an MFA or credential ask, else Medium | T1566.002 |
 | Greets the recipient by email address instead of by name | Low | T1566 |
 | Recipient's address pasted into the subject | Low | T1566 |
 
 The lure categories are credentials, delivery, payment, prizes, advance fee,
-extortion, callback, QR code, crypto-wallet recovery, casino bonuses, and a
-foreign-language set.
+extortion, callback, QR code, crypto-wallet recovery, casino bonuses, job
+offers, and a foreign-language set.
 
 ### Money: wallets and business email compromise
 
@@ -356,6 +356,7 @@ indicators.
 | A wallet address appears in the message | Low | T1657 |
 | A lookalike of **your** domain asks for money (invoice, wire, gift cards) | High | T1656, T1657 |
 | A free-mail sender asks for money | Medium | T1656, T1657 |
+| A free-mail sender offers a job ("recruitment opportunity", "talent partner", "send your CV" …): a recruiter writes from the agency's or employer's own domain | Medium | T1656, T1566 |
 
 ### Message structure
 
@@ -438,10 +439,10 @@ The lists behind the checks live in `src/phishhawk/knowledge.py` and
 | List | Size | Used for |
 |---|---|---|
 | Brands | 187, plus any in your config file | Lookalike and display-name checks |
-| Lure phrases | 268 in 11 categories, 7 languages, plus any in your config file | Language signals |
+| Lure phrases | 296 in 12 categories, 7 languages, plus any in your config file | Language signals |
 | High-abuse TLDs | 30 | TLD signal |
 | URL shorteners | 32 | Shortener signal, export policy |
-| Free-mail providers | 22 | BEC and organisation-name checks, export policy |
+| Free-mail providers | 38 | BEC and organisation-name checks, export policy |
 | Risky extensions | 37 | Attachment signal |
 | Runnable and archive downloads | 22, 10 | Download-link signals |
 | Free hosting, object storage, tunnels, IPFS gateways, file sharing | 27, 10 services, 8, 5, 16 | Hosting signals, export policy |

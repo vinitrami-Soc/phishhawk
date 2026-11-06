@@ -25,6 +25,30 @@ the JSON and STIX output are the public interface.
   from SUSPICIOUS to LIKELY PHISHING and 5 more are flagged; no legitimate
   message changed, though those sets are from before cloud storage was common.
 
+- A job offered from a personal free-mail address is a medium signal,
+  "recruitment-scam pattern", and job-offer wording ("recruitment
+  opportunity", "talent partner", "send your CV" ...) is a lure category. A
+  recruitment scam opens with nothing to click and springs its trap after the
+  reply: a reported one, from a numbered Gmail address with no subject, was
+  NO STRONG INDICATORS with a score of 0 and is now SUSPICIOUS. A recruiter
+  writing from a company's own domain does not get the pattern. The tuning
+  sets hold no recruitment scams; four legitimate messages there gained a
+  low job-wording signal and none changed verdict.
+- 163.com, 126.com, yeah.net, QQ, Foxmail, Sina, Naver, Daum, Hanmail,
+  web.de, Libero, Seznam, Rambler and Mail.ru's inbox.ru, bk.ru and list.ru
+  are known as free mail.
+
+### Changed
+
+- The advice for a message with nothing to click or open (no link, no file,
+  no QR code; images and header links aside) is about replying, not
+  clicking. With no warning sign it no longer says "close as benign" without
+  more: it says such a message can only do harm through a reply, so a request
+  for money, documents or personal details is confirmed through another
+  channel first. A suspicious one is no longer sent to a sandbox with nothing
+  to detonate: the advice is not to reply, call or send anything until the
+  sender is confirmed, to quarantine it and to search for copies.
+
 ### Fixed
 
 - The product, sign-in, help and privacy pages no longer say more than is

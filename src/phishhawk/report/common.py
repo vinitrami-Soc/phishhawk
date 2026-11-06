@@ -192,10 +192,27 @@ def summary_sentences(analysis: Analysis) -> list[str]:
     return lines
 
 
+def _nothing_to_open(analysis: Analysis) -> bool:
+    """No link to click (images and header links aside), file or QR code."""
+    clickable = [u for u in analysis.urls
+                 if any("resource" not in s and not s.startswith("header:") for s in u.sources)]
+    return not clickable and not [f for f in analysis.attachments if not f.inline] and not analysis.qr_codes
+
+
 def recommendations(analysis: Analysis) -> list[str]:
     verdict = analysis.verdict
     if verdict == "NO STRONG INDICATORS":
+        if _nothing_to_open(analysis):
+            return ["Nothing in it to click or open, and no warning sign. A message like this can only do harm "
+                    "through a reply: close it, unless it asks for money, documents or personal details; then "
+                    "confirm the sender through a channel you find yourself first. Thank the reporter."]
         return ["Close as benign unless the reporter describes harm; thank them for reporting."]
+    if verdict == "SUSPICIOUS" and _nothing_to_open(analysis):
+        return ["Nothing to detonate: the message wants a reply, not a click.",
+                "Do not reply, call or send documents, personal details or money until the sender is confirmed "
+                "through a channel you find yourself, such as the organisation's own website.",
+                "Keep the message away from users through your quarantine process, and search for copies "
+                "sent to others by sender (phishhawk sweep does this read-only)."]
     if verdict == "SUSPICIOUS":
         return ["Detonate the URLs and attachments in a sandbox before deciding.",
                 "Confirm with the recipient whether they expected this message.",
