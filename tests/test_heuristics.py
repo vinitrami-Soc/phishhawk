@@ -174,3 +174,44 @@ def test_iocs_leave_out_the_mail_service_a_phish_was_sent_through():
     assert ("url", "https://renew-licence.top/pay") in values
     assert ("domain", "inside.crevax-mail.top") in values
     assert not any("oracleemaildelivery" in v or "oraclecloud" in v for _, v in values)
+
+
+def _sent_through(ip, helo, mailfrom, own="crevax-mail.top"):
+    return triage_bytes(build_eml(
+        subject="Keep your cover active - renew online",
+        sender='"TVLicensing" <donotreply-tvlicensing-support@inside.%s>' % own,
+        html='<p>Your licence expires today.</p><a href="https://renew-licence.top/pay">Pay Now</a>',
+        headers=[("Authentication-Results",
+                  "mx.google.com; spf=pass (google.com: domain of %s designates %s as permitted sender) "
+                  "smtp.mailfrom=%s; dkim=pass header.i=@inside.%s" % (mailfrom, ip, mailfrom, own)),
+                 ("Received", "from %s (%s. [%s]) by mx.google.com with ESMTPS id x1; Tue, 03 Nov 2026 01:20:08 "
+                  "-0800" % (helo, helo, ip))]))
+
+
+def test_the_sending_ip_of_a_shared_mail_service_is_not_offered_for_blocking():
+    # SPF passed for the service's own bounce domain from this address: the
+    # address is the service's, and blocking it blocks all its customers.
+    a = _sent_through("192.29.103.188", "aib29ajc188.phx1.oracleemaildelivery.com",
+                      "bounces@phx1.rp.oracleemaildelivery.com")
+    assert a.originating_ip == "192.29.103.188" and a.verdict != "NO STRONG INDICATORS"
+    values = {(i["type"], i["value"]) for i in a.iocs()}
+    assert ("url", "https://renew-licence.top/pay") in values
+    assert not any(t == "ipv4" for t, _ in values)
+
+
+def test_a_free_mail_provider_s_sending_ip_is_not_offered_for_blocking():
+    a = _sent_through("209.85.220.65", "mail-sor-f65.google.com", "talent.4471@gmail.com")
+    assert a.originating_ip == "209.85.220.65"
+    assert not any(i["type"] == "ipv4" for i in a.iocs())
+
+
+def test_a_phish_s_own_server_is_still_offered_for_blocking():
+    a = _sent_through("185.243.115.22", "mail.crevax-mail.top", "bounce@crevax-mail.top")
+    assert ("ipv4", "185.243.115.22") in {(i["type"], i["value"]) for i in a.iocs()}
+
+
+def test_a_helo_name_alone_does_not_make_an_address_a_mail_service_s():
+    # Anyone can say "mail-sor-f65.google.com" when connecting; only SPF passing
+    # for the service's domain from that address says it is the service's.
+    a = _sent_through("185.243.115.22", "mail-sor-f65.google.com", "bounce@crevax-mail.top")
+    assert ("ipv4", "185.243.115.22") in {(i["type"], i["value"]) for i in a.iocs()}

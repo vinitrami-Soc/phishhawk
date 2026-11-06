@@ -433,7 +433,7 @@ Markdown table) is built for blocking. It is empty when the verdict is
 |---|---|
 | URL | Its host is not a well-known brand or a protected domain. Links on hosting and file-sharing platforms (Google Drive, Dropbox …) **are** exported, so the specific link can be blocked without blocking the platform. A shared mail service's unsubscribe link in the headers is not. |
 | Domain | The sender, Reply-To, Return-Path or URL host, unless it is a well-known brand, a protected domain, a URL shortener, a free-mail provider, a free-hosting, cloud storage or file-sharing platform, or a mail service or cloud shared by every customer (Oracle Email Delivery and Oracle Cloud, SendGrid, Mailgun, Mailchimp and others: its bounce address and trackers are in every message it sends) |
-| IPv4, IPv6 | A URL host that is an IP address, and the originating IP (exported to MISP as `ip-src`). A dotted number inside a longer one, such as a server version `8.1.0.1.20240909` or the time in an SMTP id, is not taken for an address |
+| IPv4, IPv6 | A URL host that is an IP address, and the originating IP (exported to MISP as `ip-src`), unless it is a shared mail service's: the receiving server's SPF check passed for Gmail's, Outlook's, Oracle Email Delivery's or another shared service's domain from that very address. A dotted number inside a longer one, such as a server version `8.1.0.1.20240909` or the time in an SMTP id, is not taken for an address |
 | Email address | The sender and Reply-To addresses, unless on a well-known brand or protected domain |
 | SHA-256 | Every attachment that is not an inline image, including files inside archives, disk images and documents |
 | Crypto wallet | Every wallet address found (exported to MISP as `btc` or `xmr`) |

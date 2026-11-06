@@ -82,6 +82,19 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- The originating IP is no longer offered for blocking when it is a shared
+  mail service's: when the receiving server's SPF check passed for Gmail,
+  Outlook, Oracle Email Delivery, SendGrid or another such service's domain
+  from that very address. A TV Licensing phish sent through Oracle Email
+  Delivery listed Oracle's server, and a recruitment scam from Gmail listed
+  Google's; blocking either would block every other customer's mail. A HELO
+  name alone does not count: anyone can claim to be mail-sor-f65.google.com.
+- RDAP no longer looks up the domains of shared mail services and clouds
+  (oracleemaildelivery.com, oraclecloud.com and the like): their age says
+  nothing about the phish.
+- The HTML report's reason for a wording finding now names a reply with the
+  reader's details, not only signing in, paying or hurrying: a recruitment
+  scam's trap is the reply.
 - The product, sign-in, help and privacy pages no longer say more than is
   true. They said mail is analysed "on a server your organisation runs" and
   "not in someone else's cloud", which is not so for anyone using a PhishHawk

@@ -69,7 +69,7 @@ WHY_IT_MATTERS = {
     "sender": "The sender, reply address or display name is made to look like someone the reader trusts.",
     "link": "Links or QR codes lead somewhere other than they seem, or to hosting common in phishing.",
     "attachment": "Attached files can run code, hide a payload or collect credentials.",
-    "content": "The wording pushes the reader to act: sign in, pay or hurry.",
+    "content": "The wording pushes the reader to act: sign in, pay, hurry or reply with their details.",
     "evasion": "The message hides or disguises content to get past mail filters.",
     "intel": "A reputation service already reports this indicator.",
     "policy": "It matches your organisation's own block list or YARA rules.",

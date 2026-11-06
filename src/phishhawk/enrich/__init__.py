@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from urllib.parse import quote, unquote
 
 from ..extract import PRIVATE_IP_RE, is_ip, registrable_domain
-from ..knowledge import FREEMAIL, SHORTENERS
+from ..knowledge import FREEMAIL, SHARED_INFRASTRUCTURE, SHORTENERS
 from ..models import Analysis
 from .abuseipdb import AbuseIPDB
 from .base import Provider, RateLimiter
@@ -133,7 +133,7 @@ class Enricher:
         for host, where in candidates:
             base = registrable_domain(host)
             if (not base or is_ip(base) or base in a.domain_intel or base in SHORTENERS
-                    or base in FREEMAIL or a.is_trusted_domain(base)):
+                    or base in FREEMAIL or base in SHARED_INFRASTRUCTURE or a.is_trusted_domain(base)):
                 continue
             note("RDAP %s" % base)
             a.domain_intel[base] = rdap.domain_age(base)

@@ -262,6 +262,24 @@ class Analysis:
         base = registrable_domain(domain)
         return base in known_legit_domains() or self.is_protected(domain) or base in self.allowed_domains
 
+    def sent_by_shared_service(self) -> bool:
+        """Did the originating IP belong to a mail service shared by many
+        senders (Gmail, Oracle Email Delivery, SendGrid ...)? Only when the
+        receiving server's own SPF check passed for that service's domain from
+        that very address: a HELO name alone is the sender's word."""
+        receiver = (self.auth_receiver or "").lower()
+        if not receiver or not self.originating_ip:
+            return False
+        received_by = [hop for hop in self.hops if hop.get("ip") and (hop.get("by") or "").lower() == receiver]
+        if not received_by or received_by[-1]["ip"] != self.originating_ip:
+            return False
+        for check in self.auth_checks:
+            if check.get("method") == "spf" and check.get("result") == "pass":
+                base = registrable_domain(check.get("domain") or "")
+                if base and (base in SHARED_INFRASTRUCTURE or base in FREEMAIL or self.is_trusted_domain(base)):
+                    return True
+        return False
+
     def iocs(self) -> list[dict[str, str]]:
         """Indicators worth blocking or sharing. Empty for a clean verdict.
 
@@ -323,7 +341,7 @@ class Analysis:
             if address and not self.is_trusted_domain(domain) and on_the_internet(domain):
                 add("email", address, role)
 
-        if self.originating_ip:
+        if self.originating_ip and not self.sent_by_shared_service():
             add("ipv6" if ":" in self.originating_ip else "ipv4", self.originating_ip, "originating IP")
         for wallet in self.wallets:
             add("crypto-wallet", wallet["address"], "%s wallet in the message" % wallet["currency"])
