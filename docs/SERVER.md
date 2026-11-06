@@ -364,8 +364,9 @@ deleted. Migration 0007 adds them.
 ## Reputation lookups
 
 A new installation makes no outbound lookups. An admin turns providers on
-under Settings (VirusTotal, urlscan.io, RDAP and AbuseIPDB) and enters the API
-keys, which are stored encrypted and shown afterwards only as their last four
+under Settings (VirusTotal, urlscan.io, RDAP, AbuseIPDB, and DNS through
+Cloudflare's resolver 1.1.1.1, which is asked only about the sender's domain)
+and enters the API keys, which are stored encrypted and shown afterwards only as their last four
 characters. With providers on, an analyst can still tick "offline" for a
 message. Every analysis records which providers were asked and each request
 made, without the keys.

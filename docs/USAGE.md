@@ -178,6 +178,7 @@ free-mail providers are never exported as domain-level blocks.
 | `--abuseipdb-key KEY` | `$ABUSEIPDB_API_KEY` | AbuseIPDB key, for the reputation of the sending IP |
 | `--no-abuseipdb` | | Skip AbuseIPDB |
 | `--no-rdap` | | Skip RDAP lookups: domain age, and who holds the originating IP |
+| `--no-dns` | | Skip DNS lookups of the sender's domain (does it exist, can it receive mail), asked of Cloudflare's resolver 1.1.1.1 over HTTPS |
 | `--timeout SECONDS` | 20 | HTTP timeout per request |
 
 Prefer environment variables to `--*-key` flags: a key on the command line ends
@@ -513,7 +514,7 @@ a corporate proxy. Run it after installing and whenever enrichment seems not to 
 ```bash
 phishhawk cache                      # same as `cache stats`: entries per provider, size, location
 phishhawk cache clear                # remove everything
-phishhawk cache clear --provider rdap   # only one provider: virustotal, urlscan, rdap or abuseipdb
+phishhawk cache clear --provider rdap   # only one provider: virustotal, urlscan, rdap, abuseipdb or dns
 phishhawk cache path                 # print the cache file's location
 ```
 
@@ -628,6 +629,7 @@ removed; new fields can appear at any time. The full format is a JSON Schema,
 | `lookalikes[]` | `domain`, the `target` it imitates, the `method` (homoglyph, typosquat, combosquat, tld-swap …) and `where` it appeared |
 | `domain_intel`, `ip_intel` | RDAP domain ages (`where` is "named in the text" for a domain only written in the message) and AbuseIPDB results |
 | `ip_owner` | Who holds the originating IP, over RDAP: `organisation`, `network`, `name`, `country` |
+| `dns_intel` | The sender's domain in DNS: `exists`, its `mx` hosts and whether it has an `address` record |
 | `named_domains` | Domains written in the text without a link, such as a website in a signature (at most 5) |
 | `errors[]` | Anything that could not be parsed or looked up |
 | `generated_at`, `tool_version` | Provenance |

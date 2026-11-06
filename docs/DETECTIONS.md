@@ -400,6 +400,8 @@ These need network access and, for VirusTotal and AbuseIPDB, an API key.
 | RDAP: such a domain is under 90 days old | Low | T1583.001 |
 | AbuseIPDB: the sending IP has an abuse confidence of 75% or more | High | none |
 | AbuseIPDB: 25% to 74% | Medium | none |
+| DNS: the sender's domain does not exist (the resolver answers NXDOMAIN) | Medium | T1656 |
+| DNS: the sender's domain has neither an MX nor an A record, so it cannot receive a reply | Low | T1656 |
 
 RDAP also says who holds the originating IP: its network, holder and country, such as
 "Oracle Corporation, US, network 192.29.0.0/16". The reports show it beside the

@@ -133,7 +133,7 @@ explains each finding. The analyst's time goes on the part that needs judgement.
 | **QR codes** *(optional extra)* | Decoded in image attachments, inline images, images embedded in the HTML, images inside PDFs, and codes drawn with table cells or block characters. The link inside is analysed like any other; a code leading somewhere suspect, or sent with a credential or MFA ask, is high. |
 | **Language and money** | Lure phrases in seven languages (credentials, delivery, payment, prizes, advance fee, extortion, crypto recovery, casino bonuses); callback phishing, with the number to call exported; crypto wallets (checksum-verified) and payment asks; business email compromise from free-mail or from a lookalike of your own domain; QR-code lure wording; letter-spaced text; hash-busting tokens. |
 | **Your rules** | A config file for your domains, partners (never flagged), a block list, your own brands and lure phrases, and your YARA rules, run on the message and every file inside it. |
-| **Reputation** *(optional)* | VirusTotal for URLs and file hashes, urlscan.io for hosts, RDAP for domain age, AbuseIPDB for the sending IP. All cached, rate-limited and switched off by `--offline`. |
+| **Reputation** *(optional)* | VirusTotal for URLs and file hashes, urlscan.io for hosts, RDAP for domain age and the sending IP's holder, AbuseIPDB for the sending IP, DNS (Cloudflare's 1.1.1.1) for whether the sender's domain exists and receives mail. All cached, rate-limited and switched off by `--offline`. |
 | **After triage** | `phishhawk campaign` groups a folder of reports into campaigns by shared attachments, phishing domains, links, QR payloads and senders, with each campaign's recipients and first and last sighting, offline. `phishhawk sweep` finds a reported message's other copies in Microsoft 365 or Gmail mailboxes, with whether each was read or replied to, read-only. `--sandbox` writes a pack for any sandbox: the message, every file in it and the links to detonate, encrypted with the password `infected`. |
 | **Evidence** | Every report names the SHA-256 of the exact bytes it analysed. `--evidence` keeps each message, read-only, with a hash-chained custody log; `phishhawk evidence verify --head` shows whether anything changed since the head you put in the ticket. |
 
@@ -331,7 +331,7 @@ The `scan` options you will use most:
 | `--fail-on LEVEL` | For pipelines: exit 1 only when a message reaches `suspicious`, `likely` or `malicious` |
 | `--vt-rate N`, `--vt-budget N` | VirusTotal lookups per minute (default 4) and per message (default 20) |
 | `--urlscan-submit` | Submit URLs to urlscan.io as unlisted scans. Off by default because it sends the full URL. |
-| `--no-virustotal`, `--no-urlscan`, `--no-rdap`, `--no-abuseipdb` | Skip one provider |
+| `--no-virustotal`, `--no-urlscan`, `--no-rdap`, `--no-abuseipdb`, `--no-dns` | Skip one provider |
 | `--no-cache`, `--cache-ttl HOURS` | Bypass the cache, or change how long answers stay fresh (default 24) |
 | `--no-unwrap` | Analyse the covering note instead of the attached, reported original |
 

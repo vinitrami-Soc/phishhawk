@@ -187,6 +187,7 @@ class Analysis:
     ip_intel: dict[str, Any] | None = None
     ip_owner: dict[str, Any] | None = None  # who holds the originating IP, over RDAP
     domain_intel: dict[str, dict[str, Any]] = field(default_factory=dict)
+    dns_intel: dict[str, dict[str, Any]] = field(default_factory=dict)  # sender domains: exists, MX, address
     enrichment_sources: list[str] = field(default_factory=list)
     signals: list[Signal] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)

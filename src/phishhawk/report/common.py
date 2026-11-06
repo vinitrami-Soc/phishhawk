@@ -250,7 +250,8 @@ def recommendations(analysis: Analysis) -> list[str]:
 
 
 FAILED_LOOKUPS = ("error", "rate_limited", "auth_error")
-PROVIDER_NAMES = {"virustotal": "VirusTotal", "urlscan": "urlscan.io", "rdap": "RDAP", "abuseipdb": "AbuseIPDB"}
+PROVIDER_NAMES = {"virustotal": "VirusTotal", "urlscan": "urlscan.io", "rdap": "RDAP", "abuseipdb": "AbuseIPDB",
+                  "dns": "DNS"}
 
 
 def _lookups(analysis: Analysis):
@@ -262,6 +263,8 @@ def _lookups(analysis: Analysis):
         yield "VirusTotal", attachment.vt
     for info in analysis.domain_intel.values():
         yield "RDAP", info
+    for info in analysis.dns_intel.values():
+        yield "DNS", info
     yield "AbuseIPDB", analysis.ip_intel
 
 

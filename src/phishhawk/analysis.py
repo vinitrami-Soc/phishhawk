@@ -14,14 +14,14 @@ from urllib.parse import urlencode
 
 from . import __version__, campaign
 from .cache import Cache
-from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
+from .enrich import AbuseIPDB, Dns, Enricher, Rdap, UrlScan, VirusTotal
 from .enrich.base import new_session
 from .models import Analysis
 from .pipeline import Options, triage_bytes
 from .report.bundle import RenderedFile, render_bundle
 from .report.common import report_id, to_dict
 
-PROVIDERS = ("virustotal", "urlscan", "rdap", "abuseipdb")
+PROVIDERS = ("virustotal", "urlscan", "rdap", "abuseipdb", "dns")
 
 
 @dataclass
@@ -90,6 +90,7 @@ def _enricher(options: AnalysisOptions, cache: Cache | None, log: list[dict[str,
         rdap=Rdap(session=session("rdap"), **common) if "rdap" in enabled else None,
         abuseipdb=AbuseIPDB(keys["abuseipdb"], session=session("abuseipdb"), **common)
         if "abuseipdb" in enabled and keys.get("abuseipdb") else None,
+        dns=Dns(session=session("dns"), **common) if "dns" in enabled else None,
     )
 
 

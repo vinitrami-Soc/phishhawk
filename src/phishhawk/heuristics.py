@@ -949,6 +949,14 @@ def _enrichment_signals(a: Analysis) -> None:
             a.add_signal("high", "%s was registered %d day(s) ago" % (defang_host(domain), age), ("T1583.001",))
         elif age < YOUNG_DOMAIN_DAYS:
             a.add_signal("medium", "%s is only %d days old" % (defang_host(domain), age), ("T1583.001",))
+    for domain, info in a.dns_intel.items():
+        if info.get("status") != "ok" or domain != a.from_domain:
+            continue
+        if info.get("exists") is False:
+            a.add_signal("medium", "sender domain %s does not exist in DNS" % defang_host(domain), ("T1656",))
+        elif not info.get("mx") and not info.get("address"):
+            a.add_signal("low", "sender domain %s has no mail server (no MX or A record)" % defang_host(domain),
+                         ("T1656",))
     intel = a.ip_intel
     if intel and intel.get("status") == "ok":
         score = intel.get("score", 0)

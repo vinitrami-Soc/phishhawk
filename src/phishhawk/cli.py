@@ -43,7 +43,7 @@ from . import (
 from . import qr as qrcodes
 from .attack import EVIDENCE, TECHNIQUES
 from .cache import Cache, default_cache_path
-from .enrich import AbuseIPDB, Enricher, Rdap, UrlScan, VirusTotal
+from .enrich import AbuseIPDB, Dns, Enricher, Rdap, UrlScan, VirusTotal
 from .models import Analysis
 from .pipeline import Options, triage_bytes
 from .report import bundle, campaignout, console, html, sweepout
@@ -306,7 +306,9 @@ def _triage_options(command: argparse.ArgumentParser) -> None:
     enr.add_argument("--abuseipdb-key", default="", metavar="KEY",
                      help="AbuseIPDB key (default: $ABUSEIPDB_API_KEY)")
     enr.add_argument("--no-abuseipdb", action="store_true", help="skip AbuseIPDB")
-    enr.add_argument("--no-rdap", action="store_true", help="skip RDAP domain-age lookups")
+    enr.add_argument("--no-rdap", action="store_true", help="skip RDAP lookups: domain age and the IP's holder")
+    enr.add_argument("--no-dns", action="store_true",
+                     help="skip DNS lookups of the sender's domain (through Cloudflare's 1.1.1.1)")
     enr.add_argument("--timeout", type=float, default=20, metavar="SECONDS",
                      help="HTTP timeout per request (default 20)")
 
@@ -493,7 +495,7 @@ def build_parser() -> _Parser:
                     "inboxes costs one lookup per indicator.")
     cache.add_argument("action", nargs="?", choices=("stats", "clear", "path"), default="stats",
                        help="stats (default), clear, or path")
-    cache.add_argument("--provider", choices=("virustotal", "urlscan", "rdap", "abuseipdb"),
+    cache.add_argument("--provider", choices=("virustotal", "urlscan", "rdap", "abuseipdb", "dns"),
                        help="with clear: only this provider's entries")
     cache.add_argument("--cache-path", default=default_cache_path(), metavar="PATH")
     cache.add_argument("--cache-ttl", type=float, default=24, metavar="HOURS")
@@ -603,6 +605,7 @@ def build_enricher(args: argparse.Namespace, cache: Cache | None, notices: list[
             urlscan=None if args.no_urlscan else UrlScan(urlscan_key, **common),
             rdap=None if args.no_rdap else Rdap(**common),
             abuseipdb=AbuseIPDB(abuse_key, **common) if abuse_key and not args.no_abuseipdb else None,
+            dns=None if args.no_dns else Dns(**common),
             urlscan_submit=args.urlscan_submit and bool(urlscan_key),
             vt_budget=args.vt_budget,
         )

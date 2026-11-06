@@ -60,6 +60,15 @@ the JSON and STIX output are the public interface.
   your own (`--client-id` or `PHISHHAWK_GRAPH_CLIENT_ID`) and takes
   `--tenant`.
 
+- A DNS provider: whether the sender's domain exists and can receive mail,
+  asked of Cloudflare's resolver (1.1.1.1) over DNS over HTTPS. A sender
+  domain that does not exist is a medium signal; one with neither an MX nor
+  an A record, which cannot receive a reply, is low. Only the sender's
+  domain is sent, never for free mail, brands or your own domains. Turn it
+  on in Settings ("DNS") or skip it with `--no-dns`; the product and privacy
+  pages list it with the other providers. Settings now calls RDAP "RDAP
+  (domain age, IP holder)".
+
 ### Changed
 
 - `eval/README.md` has the held-out results of the detection changes in this
