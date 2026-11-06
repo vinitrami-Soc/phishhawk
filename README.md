@@ -256,7 +256,7 @@ A public server, with Postgres, a Cloudflare Tunnel, backups and deploys from Gi
 
 ```console
 $ phishhawk doctor
-PhishHawk 3.1.0 doctor
+PhishHawk 3.2.0 doctor
 
   OK    Python             3.12.4
   OK    requests           2.32.3
@@ -815,8 +815,8 @@ explains how to add a detection.
 - [x] Optional full public suffix list (2.1)
 - [x] More brands and lure languages; weigh independent evidence (2.1)
 - [x] Campaign correlation, mailbox sweep, evidence custody log, sandbox handoff, authentication explained (2.2)
-- [x] Submit a sandbox pack to a self-hosted CAPE through its API (unreleased: `phishhawk sandbox submit`)
-- [x] Sign in to Microsoft Graph from the command line with the device code flow (unreleased: `graph --sign-in`)
+- [x] Submit a sandbox pack to a self-hosted CAPE through its API (3.2: `phishhawk sandbox submit`)
+- [x] Sign in to Microsoft Graph from the command line with the device code flow (3.2: `graph --sign-in`)
 - [ ] Sign in to Gmail from the command line
 - [ ] Decompress RAR members, not only the stored ones
 - [ ] Packages on PyPI and GHCR

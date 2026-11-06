@@ -197,7 +197,7 @@ Cloudflare's security events name the rule "Block AI training crawlers".
 cd ~/phishhawk
 docker compose -f deploy/compose.yaml ps                  # what runs, and its health
 docker compose -f deploy/compose.yaml logs -f phishhawk   # the web app and the worker
-sh deploy/update.sh v3.1.0                                # deploy by hand
+sh deploy/update.sh v3.2.0                                # deploy by hand
 ```
 
 Dependabot opens monthly pull requests for the Python, frontend, Docker and

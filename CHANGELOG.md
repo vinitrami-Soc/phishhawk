@@ -7,6 +7,18 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-11-06
+
+PhishHawk now asks DNS whether the sender's domain exists and can receive
+mail, says who holds the originating IP, and reads domains written in the
+text without a link. It flags a web page kept on cloud storage, a job offered
+from a free-mail address, and short sign-in words in a link; the held-out
+evaluation in `eval/README.md` gives the effect. Indicators to block no longer
+include addresses and domains that mail services and clouds share among their
+customers. The command line can submit sandbox packs to a self-hosted CAPE and
+sign in to Microsoft Graph with a device code. Existing commands, options and
+exit codes are unchanged.
+
 ### Added
 
 - `PHISHHAWK_OPERATOR_HOSTING` says where a server runs, such as "a cloud
@@ -1094,7 +1106,8 @@ repository: a single-file IOC extractor (20 September 2026) and the
 `phishtriage` package (versioned 2.0.0, 23 September 2026). Version numbering
 restarted at 1.0.0 with the new name.
 
-[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/vinitrami-Soc/phishhawk/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v3.2.0
 [3.1.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v3.1.0
 [3.0.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v3.0.0
 [2.2.0]: https://github.com/vinitrami-Soc/phishhawk/releases/tag/v2.2.0

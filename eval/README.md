@@ -51,10 +51,10 @@ Before 1.2.0, the first real-mail evaluation found a parse that took 60
 seconds, and 1.1.0 flagged 23.3% of everyday legitimate mail; see the sections
 further down.
 
-## The evaluation after 3.1.0 (unreleased)
+## The 3.2 evaluation
 
 3.0 and 3.1 changed no signal or verdict rule, so the 2.2.0 numbers above held
-for them. The changes after 3.1.0 do. They fix false matches, flag web pages
+for them. 3.2 does. They fix false matches, flag web pages
 on cloud storage, and add a recruitment-scam pattern. Each was developed
 against the tuning sets only, scored message by message against the code
 before it. The held-out sets were then scored once, with the final code:
