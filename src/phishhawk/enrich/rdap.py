@@ -12,12 +12,13 @@ from typing import Any
 from .base import Provider
 
 BOOTSTRAP = "https://rdap.org/domain/"
+IP_BOOTSTRAP = "https://rdap.org/ip/"
 _DATE_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 
 
-def _registrar(entities: list[dict[str, Any]]) -> str:
+def _registrar(entities: list[dict[str, Any]], role: str = "registrar") -> str:
     for entity in entities or []:
-        if "registrar" not in (entity.get("roles") or []):
+        if role not in (entity.get("roles") or []):
             continue
         vcard = entity.get("vcardArray") or []
         for item in (vcard[1] if len(vcard) > 1 else []):
@@ -59,3 +60,27 @@ class Rdap(Provider):
             return {"status": "no_date", "link": link}
         return {"status": "ok", "registered": registered,
                 "registrar": _registrar(body.get("entities") or []), "link": link}
+
+    def ip_owner(self, ip: str) -> dict[str, Any]:
+        """Who holds an IP address: the network, its holder and country, from
+        the regional internet registry. Context for the reader, not a verdict:
+        a mail service's address is shared by all its customers."""
+        return dict(self._lookup("ip:" + ip, lambda: self._fetch_ip(ip)))
+
+    def _fetch_ip(self, ip: str) -> dict[str, Any]:
+        link = IP_BOOTSTRAP + ip
+        result = self._http("get", link, headers={"Accept": "application/rdap+json"})
+        if result["status"] != "ok":
+            return dict({k: v for k, v in result.items() if k != "body"}, link=link)
+        body = result["body"] or {}
+        cidrs = body.get("cidr0_cidrs") or []
+        network = ""
+        if cidrs and isinstance(cidrs[0], dict):
+            prefix = cidrs[0].get("v4prefix") or cidrs[0].get("v6prefix")
+            network = "%s/%s" % (prefix, cidrs[0].get("length")) if prefix else ""
+        if not network and body.get("startAddress"):
+            network = "%s - %s" % (body["startAddress"], body.get("endAddress", ""))
+        entities = body.get("entities") or []
+        organisation = _registrar(entities, "registrant") or _registrar(entities, "administrative")
+        return {"status": "ok", "organisation": organisation, "network": network,
+                "name": str(body.get("name") or ""), "country": str(body.get("country") or ""), "link": link}

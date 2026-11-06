@@ -32,9 +32,12 @@ from typing import Any
 from . import qr as qrcodes
 from .attachments import Inspector, file_ioc, password_candidates
 from .extract import (
+    DOMAINISH_RE,
     EMAIL_RE,
     IPV4_RE,
+    MULTI_TLDS,
     PRIVATE_IP_RE,
+    URL_RE,
     ZERO_WIDTH_RE,
     clean_url,
     defang_text,
@@ -458,6 +461,38 @@ def _received(msg: Message) -> list[str]:
                 for name, value in items if name.lower() == "received"]
     except Exception:
         return []
+
+
+# Top-level names a website named in a sentence is likely to end in. Many
+# country codes are also file extensions ("main.py", "notes.md", "lib.rs"),
+# so only these count; ".zip" and ".mov" name files more often than sites.
+NAMED_TLDS = frozenset({
+    "com", "net", "org", "info", "biz", "co", "io", "ai", "app", "dev", "online", "site", "website", "shop",
+    "store", "tech", "top", "xyz", "live", "life", "club", "pro", "agency", "global", "group", "company",
+    "services", "solutions", "consulting", "careers", "jobs", "work", "email", "link", "click", "uk", "us",
+    "ca", "au", "in", "de", "fr", "es", "it", "nl", "eu", "ch", "se", "no", "be", "ie", "nz", "za", "sg", "hk",
+    "jp", "cn", "br", "mx", "ng", "ke", "ae", "pk", "ph", "my", "id",
+})
+MAX_NAMED_DOMAINS = 5
+
+
+def _named_domains(text: str) -> list[str]:
+    """Registrable domains written in the text without a link, such as a
+    website in a signature: links and e-mail addresses are taken out first."""
+    text = EMAIL_RE.sub(" ", URL_RE.sub(" ", text or ""))
+    found: dict[str, None] = {}
+    for match in DOMAINISH_RE.finditer(text):
+        if match.group(0).rstrip(".").rsplit(".", 1)[-1][:1].isupper():
+            continue  # "by Friday.It is": a missing space, not a domain
+        name = match.group(0).lower().rstrip(".")
+        base = registrable_domain(name)
+        tld = base.rsplit(".", 1)[-1]
+        if not base or "." not in base or not (tld in NAMED_TLDS or base.split(".", 1)[-1] in MULTI_TLDS):
+            continue
+        found.setdefault(base)
+        if len(found) >= MAX_NAMED_DOMAINS:
+            break
+    return list(found)
 
 
 def _originating_ip(msg: Message, received: list[str]) -> str:
@@ -895,6 +930,7 @@ def _read_content(msg: Message, analysis: Analysis, qr: bool = True,
         if len(seen) >= 25:
             break
     analysis.body_emails = list(seen)
+    analysis.named_domains = _named_domains("%s\n%s" % (analysis.subject, analysis.body_text))
 
     domains: dict[str, None] = {}  # ordered and O(1): a message can carry 50,000 links
     for candidate in [analysis.from_domain, analysis.reply_to_domain, analysis.return_path_domain]:

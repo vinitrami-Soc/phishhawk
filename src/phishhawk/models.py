@@ -169,6 +169,7 @@ class Analysis:
     attachments: list[FileIoc] = field(default_factory=list)
     domains: list[str] = field(default_factory=list)
     body_emails: list[str] = field(default_factory=list)
+    named_domains: list[str] = field(default_factory=list)  # written in the text, not linked: "moregrow.top"
     qr_codes: list[dict[str, str]] = field(default_factory=list)  # where, payload, url
     calendar: list[dict[str, Any]] = field(default_factory=list)  # invitations: organizer, summary, links
     wallets: list[dict[str, str]] = field(default_factory=list)  # cryptocurrency addresses: currency, address
@@ -184,6 +185,7 @@ class Analysis:
     script_links: list[dict[str, Any]] = field(default_factory=list)  # javascript: and data:text/html links
     body_text: str = field(default="", repr=False)  # visible then hidden text, capped; not exported
     ip_intel: dict[str, Any] | None = None
+    ip_owner: dict[str, Any] | None = None  # who holds the originating IP, over RDAP
     domain_intel: dict[str, dict[str, Any]] = field(default_factory=dict)
     enrichment_sources: list[str] = field(default_factory=list)
     signals: list[Signal] = field(default_factory=list)

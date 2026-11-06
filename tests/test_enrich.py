@@ -5,10 +5,10 @@ import pytest
 from phishhawk.cache import Cache
 from phishhawk.enrich import AbuseIPDB, Enricher, RateLimiter, Rdap, UrlScan, VirusTotal
 from phishhawk.models import vt_is_malicious, vt_is_suspicious
-from phishhawk.pipeline import triage_file
+from phishhawk.pipeline import triage_bytes, triage_file
 from phishhawk.report.common import summary_sentences
 
-from conftest import FakeResponse, FakeSession, sample, vt_stats
+from conftest import FakeResponse, FakeSession, build_eml, sample, vt_stats
 
 
 def test_vt_url_id_matches_the_v3_scheme():
@@ -140,3 +140,39 @@ def test_vt_budget_caps_network_lookups():
     a = triage_file(sample("sample_phish.eml"), enricher=enricher)
     assert len(session.calls) == 2
     assert sum(1 for u in a.urls if (u.vt or {}).get("detail", "").startswith("per-message")) >= 3
+
+
+RDAP_IP_BODY = {"objectClassName": "ip network", "handle": "NET-192-29-0-0-1", "name": "ORACLE-4",
+                "country": "US", "startAddress": "192.29.0.0", "endAddress": "192.29.255.255",
+                "cidr0_cidrs": [{"v4prefix": "192.29.0.0", "length": 16}],
+                "entities": [{"roles": ["registrant"], "vcardArray": ["vcard", [
+                    ["version", {}, "text", "4.0"], ["fn", {}, "text", "Oracle Corporation"]]]}]}
+
+
+def test_rdap_names_who_holds_an_ip_address():
+    session = FakeSession(queue=[FakeResponse(200, RDAP_IP_BODY)])
+    record = Rdap(session=session, rate_per_minute=0).ip_owner("192.29.103.188")
+    assert record == {"status": "ok", "organisation": "Oracle Corporation", "network": "192.29.0.0/16",
+                      "name": "ORACLE-4", "country": "US", "link": "https://rdap.org/ip/192.29.103.188"}
+
+
+def test_the_originating_ip_s_holder_is_looked_up_and_reported():
+    session = FakeSession(lambda m, url, k: FakeResponse(200, RDAP_IP_BODY if "/ip/" in url else RDAP_BODY))
+    enricher = Enricher(rdap=Rdap(today=lambda: dt.date(2026, 9, 23), session=session, rate_per_minute=0))
+    a = triage_file(sample("sample_phish.eml"), enricher=enricher)
+    assert a.ip_owner["organisation"] == "Oracle Corporation"
+    assert any(url == "https://rdap.org/ip/185.243.115.22" for _, url, _ in session.calls)
+    from phishhawk.report import html, markdown
+    assert "Oracle Corporation" in markdown.render(a) and "Oracle Corporation" in html.render([a])
+
+
+def test_a_young_domain_named_only_in_the_text_is_a_medium_signal():
+    # A recruitment scam's signature names its website without linking it.
+    session = FakeSession(lambda m, url, k: FakeResponse(200, RDAP_BODY))
+    enricher = Enricher(rdap=Rdap(today=lambda: dt.date(2026, 9, 23), session=session, rate_per_minute=0))
+    a = triage_bytes(build_eml(sender='"A" <a.recruiter@gmail.com>',
+                               text="Regards, Adekunle\nMoreGrow Global Search | moregrow-search.top"),
+                     enricher=enricher)
+    assert a.domain_intel["moregrow-search.top"]["where"] == "named in the text"
+    assert ("medium", "the message names moregrow-search[.]top, registered 9 day(s) ago") in \
+        [(s.severity, s.label) for s in a.signals]

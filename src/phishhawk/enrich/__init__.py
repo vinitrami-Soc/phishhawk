@@ -47,6 +47,10 @@ def redact_recipients(url: str, a: Analysis) -> str:
     return url
 
 
+# A domain written in the text without a link: weaker evidence than a sender or a link.
+NAMED = "named in the text"
+
+
 @dataclass
 class Enricher:
     virustotal: VirusTotal | None = None
@@ -68,9 +72,12 @@ class Enricher:
             self._virustotal(analysis, note)
         if self.urlscan is not None:
             self._urlscan(analysis, note)
+        ip = analysis.originating_ip
         if self.rdap is not None:
             self._rdap(analysis, note)
-        ip = analysis.originating_ip
+            if ip and not PRIVATE_IP_RE.match(ip) and ":" not in ip:
+                note("RDAP %s" % ip)
+                analysis.ip_owner = self.rdap.ip_owner(ip)
         if self.abuseipdb is not None and ip and not PRIVATE_IP_RE.match(ip):
             note("AbuseIPDB %s" % ip)
             analysis.ip_intel = self.abuseipdb.check_ip(ip)
@@ -120,12 +127,15 @@ class Enricher:
         rdap = self.rdap
         if rdap is None:
             return
-        candidates = [a.from_domain, a.reply_to_domain, a.return_path_domain]
-        candidates += [ioc.host for ioc in a.urls]
-        for host in candidates:
+        candidates = [(a.from_domain, ""), (a.reply_to_domain, ""), (a.return_path_domain, "")]
+        candidates += [(ioc.host, "") for ioc in a.urls]
+        candidates += [(name, NAMED) for name in a.named_domains]
+        for host, where in candidates:
             base = registrable_domain(host)
             if (not base or is_ip(base) or base in a.domain_intel or base in SHORTENERS
                     or base in FREEMAIL or a.is_trusted_domain(base)):
                 continue
             note("RDAP %s" % base)
             a.domain_intel[base] = rdap.domain_age(base)
+            if where:
+                a.domain_intel[base]["where"] = where

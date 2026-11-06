@@ -162,6 +162,18 @@ def unopened_members(analysis: Analysis, parent: FileIoc) -> list[str]:
     return [name for name in parent.archive.get("listing", []) if name not in opened]
 
 
+def ip_owner_text(analysis: Analysis) -> str:
+    """Who holds the originating IP, for the line beside it: "Oracle
+    Corporation, US, network 192.29.0.0/16". Empty when not looked up."""
+    owner = analysis.ip_owner or {}
+    if owner.get("status") != "ok":
+        return ""
+    parts = [owner.get("organisation") or owner.get("name") or "", owner.get("country") or ""]
+    if owner.get("network"):
+        parts.append("network %s" % owner["network"])
+    return ", ".join(p for p in parts if p)
+
+
 def summary_sentences(analysis: Analysis) -> list[str]:
     lines: list[str] = []
     urls = analysis.urls

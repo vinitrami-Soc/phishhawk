@@ -38,6 +38,17 @@ the JSON and STIX output are the public interface.
   web.de, Libero, Seznam, Rambler and Mail.ru's inbox.ru, bk.ru and list.ru
   are known as free mail.
 
+- RDAP now also says who holds the originating IP (network, holder,
+  country: "Oracle Corporation, US, network 192.29.0.0/16"), shown beside
+  the address in every report and as `ip_owner` in JSON. It needs no key and
+  is part of the RDAP provider, so it is off with `--no-rdap` or offline.
+- Domains written in the text without a link, such as a website in a
+  signature, are collected (`named_domains`, at most five) and their age is
+  looked up over RDAP. One registered under 30 days ago is a medium signal,
+  under 90 days low: named, not linked or sending, it is weaker evidence
+  than a new sender domain. A recruitment scam's signature named a website
+  registered weeks before; offline it is listed, not scored.
+
 ### Changed
 
 - The advice for a message with nothing to click or open (no link, no file,

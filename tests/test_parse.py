@@ -142,3 +142,13 @@ def test_a_version_number_in_a_received_header_is_not_the_origin():
                      "with ESMTPS id <0T3J00@omta>; Tue, 03 Nov 2026 09:20:07 +0000 (GMT)"),
     ]))
     assert a.originating_ip == "192.29.103.188"
+
+
+def test_domains_named_in_the_text_are_collected_but_not_files_links_or_addresses():
+    a = parse_bytes(build_eml(text=(
+        "Kind regards, Adekunle - MoreGrow Global Search, moregrow-search.top\n"
+        "Our partner portal: www.partner-portal.top/apply and https://linked.example/x\n"
+        "Write to jobs@hiring-desk.top. Attached: report.pdf, setup.exe, main.py, notes.md, lib.rs\n"
+        "Version 2.4.1 is out. See also Careers.Example-Corp.co.uk\n"
+        "Reply by Friday.It is urgent.No more delays")))
+    assert a.named_domains == ["moregrow-search.top", "example-corp.co.uk"]

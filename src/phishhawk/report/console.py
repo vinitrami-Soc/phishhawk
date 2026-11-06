@@ -9,6 +9,7 @@ from .common import (
     children_of,
     display_copy,
     human_size,
+    ip_owner_text,
     recommendations,
     sorted_signals,
     summary_sentences,
@@ -73,7 +74,9 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     if a.return_path:
         out.append("Return-Path  : %s" % defang_host(a.return_path))
     if a.originating_ip:
-        out.append("Originating  : %s  (%d Received hop(s))" % (defang_host(a.originating_ip), a.received_hops))
+        holder = ip_owner_text(a)
+        out.append("Originating  : %s  (%d Received hop(s))%s" % (defang_host(a.originating_ip), a.received_hops,
+                                                                  "  held by %s" % holder if holder else ""))
     if a.auth:
         bits = []
         for mechanism in ("spf", "dkim", "dmarc", "compauth"):
