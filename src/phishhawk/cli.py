@@ -29,6 +29,7 @@ from . import (
     __version__,
     banner,
     campaign,
+    cape,
     config,
     evidence,
     extract,
@@ -47,8 +48,8 @@ from .pipeline import Options, triage_bytes
 from .report import bundle, campaignout, console, html, sweepout
 from .report.common import printable, safe_report_name, to_dict
 
-COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "sweep", "evidence", "doctor", "cache", "techniques",
-            "server", "help")
+COMMANDS = ("scan", "imap", "graph", "gmail", "campaign", "sweep", "evidence", "sandbox", "doctor", "cache",
+            "techniques", "server", "help")
 EXIT_CODES = {"NO STRONG INDICATORS": 0, "SUSPICIOUS": 1, "LIKELY PHISHING": 1, "MALICIOUS": 2}
 EXIT_ERROR = 3
 
@@ -175,6 +176,22 @@ proven unchanged later.
 exit codes:
   0  every record and kept message checks out     1  something does not"""
 
+
+SANDBOX_EPILOG = """\
+examples:
+  phishhawk scan reported/ --offline --sandbox packs/        write a pack per message
+  export PHISHHAWK_CAPE_TOKEN=...                            (from CAPE: /apiv2/api-token-auth/)
+  phishhawk sandbox submit --cape https://cape.example.org packs/*.zip
+
+Each pack goes to CAPE's file endpoint (POST /apiv2/tasks/create/file/) with
+the option password=infected, the password every pack is encrypted with; CAPE
+unpacks it and makes a task per file it can run. The token is read from
+$PHISHHAWK_CAPE_TOKEN, never the command line, and is sent over HTTPS, or over
+plain HTTP only to this machine or a private address. Without a token nothing
+is sent in its place, for a CAPE that does not ask for one.
+
+exit codes:
+  0  every pack was taken     3  a pack was not taken, or could not be read"""
 
 # ---------------------------------------------------------------------------
 # Parser
@@ -442,6 +459,16 @@ def build_parser() -> _Parser:
     kept.add_argument("--head", dest="heads", action="append", default=[], metavar="CHAIN",
                       help="a head or custody value recorded earlier, e.g. in a ticket: it must still be in the "
                            "log (repeatable)")
+
+    pack = commands.add_parser(
+        "sandbox", parents=[display], formatter_class=_Formatter, epilog=SANDBOX_EPILOG,
+        help="submit the packs written with --sandbox to a self-hosted CAPE sandbox",
+        description="Submit sandbox packs, written with --sandbox, to a self-hosted CAPE sandbox through its "
+                    "REST API. PhishHawk itself runs nothing.")
+    pack.add_argument("action", choices=("submit",), help="submit: send each pack to CAPE")
+    pack.add_argument("packs", nargs="+", metavar="PACK.zip", help="packs written with --sandbox")
+    pack.add_argument("--cape", required=True, metavar="URL", help="CAPE's address, e.g. https://cape.example.org")
+    pack.add_argument("--timeout", type=float, default=120, help="seconds to wait for each upload (default 120)")
 
     doctor = commands.add_parser(
         "doctor", parents=[display], formatter_class=_Formatter,
@@ -1219,6 +1246,28 @@ def cmd_evidence(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sandbox(args: argparse.Namespace, parser: _Parser) -> int:
+    colour = console.Palette(_colour_ok(sys.stdout, args.no_color))
+    err = console.Palette(_colour_ok(sys.stderr, args.no_color))
+    try:
+        base = cape.check_url(args.cape)
+    except cape.CapeError as exc:
+        parser.commands["sandbox"].error(str(exc))
+    token = os.environ.get("PHISHHAWK_CAPE_TOKEN", "").strip()
+    session = cape.new_session()
+    failed = 0
+    for path in args.packs:
+        result = cape.submit(base, token, path, session=session, timeout=args.timeout)
+        name = printable(os.path.basename(path))
+        if result["status"] == "ok":
+            print(colour("[ok] %s: CAPE %s %s" % (name, "task" if len(result["task_ids"]) == 1 else "tasks",
+                                                  ", ".join(str(t) for t in result["task_ids"])), "green"))
+        else:
+            failed += 1
+            print(err("[!] %s: %s" % (name, printable(result["detail"])), "red"), file=sys.stderr)
+    return EXIT_ERROR if failed else 0
+
+
 def _count(number: int, noun: str) -> str:
     return "%d %s%s" % (number, noun, "" if number == 1 else "s")
 
@@ -1266,6 +1315,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_sweep(args, parser)
     if args.command == "evidence":
         return cmd_evidence(args)
+    if args.command == "sandbox":
+        return cmd_sandbox(args, parser)
     if args.command == "doctor":
         return cmd_doctor(args)
     if args.command == "cache":
