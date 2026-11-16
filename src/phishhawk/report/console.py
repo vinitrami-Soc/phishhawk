@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import textwrap
+
 from ..alignment import assess
 from ..extract import defang_host, defang_url
 from ..models import Analysis, vt_is_malicious
@@ -38,6 +40,13 @@ class Palette:
 def _section(title: str) -> str:
     head = "-- %s " % title
     return head + "-" * max(3, WIDTH - len(head))
+
+
+def _step(lead: str, action: str) -> list[str]:
+    """One recommended action, wrapped inside the report's width; its own lines indent two more, so
+    where one action ends and the next begins stays plain."""
+    return textwrap.wrap(action, WIDTH, initial_indent=lead, subsequent_indent=" " * (len(lead) + 2),
+                         break_long_words=False, break_on_hyphens=False)
 
 
 def _verdict_tone(verdict: str) -> str:
@@ -247,9 +256,10 @@ def render(a: Analysis, colour: Palette, verbose: bool = False) -> str:
     out += ["  " + line for line in summary_sentences(a)]
     out.append("  Verdict: %s  (risk score %d)" % (colour(a.verdict, _verdict_tone(a.verdict)), a.score))
     actions = recommendations(a)
-    out.append("  Next step: %s" % actions[0])
+    out += _step("  Next step: ", actions[0])
     if verbose:
-        out += ["             %s" % action for action in actions[1:]]
+        for action in actions[1:]:
+            out += _step(" " * 13, action)
     out.append(colour(rule, "cyan"))
     return "\n".join(out)
 
