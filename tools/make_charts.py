@@ -67,7 +67,7 @@ def legend(items, x, y, t):
 # ------------------------------------------------------------------ KPIs --
 
 HELD_OUT_LEGIT = ("ham_holdout", "enron", "fixtures", "msg")  # every legitimate set never tuned on
-BEFORE, BEFORE_NAME, AFTER_NAME = "2_0_0", "2.0", "2.2"  # the release compared against, and this one
+BEFORE, BEFORE_NAME, AFTER_NAME = "2_0_0", "2.0", "3.2"  # the release compared against, and this one
 REAL_SETS = ("pot_holdout", "pot_tune", "holdout", "tune", "nazario", "ham_holdout", "enron", "fixtures", "msg",
              "ham_tune", "cpython")
 
@@ -89,7 +89,7 @@ def kpis(data: dict, t: dict) -> str:
         ("False positives", "%.1f%%" % (100 * fp / legit),
          "%d of %s legit emails" % (fp, "{:,}".format(legit)),
          "▼ from %.1f%% in %s" % (100 * fp_before / legit, BEFORE_NAME)),
-        ("Automated tests", str(data["tests"]), "Python 3.10 to 3.13",
+        ("Automated tests", "{:,}".format(data["tests"]), "Python 3.10 to 3.13",
          "▲ from %d in %s" % (base["tests_%s" % BEFORE], BEFORE_NAME)),
     ]
     body, gap, top = [], 12, 84
@@ -170,13 +170,11 @@ def evaluation(data: dict, t: dict) -> str:
             round(100 * baseline, 1), exact(counts, measure)
 
     rows = [row("Unseen phishing, 2022-2026", "pot_holdout", "recall"),
-            row("Earlier held-out sample", "holdout", "recall"),
             row("Phishing from 2005-2007", "nazario", "recall")]
     panel, y = dumbbell_panel(rows, 124, x0, x1, 100, [0, 25, 50, 75, 100], pct, t,
                               "Real phishing flagged · higher is better")
     body += panel
     rows = [row("Unseen phishing, 2022-2026", "pot_holdout", "recall", strict=True),
-            row("Earlier held-out sample", "holdout", "recall", strict=True),
             row("Phishing from 2005-2007", "nazario", "recall", strict=True)]
     panel, y = dumbbell_panel(rows, y + 40, x0, x1, 100, [0, 25, 50, 75, 100], pct, t,
                               "Called likely phishing, not just suspicious · higher is better")
