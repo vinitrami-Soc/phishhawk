@@ -1,7 +1,7 @@
 {
-  "about": "Offline evaluation of PhishHawk 2.2.0: parser and heuristics only, no reputation lookups. Held-out sets were scored once, after all tuning (the fixtures set had been studied: its two 2.0 false positives were fixed on purpose in 2.1). Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail sets come from eval/fetch_phishing_pot.py, eval/fetch_spamassassin.py and eval/fetch_fresh.py.",
-  "generated": "2026-10-06",
-  "tool_version": "2.2.0",
+  "about": "Offline evaluation of PhishHawk 3.2.0: parser and heuristics only, no reputation lookups. Held-out sets were scored once, after all tuning (the fixtures set had been studied: its two 2.0 false positives were fixed on purpose in 2.1). Three entries keep their 2.2.0 results, each marked as scored with 2.2.0: the 200-message phishing_pot samples 'holdout' and 'tune', which cannot be rebuilt from the pinned split, and pot_holdout's by_year breakdown. Regenerate the synthetic entry with eval/run_eval.py --synthetic; the real-mail sets come from eval/fetch_phishing_pot.py, eval/fetch_spamassassin.py and eval/fetch_fresh.py.",
+  "generated": "2026-11-16",
+  "tool_version": "3.2.0",
   "sets": {
     "pot_holdout": {
       "title": "Real phishing, held out, 2022 to 2026",
@@ -10,36 +10,36 @@
         "emails": 5714,
         "verdicts": {
           "phish": {
-            "LIKELY PHISHING": 2679,
-            "SUSPICIOUS": 1965,
-            "NO STRONG INDICATORS": 1070
+            "LIKELY PHISHING": 2731,
+            "SUSPICIOUS": 1923,
+            "NO STRONG INDICATORS": 1060
           }
         },
         "phish": 5714,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 4644,
-          "fn": 1070,
+          "tp": 4654,
+          "fn": 1060,
           "fp": 0,
           "tn": 0,
-          "recall": 0.8127,
+          "recall": 0.8145,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 2679,
-          "fn": 3035,
+          "tp": 2731,
+          "fn": 2983,
           "fp": 0,
           "tn": 0,
-          "recall": 0.4688,
+          "recall": 0.4779,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 9.0,
-          "p95": 48.0,
-          "max": 1383.0
+          "median": 6.1,
+          "p95": 33.6,
+          "max": 629.4
         }
       },
       "by_year": {
@@ -83,7 +83,8 @@
           "strict_2_0_0": 325,
           "strict": 685
         }
-      }
+      },
+      "by_year_scored_with": "2.2.0"
     },
     "pot_tune": {
       "title": "Real phishing, used while developing detections (2022 to 2026)",
@@ -92,36 +93,36 @@
         "emails": 2500,
         "verdicts": {
           "phish": {
-            "LIKELY PHISHING": 1165,
-            "SUSPICIOUS": 889,
-            "NO STRONG INDICATORS": 446
+            "LIKELY PHISHING": 1196,
+            "SUSPICIOUS": 862,
+            "NO STRONG INDICATORS": 442
           }
         },
         "phish": 2500,
         "benign": 0,
         "errors": 0,
         "flagged": {
-          "tp": 2054,
-          "fn": 446,
+          "tp": 2058,
+          "fn": 442,
           "fp": 0,
           "tn": 0,
-          "recall": 0.8216,
+          "recall": 0.8232,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "strict": {
-          "tp": 1165,
-          "fn": 1335,
+          "tp": 1196,
+          "fn": 1304,
           "fp": 0,
           "tn": 0,
-          "recall": 0.466,
+          "recall": 0.4784,
           "false_positive_rate": null,
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 10.0,
-          "p95": 48.0,
-          "max": 832.0
+          "median": 6.3,
+          "p95": 32.7,
+          "max": 366.2
         }
       }
     },
@@ -163,7 +164,8 @@
           "p95": 60.0,
           "max": 147.0
         }
-      }
+      },
+      "scored_with": "2.2.0"
     },
     "tune": {
       "title": "Real phishing, tuning sample",
@@ -203,7 +205,8 @@
           "p95": 52.0,
           "max": 165.0
         }
-      }
+      },
+      "scored_with": "2.2.0"
     },
     "nazario": {
       "title": "Real phishing, held out, 2005 to 2007",
@@ -239,9 +242,9 @@
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 7.0,
-          "p95": 16.0,
-          "max": 41.0
+          "median": 5.1,
+          "p95": 11.0,
+          "max": 45.9
         }
       }
     },
@@ -252,8 +255,8 @@
         "emails": 1525,
         "verdicts": {
           "benign": {
-            "NO STRONG INDICATORS": 1501,
-            "SUSPICIOUS": 21,
+            "NO STRONG INDICATORS": 1502,
+            "SUSPICIOUS": 20,
             "LIKELY PHISHING": 3
           }
         },
@@ -263,10 +266,10 @@
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 24,
-          "tn": 1501,
+          "fp": 23,
+          "tn": 1502,
           "recall": null,
-          "false_positive_rate": 0.0157,
+          "false_positive_rate": 0.0151,
           "precision": 0.0
         },
         "strict": {
@@ -279,9 +282,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 5.0,
-          "p95": 25.0,
-          "max": 86.0
+          "median": 3.1,
+          "p95": 16.7,
+          "max": 54.7
         }
       }
     },
@@ -292,8 +295,8 @@
         "emails": 1400,
         "verdicts": {
           "benign": {
-            "NO STRONG INDICATORS": 1393,
-            "SUSPICIOUS": 7
+            "NO STRONG INDICATORS": 1394,
+            "SUSPICIOUS": 6
           }
         },
         "phish": 0,
@@ -302,10 +305,10 @@
         "flagged": {
           "tp": 0,
           "fn": 0,
-          "fp": 7,
-          "tn": 1393,
+          "fp": 6,
+          "tn": 1394,
           "recall": null,
-          "false_positive_rate": 0.005,
+          "false_positive_rate": 0.0043,
           "precision": 0.0
         },
         "strict": {
@@ -318,9 +321,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 5.0,
-          "p95": 10.0,
-          "max": 68.0
+          "median": 3.0,
+          "p95": 6.7,
+          "max": 47.8
         }
       }
     },
@@ -358,9 +361,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 25.0,
-          "p95": 58.0,
-          "max": 86.0
+          "median": 17.1,
+          "p95": 36.3,
+          "max": 54.7
         }
       }
     },
@@ -397,9 +400,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 3.0,
-          "p95": 10.0,
-          "max": 68.0
+          "median": 2.6,
+          "p95": 7.5,
+          "max": 49.1
         }
       }
     },
@@ -437,9 +440,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 3.0,
-          "p95": 13.0,
-          "max": 372.0
+          "median": 2.4,
+          "p95": 8.3,
+          "max": 253.8
         }
       }
     },
@@ -475,9 +478,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 7.0,
-          "p95": 9.0,
-          "max": 335.0
+          "median": 4.9,
+          "p95": 5.6,
+          "max": 102.3
         }
       }
     },
@@ -515,9 +518,9 @@
           "precision": 0.0
         },
         "timing_ms": {
-          "median": 4.0,
-          "p95": 13.0,
-          "max": 480.0
+          "median": 2.7,
+          "p95": 8.7,
+          "max": 404.9
         }
       }
     },
@@ -553,9 +556,9 @@
           "precision": null
         },
         "timing_ms": {
-          "median": 2.5,
-          "p95": 5.0,
-          "max": 8.0
+          "median": 1.5,
+          "p95": 4.9,
+          "max": 14.3
         }
       }
     },
@@ -595,9 +598,9 @@
           "precision": 1.0
         },
         "timing_ms": {
-          "median": 2.2,
-          "p95": 4.1,
-          "max": 40.1
+          "median": 1.9,
+          "p95": 3.5,
+          "max": 5.9
         }
       }
     }
@@ -698,5 +701,5 @@
     "tests_2_1_0": 528,
     "median_parse_ms_2_1_0": 6.0
   },
-  "tests": 641
+  "tests": 1200
 }

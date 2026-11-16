@@ -7,6 +7,16 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Changed
+
+- The README's headline numbers, charts and evaluation table, and
+  `eval/results.json`, are 3.2's: 81.4% of the 5,714 held-out phishing emails
+  flagged and 47.8% called likely phishing, 45 of the 5,945 held-out
+  legitimate emails flagged, and 1,200 tests. They showed 2.2's. The two
+  200-message samples of the first evaluation cannot be rebuilt from the
+  pinned split, so they keep their 2.2 results in `eval/results.json` and
+  leave the README's table and chart.
+
 ## [3.2.0] - 2026-11-06
 
 PhishHawk now asks DNS whether the sender's domain exists and can receive
