@@ -16,6 +16,8 @@ the JSON and STIX output are the public interface.
   200-message samples of the first evaluation cannot be rebuilt from the
   pinned split, so they keep their 2.2 results in `eval/results.json` and
   leave the README's table and chart.
+- The README's banner, recorded from a real run by `tools/make_demo.py`, shows
+  3.2.0 and the `sandbox` and `server` commands. It showed 2.2.0.
 
 ## [3.2.0] - 2026-11-06
 
