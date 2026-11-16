@@ -7,6 +7,15 @@ the JSON and STIX output are the public interface.
 
 ## [Unreleased]
 
+### Fixed
+
+- The terminal report wraps its next step, and with `--verbose` every
+  recommended action, inside its 74-column frame, each action's own lines
+  indented two more than the next one's first. 3.2's first action, "Search
+  every mailbox for copies ...", is 156 characters and ran past the edge of
+  a narrow terminal on one line. The README's demo image, recorded again
+  with `tools/make_demo.py`, shows 3.2's output at the width it had.
+
 ### Changed
 
 - The README's headline numbers, charts and evaluation table, and

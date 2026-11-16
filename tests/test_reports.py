@@ -36,6 +36,23 @@ def test_console_without_colour_has_no_escape_codes(phish):
     assert "MD5    :" in text  # verbose only
 
 
+def test_next_steps_wrap_inside_the_report_width(phish):
+    """A long recommended action wraps inside the report's frame; its own lines indent two more."""
+    text = console.render(phish, console.Palette(False), verbose=True)
+    lines = text.split("-- SUMMARY", 1)[1].splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("  Next step: "))
+    steps = lines[start:-1]  # up to the closing rule
+    assert len(steps) > len(recommendations(phish))  # the long first action did wrap
+    assert all(len(line) <= console.WIDTH for line in steps)
+    starts = [line for line in steps[1:] if line[13] != " "]
+    continued = [line for line in steps[1:] if line[13] == " "]
+    assert all(line.startswith(" " * 13) for line in starts)
+    assert continued and all(line.startswith(" " * 15) and line[15] != " " for line in continued)
+    assert len(starts) == len(recommendations(phish)) - 1  # each further action opens a line of its own
+    words = " ".join(line.strip() for line in steps).replace("Next step: ", "", 1)
+    assert words == " ".join(recommendations(phish))  # nothing lost or reordered
+
+
 def test_colour_codes_never_break_column_alignment():
     """Padding must happen before colouring, or the escape bytes eat it."""
     bec = triage_file(sample("sample_bec_smuggling.eml"))
