@@ -9,6 +9,12 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- The product page quotes 3.2's evaluation: 81.4% of 5,714 held-out phishing
+  emails flagged and 47.8% called likely phishing, 45 of 5,945 legitimate
+  emails flagged, a median of 6 ms a message, measured with the 3.2 engine. It
+  quoted 2.2's. A frontend test now checks the page against
+  `eval/results.json`, so a new evaluation cannot leave it behind.
+
 - The terminal report wraps its next step, and with `--verbose` every
   recommended action, inside its 74-column frame, each action's own lines
   indented two more than the next one's first. 3.2's first action, "Search
