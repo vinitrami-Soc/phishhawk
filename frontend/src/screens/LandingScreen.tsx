@@ -866,9 +866,9 @@ function ReportPreview() {
 const NUMBER_LINES = ['border-b sm:border-r lg:border-b-0', 'border-b lg:border-b-0 lg:border-r', 'border-b sm:border-b-0 sm:border-r', ''];
 
 const NUMBERS = [
-  { value: 81.3, decimals: 1, unit: '%', label: 'of real phishing flagged', detail: '5,714 emails it had never seen. 46.9% of them were called likely phishing.' },
-  { value: 0.8, decimals: 1, unit: '%', label: 'false positives', detail: '46 of 5,945 real legitimate emails were flagged by mistake.' },
-  { value: 9, decimals: 0, unit: 'ms', label: 'median per message', detail: 'Measured on the same 5,714 emails, offline.' },
+  { value: 81.4, decimals: 1, unit: '%', label: 'of real phishing flagged', detail: '5,714 emails it had never seen. 47.8% of them were called likely phishing.' },
+  { value: 0.8, decimals: 1, unit: '%', label: 'false positives', detail: '45 of 5,945 real legitimate emails were flagged by mistake.' },
+  { value: 6, decimals: 0, unit: 'ms', label: 'median per message', detail: 'Measured on the same 5,714 emails, offline.' },
   { value: 0, decimals: 0, unit: '', label: 'indicators sent out by default', detail: 'Reputation providers stay off until an admin turns them on.' },
 ];
 
@@ -897,7 +897,7 @@ function Numbers() {
         </Panel>
       </Reveal>
       <p className="mx-auto mt-6 max-w-[90ch] text-center text-xs leading-relaxed text-ink-muted">
-        Measured with the PhishHawk 2.2 engine, offline and with no reputation lookups, on held-out real mail scored once after all tuning. The phishing comes from the phishing_pot
+        Measured with the PhishHawk 3.2 engine, offline and with no reputation lookups, on held-out real mail scored once after all tuning. The phishing comes from the phishing_pot
         honeypot, 2022 to 2026. A verdict can still be wrong in either direction, so check the findings before you act.
       </p>
     </section>
@@ -1206,7 +1206,7 @@ function Faq() {
             </Question>
             <Question question="How accurate is it?">
               <p>
-                On 5,714 real phishing emails it had never seen, it flagged 81.3%, and it flagged 46 of 5,945 legitimate emails by mistake (0.8%). That was offline, with no reputation
+                On 5,714 real phishing emails it had never seen, it flagged 81.4%, and it flagged 45 of 5,945 legitimate emails by mistake (0.8%). That was offline, with no reputation
                 lookups. A verdict can still be wrong in either direction, which is why every verdict comes with the findings behind it.
               </p>
             </Question>

@@ -74,7 +74,7 @@
   "src/mocks/fixtures.json": "b191a16a03e5fe7ad39974a36080ba34f2898682f2236c79be5b156992d4d6c9",
   "src/mocks/mockTransport.ts": "7ede84a840aad7315bf39faeca1f3f8dcd292431155f8f0217eac5b0bd898ea5",
   "src/screens/HelpScreen.tsx": "b5112e06ac8fa294b4868c073582b1d22d455848f3a4e9a70916a4027be3fba3",
-  "src/screens/LandingScreen.tsx": "e8050fa5b760a900716f26a0374c757f4857b04b14c1631496a4c9e6e33429e1",
+  "src/screens/LandingScreen.tsx": "a72936fafcc3a9466042c50c3caab9c8009f918c8e0c5ff6b9e4106f693e9371",
   "src/screens/PrivacyScreen.tsx": "c2d82e8e815e448644972fd53b408ce22cf7610eb2a66283a45d81c82e2c2c73",
   "src/security/safe.ts": "d4e0cb336b255b7935490f045dc6365bdacfd566472f23087240717088f5b104",
   "src/styles/globals.css": "f4539443d44c1434d50ee5806541728aad6594ce7581bf6844e352f13a6370a2",
