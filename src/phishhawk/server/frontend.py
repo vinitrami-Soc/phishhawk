@@ -37,7 +37,9 @@ class Head:
     share_title: str  # link previews
     description: str
     path: str  # the address search engines should list
-    summary: str = ""  # the page's own words, in #root until the script draws the page
+    # the page's own words, in #root for whatever does not run the script; inside <noscript>, so a browser that
+    # does run it never paints them unstyled before the page is drawn
+    summary: str = ""
 
 
 # The product page: the landing page's own words (frontend/src/screens/LandingScreen.tsx), so the summary says
@@ -115,7 +117,8 @@ def with_head(page: str, name: str, public_url: str) -> str:
     page = DESCRIPTION.sub("", page, count=1)
     page = TITLE.sub(lambda _: "<title>%s</title>\n%s" % (attr(head.title), "\n".join(tags)), page, count=1)
     if head.summary:
-        page = page.replace('<div id="root"></div>', '<div id="root">%s</div>' % head.summary, 1)
+        summary = '<div id="root"><noscript>%s</noscript></div>' % head.summary
+        page = page.replace('<div id="root"></div>', summary, 1)
     return page
 
 

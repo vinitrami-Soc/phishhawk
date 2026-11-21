@@ -182,6 +182,38 @@ def test_a_visitor_reads_who_runs_the_server_where_and_what_leaves_it_on_the_pri
         sync_api.expect(page.get_by_text("There is no sign-up")).to_have_count(0)
 
 
+def test_opening_the_site_shows_nothing_half_made_before_the_page(browser, tmp_path):
+    """On the way to the product page a visitor sees no unstyled summary, no "Checking your session" and no
+    grey placeholder boxes: each step is held back in turn and the screen looked at."""
+    with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve()),
+                        PHISHHAWK_INDEX_PUBLIC_PAGES="true",
+                        PHISHHAWK_PUBLIC_URL="https://phishhawk.example.org") as server:
+        page, errors = _visitor(browser)
+        script, session, landing = [], [], []
+        page.route(re.compile(r"/app/assets/index-[^/]+\.js$"), lambda route: script.append(route))
+        page.route(re.compile(r"/api/v1/session$"), lambda route: session.append(route))
+        page.route(re.compile(r"/app/assets/LandingScreen-[^/]+\.js$"), lambda route: landing.append(route))
+
+        def held(step):
+            while not step:
+                page.wait_for_timeout(50)
+            page.wait_for_timeout(300)  # time to paint whatever this step shows
+            return step[0]
+
+        page.goto(server.base + "/", wait_until="commit")
+        held(script)  # the HTML is in, its script not yet
+        assert not page.get_by_text("An analyst drops in a reported email").first.is_visible()
+        script[0].continue_()
+        held(session)  # the script runs and asks who is signed in
+        assert not page.get_by_text("Checking your session").is_visible()
+        session[0].continue_()
+        held(landing)  # nobody: the product page's own code is on its way
+        assert not page.locator('[aria-label="Loading"]').is_visible()
+        landing[0].continue_()
+        page.get_by_role("heading", level=1, name=HEADLINE).wait_for()
+        assert errors == []
+
+
 def test_with_indexing_on_the_address_itself_is_the_product_page_search_engines_read(browser, tmp_path):
     with running_server(tmp_path, PHISHHAWK_FRONTEND_DIR=str(Path(BUILD).resolve()),
                         PHISHHAWK_INDEX_PUBLIC_PAGES="true",
