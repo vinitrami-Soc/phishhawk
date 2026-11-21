@@ -9,6 +9,15 @@ the JSON and STIX output are the public interface.
 
 ### Fixed
 
+- Opening the site no longer flashes three half-made screens before the
+  product page: the page's summary for search engines in plain unstyled
+  text, then "Checking your session", then grey placeholder boxes. The
+  summary is inside `<noscript>`, read by whatever does not run the page's
+  script and never painted by a browser that does; the session check shows
+  plain background, announced only to screen readers; and the product page
+  keeps its screen-tall space while its code loads, without boxes it does
+  not have.
+
 - The product page quotes 3.2's evaluation: 81.4% of 5,714 held-out phishing
   emails flagged and 47.8% called likely phishing, 45 of 5,945 legitimate
   emails flagged, a median of 6 ms a message, measured with the 3.2 engine. It

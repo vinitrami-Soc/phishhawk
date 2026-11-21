@@ -11,7 +11,6 @@ import { AnimatePresence, MotionConfig, motion } from 'motion/react';
 import { Activity, Inbox, KeyRound, ListChecks, Mailbox, MessageSquare, Network, ScrollText, Settings, UserRound, Users } from 'lucide-react';
 import { CommandBar, type CommandBarItem } from '@/components/threeui/command-bar/CommandBar';
 import { ProgressiveBlur } from '@/components/core/progressive-blur';
-import { TextShimmerWave } from '@/components/core/text-shimmer-wave';
 import { BackToTop } from '@/components/phishhawk/BackToTop';
 import { PublicFooter, PublicHeader } from '@/components/phishhawk/PublicChrome';
 import { ThemeToggle } from '@/components/phishhawk/ThemeToggle';
@@ -180,11 +179,12 @@ export default function App() {
 
   let body;
   if (auth.status === 'checking') {
+    // a moment of plain background, said only to screen readers: a first visit is not a security check
     body = (
-      <div className="grid min-h-dvh place-items-center">
-        <TextShimmerWave className="text-base font-medium [--base-color:var(--text-muted)] [--base-gradient-color:var(--accent)]" duration={1.2}>
-          Checking your session
-        </TextShimmerWave>
+      <div className="min-h-dvh">
+        <p role="status" className="sr-only">
+          Loading PhishHawk
+        </p>
       </div>
     );
   } else if (auth.status === 'unreachable') {
@@ -199,8 +199,9 @@ export default function App() {
       <>
         <PublicHeader signedIn={Boolean(session)} onLanding />
         <main id="main" tabIndex={-1} className="relative w-full focus:outline-none">
-          {/* a screen tall while the page loads, so the footer is not seen and then pushed away (layout shift) */}
-          <Suspense fallback={<div className="mx-auto min-h-dvh max-w-[1120px] px-4 pt-10 md:px-8"><PageFallback /></div>}>
+          {/* a screen tall while the page loads, so the footer is not seen and then pushed away (layout shift);
+              empty, not grey boxes the page does not have */}
+          <Suspense fallback={<div className="min-h-dvh" />}>
             <LandingScreen signedIn={Boolean(session)} />
           </Suspense>
         </main>

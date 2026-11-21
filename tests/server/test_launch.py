@@ -244,6 +244,15 @@ def test_without_the_public_address_the_home_page_names_no_site():
     assert "ld+json" not in page and "<title>Phishing email triage · PhishHawk</title>" in page
 
 
+def test_the_product_summary_is_for_readers_that_do_not_run_the_script():
+    # a browser that runs the script never paints it unstyled before the page is drawn; a crawler that does
+    # not run scripts still reads it
+    from phishhawk.server.frontend import PRODUCT, with_head
+
+    page = with_head('<title>PhishHawk</title>\n<div id="root"></div>', "", "")
+    assert '<div id="root"><noscript>%s</noscript></div>' % PRODUCT.summary in page
+
+
 def test_the_head_of_each_public_page_is_short_and_escaped():
     from phishhawk.server.frontend import HEADS, with_head
 
