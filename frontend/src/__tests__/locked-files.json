@@ -11,7 +11,7 @@
   "src/__tests__/mock.test.ts": "0735f9fdcff2927442a63ab7850aeb7ce7a34733f818d83105f8b89d85372950",
   "src/__tests__/permissions.test.ts": "8928b282ac2135cc2db47d89fe4ee6e268f86d115a2ba6d7800be9c1825aa0d7",
   "src/__tests__/routes.test.ts": "0b0b1a9dd8bb6aeee1edbc2dcf631290d05df7bd89e01cb81cb3b26bcc202f02",
-  "src/__tests__/rules.test.ts": "d0ba1079d47722a821d5711e34df52554e221f5924426efc3fce6d1cb3695060",
+  "src/__tests__/rules.test.ts": "6b7e14e9b6bd1ab4ddcad117db63e7145dea5bd1f0cf42b72ac13687f46b9241",
   "src/__tests__/safe.test.ts": "f1168646839b7b991aa606f6281a40d2625b4391f09fb32180eabe9c5f462131",
   "src/__tests__/theme.test.ts": "ee24e8eb0d3d6af217420e3750017d7470430886a0fab90fd6614312134cb624",
   "src/__tests__/traits.test.ts": "04780cbe6f8bf5525a7568318d6ab894658b0f650b8afb2e6d62b0c882ced088",

@@ -18,6 +18,12 @@ the JSON and STIX output are the public interface.
   keeps its screen-tall space while its code loads, without boxes it does
   not have.
 
+- The report pictures on the product and sign-in pages and in the README
+  show the current report, labelled 3.2.0. They were taken from 2.2.0 and
+  still showed that version. All are new screenshots from
+  `tools/make_report_shots.py`; the site's are the same pictures as lossless
+  WebP.
+
 - The product page quotes 3.2's evaluation: 81.4% of 5,714 held-out phishing
   emails flagged and 47.8% called likely phishing, 45 of 5,945 legitimate
   emails flagged, a median of 6 ms a message, measured with the 3.2 engine. It
