@@ -133,8 +133,8 @@ test('report pictures are either absent or the real ones from the PhishHawk repo
   // PhishHawk repository, as lossless WebP) after export. Until then the login showcase shows its
   // fallback; generated pictures are not allowed.
   const real: Record<string, string> = {
-    'public/brand/report-dark.webp': 'ee9773c261b3b785135e77a9d5ed90c8d9d305da4ad0d54f8ebf8709774cd79c',
-    'public/brand/report-light.webp': 'cb757d4863b705e12a020f390999b382081f49a7533e0f608977b831e5ca6b25',
+    'public/brand/report-dark.webp': '1d8e1e7ee654f43dae91c19d03e282d15606489c480e51b173ecbc6a576f7384',
+    'public/brand/report-light.webp': '430572d9d8190a1b59f2f62b577a249b5d9dc338bae28319de55243833675727',
   };
   for (const [path, sha256] of Object.entries(real)) {
     if (!existsSync(root + path)) continue;
